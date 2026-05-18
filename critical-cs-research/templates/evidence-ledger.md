@@ -1,5 +1,18 @@
 # Evidence Ledger
 
+## Trigger
+
+在 **Pass 2: Validation** 的 Evidence Search 和 Normalization 阶段填写。每找到并归一化一个重要来源，追加一行并完成其 Normalization 详情。
+
+## Example
+
+| ID | Source | Type | Level | Related Claims | Relation | Direct Support | Limits | Allowed Wording | Forbidden Wording |
+|---|---|---|---|---|---|---|---|---|---|
+| E1 | OSDI'23 "FooSystem" | paper | S | C1 | supports | 在 1000-node 集群上测得 p99 延迟 42ms | 仅测试了批处理工作负载，未覆盖流式处理 | FooSystem 在批处理场景下将 p99 延迟降低至 50ms 以下 | FooSystem 在所有场景下都优于基线 |
+| E2 | Linux kernel sched/core.c L3120 | source_code | A | C2 | supports | eBPF 程序在用户态与内核态切换时无需保存完整寄存器上下文 | 仅适用于 x86_64，ARM64 路径不同 | eBPF 上下文切换开销低于 ptrace | eBPF 在所有架构上都优于 ptrace |
+
+## Template
+
 | ID | Source | Type | Level | Related Claims | Relation | Direct Support | Limits | Allowed Wording | Forbidden Wording |
 |---|---|---|---|---|---|---|---|---|---|
 | E1 |  | paper / official_doc / artifact / cve / benchmark / issue / standard / technical_report | S / A / B / C / D | C1 | supports / weakens / contextualizes / contradicts |  |  |  |  |

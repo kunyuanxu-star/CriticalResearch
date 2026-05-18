@@ -26,9 +26,25 @@ If the user has not provided material, ask for it. If target venue, audience, or
 
 ## Required Workflow
 
-### Phase 0: Task Initialization
+### Mode Selection (Triage)
 
-Output a compact initialization block:
+根据用户输入的复杂度、主张数量和目标深度，在启动时选择执行模式。如果用户未指定，根据以下标准自动选择或询问：
+
+| 模式 | 适用场景 | 核心主张数 | Re-search 轮次 | 外部证据 | 输出粒度 |
+|---|---|---|---|---|---|
+| **Lightweight** | 快速验证、想法初筛、已有明确结论的复核 | ≤3 | 0 | 内部知识为主 | 压缩检查清单（3-5 项） |
+| **Standard** | 常规研究、设计评审、实验计划 | 4-10 | ≤1 | 需要搜索 | 标准表格 + 简短报告 |
+| **Deep** | 投稿级审稿、完整 rebuttal、架构决策 | >10 或不明确 | ≤2（可配置） | 深度搜索 + 并发 Role-Lens | 完整 Ledger + 详细报告 |
+
+向后兼容：原有 11-Phase 的详细内容在 Deep 模式下完全保留，作为 Pass 内部的展开执行指南。
+
+### Pass 1: Discovery
+
+整合问题定义、主张分解和第一性原理分析。目标是建立研究对象的结构化蓝图，**不急于搜索或下结论**。
+
+**1.1 Task Initialization**
+
+输出紧凑的初始化块：
 
 - Task type
 - CS area
@@ -37,9 +53,9 @@ Output a compact initialization block:
 - Main risk
 - Initial hypothesis
 
-### Phase 1: Problem Framing
+**1.2 Problem Framing**
 
-Normalize the user's material into a research problem. Make explicit:
+将用户材料归一化为研究问题，明确：
 
 - Target phenomenon
 - Relevant existing approaches
@@ -48,17 +64,17 @@ Normalize the user's material into a research problem. Make explicit:
 - What must be proven
 - What would falsify the argument
 
-### Phase 2: Claim Decomposition
+**1.3 Claim Decomposition**
 
-Extract every material claim before writing conclusions. Split broad statements into testable claims.
+在写任何结论之前，提取所有实质性主张。将宽泛陈述拆分为可检验的主张。
 
-For example, "this system is lighter than VMs and more isolated than containers" becomes claims about VM overhead, avoided mechanisms, container isolation boundaries, new isolation semantics, measured overhead, and real workloads that need both properties.
+例如，"this system is lighter than VMs and more isolated than containers" 应拆分为关于 VM overhead、avoided mechanisms、container isolation boundaries、new isolation semantics、measured overhead、以及需要两种属性的 real workloads 的独立主张。
 
-Classify CS claims as factual, mechanism, limitation, causal, boundary, TCB, threat, performance, correctness, expressiveness, compatibility, deployability, novelty, or evaluation claims.
+将 CS 主张分类为：factual, mechanism, limitation, causal, boundary, TCB, threat, performance, correctness, expressiveness, compatibility, deployability, novelty, evaluation。
 
-### Phase 3: First-Principles Decomposition
+**1.4 First-Principles Decomposition**
 
-For each core claim, decompose:
+对每个核心主张，分解：
 
 - Object: code, state, data, resource, interface, protocol, policy, workload, user, or hardware.
 - Boundary: process, VM, container, language, API, trust, failure, consistency, transaction, or scheduling boundary.
@@ -70,19 +86,36 @@ For each core claim, decompose:
 - Evaluation needed.
 - Falsification condition.
 
-### Phase 4: Evidence Search
+**Pass 1 输出**：Problem Object, Claim Ledger, Assumption Ledger。
 
-For each core claim, generate at least three search directions:
+### Checkpoint A
 
-- Support query: evidence that could support the claim.
-- Counterexample query: evidence that could weaken or refute it.
-- Boundary query: definitions, baselines, prior systems, standards, or artifacts.
+在 Pass 1 结束后，必须向用户呈现：
 
-Use current web research when the user asks for research or citations, when facts may have changed, or when precise source attribution is required. Prefer primary sources: papers, official documentation, standards, source code, artifact repositories, benchmarks, CVEs, advisories, issue trackers, mailing lists, and technical reports.
+1. 归一化的问题定义（Target phenomenon, baseline, limitation）
+2. 核心主张清单（带分类：factual / mechanism / performance / ...）
+3. 关键假设和隐藏假设
+4. 第一性原理分解中的关键边界和基线
 
-### Phase 5: Evidence Normalization
+请求用户确认或修正。若用户修正，回到 Pass 1 重新分解；若确认通过，进入 Pass 2。
 
-Do not paste sources directly into the final conclusion. Normalize each important source:
+### Pass 2: Validation
+
+整合证据搜索、证据归一化、对抗性批判和差距 backlog。在 Standard 和 Deep 模式下，Evidence Search 与 Adversarial Critique 可作为并行的 Role-Lens Pass 执行（详见 `references/role-lenses.md`），但最终必须统一归一化。
+
+**2.1 Evidence Search**
+
+对每个核心主张，至少生成三个搜索方向：
+
+- Support query: 可能支持该主张的证据。
+- Counterexample query: 可能削弱或反驳该主张的证据。
+- Boundary query: 定义、基线、先前系统、标准或工件。
+
+当用户要求研究或引用、事实可能已变化、或需要精确来源归属时，使用当前网络研究。优先使用一手来源：论文、官方文档、标准、源代码、工件仓库、基准测试、CVE、安全公告、问题跟踪器、邮件列表和技术报告。
+
+**2.2 Evidence Normalization**
+
+不要将来源直接粘贴到最终结论中。对每个重要来源归一化：
 
 - What it directly supports.
 - What it does not support.
@@ -92,11 +125,11 @@ Do not paste sources directly into the final conclusion. Normalize each importan
 - Forbidden wording.
 - Evidence level: S, A, B, C, or D.
 
-Main-line claims should not rely on C/D evidence. Use C/D evidence only as leads unless the claim is explicitly low-confidence or speculative.
+主线主张不应依赖 C/D 级证据。C/D 级证据仅作为线索，除非该主张明确为低置信度或推测性。
 
-### Phase 6: Adversarial Critique
+**2.3 Adversarial Critique**
 
-Attack the argument like a strong CS reviewer:
+像顶级 CS 审稿人一样攻击论点：
 
 - Is the claim overstated?
 - Is there a real workload?
@@ -110,13 +143,40 @@ Attack the argument like a strong CS reviewer:
 - Are tradeoffs and artifacts missing?
 - Is the evaluation capable of proving the claim?
 
-### Phase 7: Gap Backlog
+**2.4 Gap Backlog**
 
-Convert each serious critique into a searchable, closable research gap. Avoid vague gaps such as "needs more evidence." Write gaps as concrete questions that can drive the next research round.
+将每个严重批判转化为可搜索、可关闭的研究差距。避免模糊差距如 "needs more evidence"。将差距写为可驱动下一轮研究的具体问题。
 
-### Phase 8: Targeted Re-search
+**Pass 2 输出**：Evidence Ledger, Critique Ledger, Gap Backlog。
 
-Only re-search around open gaps. Record:
+### Checkpoint B / C
+
+在 Pass 2 结束后，向用户呈现：
+
+1. **证据摘要**：核心主张的证据饱和度（有 ≥A 级证据的主张占比）、最强证据、最弱证据。
+2. **关键批判**：按严重程度排序的 top 3-5 条 adversarial critique。
+3. **Gap Backlog**：按优先级排序的开放差距，标注哪些可在预算内关闭、哪些需额外资源。
+
+询问用户决策：
+- **继续深入**：进入 Pass 3（若 Gap 少且饱和度高）。
+- **额外 Re-search**：返回 Pass 2 针对特定 Gap 补充证据（消耗预算轮次）。
+- **提前收敛**：若用户认为当前深度已足够，跳过 Pass 3 的完整展开，直接输出压缩结论（标记剩余风险）。
+
+### Pass 3: Convergence
+
+整合针对性再研究、主张修订、评估义务和收敛检查。受 Budget Control 约束。
+
+**3.1 Budget Control**
+
+在执行 Pass 3 之前，声明本轮预算：
+
+- **最大 Re-search 轮次**：Lightweight 0，Standard 1，Deep 默认 2（可配置 `--max-research-rounds`）。
+- **证据饱和度阈值**：Core Claims 有 ≥A 级证据的比例。≥80% 可触发提前收敛。
+- **强制退出**：当预算耗尽时，无论剩余多少开放 Gap，必须进入 Final Report，并显式标记所有剩余风险和未验证主张。
+
+**3.2 Targeted Re-search**
+
+仅围绕开放差距进行再研究。记录：
 
 - Objective
 - Queries
@@ -126,17 +186,17 @@ Only re-search around open gaps. Record:
 - New attacks
 - Continue yes/no with reason
 
-### Phase 9: Claim Revision
+**3.3 Claim Revision**
 
-Use this state machine:
+使用状态机：
 
 `unverified -> supported -> weakened -> split -> merged -> deleted -> risk -> final`
 
-Record every keep, weaken, split, merge, delete, or risk decision with reason and remaining risk.
+记录每个 keep、weaken、split、merge、delete 或 risk 决策的原因和剩余风险。
 
-### Phase 10: Evaluation Obligations
+**3.4 Evaluation Obligations**
 
-Map every final performance, security, correctness, compatibility, expressiveness, deployability, or novelty claim to an evaluation obligation:
+将每个最终的 performance、security、correctness、compatibility、expressiveness、deployability 或 novelty 主张映射到评估义务：
 
 - Performance: latency, throughput, utilization, scalability, cost.
 - Security: threat model, attack case, bug class, TCB comparison.
@@ -145,9 +205,9 @@ Map every final performance, security, correctness, compatibility, expressivenes
 - Expressiveness: case studies, supported patterns, impossible baseline.
 - Deployability: code changes, operational complexity, migration cost.
 
-### Phase 11: Convergence Check
+**3.5 Convergence Check**
 
-Stop only when:
+仅当以下条件满足时停止：
 
 - All core claims have evidence or are marked as risk.
 - All high-severity critiques are handled.
@@ -157,7 +217,11 @@ Stop only when:
 - Weak claims are downgraded or deleted.
 - The final conclusion explains why the contribution is not merely incremental.
 
+**或**当预算耗尽且已标记剩余风险时强制停止。
+
 Do not stop if a core claim lacks evidence, a fatal critique remains, the text still uses vague phrases such as "obviously", "many systems", "industry needs", or "fundamentally stronger" without support, workload or baseline is missing, claim strength exceeds evidence, or the mechanism's actual change is unclear.
+
+**Pass 3 输出**：Final Report, Research Trace。
 
 ## Final Output
 
@@ -184,6 +248,8 @@ When producing files, use:
 - `templates/critique-ledger.md`
 - `templates/research-trace.md`
 - `templates/final-report.md`
+- `templates/assumption-ledger.md`（Pass 1 输出）
+- `templates/gap-backlog.md`（Pass 2 输出）
 
 ## Quality Bar
 

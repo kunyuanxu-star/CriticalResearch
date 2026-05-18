@@ -35,6 +35,22 @@ Avoid treating tutorials, Stack Overflow answers, README marketing claims, synth
 - Architecture: require workload, non-functional requirements, tradeoffs, operational constraints, failure handling, and alternatives.
 - Cost: require pricing date, region, usage assumptions, traffic/storage/egress model, and sensitivity analysis.
 
+## Claim-Type to Tool / Method Mapping
+
+不同主张类型需要不同的验证工具和证据来源。在 Evidence Search 阶段，根据主张类型优先选择对应工具：
+
+| Claim Type | Primary Tools / Methods | Evidence Source Priority |
+|---|---|---|
+| Algorithmic complexity | Formal proof, derivation, complexity textbook, paper | Paper, textbook, mechanized proof |
+| Performance | Benchmark, profiler, trace, A/B test | Artifact repository, reproducible benchmark, official benchmark suite |
+| Scalability | Load generator, bottleneck analysis, backpressure test | Production telemetry, large-scale testbed, trace-driven simulation |
+| Security | Threat model, CVE search, fuzzing, red-team evaluation | CVE/NVD, security advisory, formal threat model, penetration test report |
+| Correctness | Proof sketch, invariant, model checking, differential test | Paper proof, Coq/Isabelle artifact, test suite, property-based test |
+| AI/ML infra | Model card, dataset sheet, utilization trace, error analysis | Artifact repository, reproducible training run, official model zoo |
+| API / tooling | Official docs, source code, regression test | Official documentation, source code, release notes |
+| Architecture | Workload suite, tradeoff matrix, operational runbook | Design doc, production case study, postmortem |
+| Cost | Pricing calculator, sensitivity analysis, TCO model | Vendor pricing page (with date), billing report, capacity plan |
+
 ## Evidence Normalization Fields
 
 - Evidence ID
