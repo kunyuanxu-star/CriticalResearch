@@ -2,7 +2,7 @@
 
 ## Trigger
 
-在 **Pass 3: Convergence** 的 Convergence Check 通过后填写。这是整个研究循环的唯一最终输出文件，必须由 Synthesis Writer 基于所有已验证的主张、证据和批判撰写。
+在 **Pass 3: Convergence** 的 Convergence Check 通过后填写；或在 **预算耗尽强制停止**时填写（标记所有剩余风险、未验证主张、开放差距和证据短缺）。这是整个研究循环的最终输出文件，必须由 Synthesis Writer 基于所有已验证的主张、证据和批判撰写。
 
 ## Example
 

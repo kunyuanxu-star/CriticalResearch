@@ -81,7 +81,7 @@ Legacy 模式仍受 Budget Control 约束，但保留完整的 Phase 0-11 编号
 3. 声称的局限性
 4. 必须被证明和证伪的内容
 
-使用 `AskUserQuestion` 请求用户确认或修正。若用户修正，回到 Problem Framing 重新归一化；若确认通过，进入 Claim Decomposition。
+使用 `AskUserQuestion`（若平台支持）或在正常对话中显式暂停并询问用户，请求确认或修正。若用户修正，回到 Problem Framing 重新归一化；若确认通过，进入 Claim Decomposition。
 
 **1.3 Claim Decomposition**
 
@@ -99,7 +99,7 @@ Legacy 模式仍受 Budget Control 约束，但保留完整的 Phase 0-11 编号
 2. 每个主张的重要性评级（core / supporting）
 3. 已识别的隐藏假设
 
-使用 `AskUserQuestion` 请求用户确认或修正。若用户修正，回到 Claim Decomposition 重新提取；若确认通过，进入 First-Principles Decomposition 和后续的 Evidence Search。
+使用 `AskUserQuestion`（若平台支持）或在正常对话中显式暂停并询问用户，请求确认或修正。若用户修正，回到 Claim Decomposition 重新提取；若确认通过，进入 First-Principles Decomposition 和后续的 Evidence Search。
 
 **1.4 First-Principles Decomposition**
 
@@ -119,7 +119,11 @@ Legacy 模式仍受 Budget Control 约束，但保留完整的 Phase 0-11 编号
 
 ### Pass 2: Validation
 
-整合证据搜索、证据归一化、对抗性批判和差距 backlog。在 Standard 模式下，按顺序执行；在 Deep 模式下，可先通过 Role-Lens 并行搜索，再统一归一化（详见 `agents/deep-role-lens-instructions.md`）。
+整合证据搜索、证据归一化、对抗性批判和差距 backlog。
+
+- **Lightweight 模式**：跳过完整的 Pass 2。基于 Pass 1 的内部知识，直接生成压缩检查清单（3-5 项核心风险或验证建议），不执行 Evidence Search、Normalization 或 Adversarial Critique。Checkpoint C 被压缩为一句确认："当前深度是否足够，或需要进入 Standard/Deep 模式继续？"
+- **Standard 模式**：按顺序执行 Pass 2 的所有子步骤。
+- **Deep 模式**：可先通过 Role-Lens 并行搜索，再统一归一化（详见 `agents/deep-role-lens-instructions.md`）。
 
 **2.1 Evidence Search**
 
@@ -175,7 +179,7 @@ Legacy 模式仍受 Budget Control 约束，但保留完整的 Phase 0-11 编号
 2. **关键批判**：按严重程度排序的 top 3-5 条 adversarial critique。
 3. **Gap Backlog**：按优先级排序的开放差距，标注哪些可在预算内关闭、哪些需额外资源。
 
-使用 `AskUserQuestion` 询问用户决策：
+使用 `AskUserQuestion`（若平台支持）或在正常对话中显式暂停并询问用户，提供以下决策选项：
 - **继续深入**：进入 Pass 3（若 Gap 少且饱和度高）。
 - **额外 Re-search**：返回 Pass 2 针对特定 Gap 补充证据（消耗预算轮次）。
 - **提前收敛**：若用户认为当前深度已足够，跳过 Pass 3 的完整展开，直接输出压缩结论（标记剩余风险）。
