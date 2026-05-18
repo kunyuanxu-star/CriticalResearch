@@ -36,7 +36,15 @@ If the user has not provided material, ask for it. If target venue, audience, or
 | **Standard** | 常规研究、设计评审、实验计划 | 4-10 | ≤1 | 需要搜索 | 标准表格 + 简短报告 |
 | **Deep** | 投稿级审稿、完整 rebuttal、架构决策 | >10 或不明确 | ≤2（可配置） | 深度搜索 + 并发 Role-Lens | 完整 Ledger + 详细报告 |
 
-向后兼容：原有 11-Phase 的详细内容在 Deep 模式下完全保留，作为 Pass 内部的展开执行指南。
+#### Legacy 11-Phase Mode
+
+当用户明确要求"按旧流程执行"或"使用原始 Phase 顺序"时，运行原有的线性 11-Phase 序列（Phase 0 → 11）。此时三个 Checkpoint 映射为：
+
+- **Checkpoint A** = Phase 1（Problem Framing）结束后
+- **Checkpoint B** = Phase 2（Claim Decomposition）结束后
+- **Checkpoint C** = Phase 6（Adversarial Critique）结束后
+
+Legacy 模式仍受 Budget Control 约束，但保留完整的 Phase 0-11 编号以便用户对照旧文档。
 
 ### Pass 1: Discovery
 
@@ -64,6 +72,17 @@ If the user has not provided material, ask for it. If target venue, audience, or
 - What must be proven
 - What would falsify the argument
 
+#### Checkpoint A
+
+在 **Problem Framing 结束后、Claim Decomposition 开始前**，必须向用户呈现：
+
+1. 归一化的问题定义（Target phenomenon, baseline, limitation）
+2. 现有方法的概括
+3. 声称的局限性
+4. 必须被证明和证伪的内容
+
+使用 `AskUserQuestion` 请求用户确认或修正。若用户修正，回到 Problem Framing 重新归一化；若确认通过，进入 Claim Decomposition。
+
 **1.3 Claim Decomposition**
 
 在写任何结论之前，提取所有实质性主张。将宽泛陈述拆分为可检验的主张。
@@ -71,6 +90,16 @@ If the user has not provided material, ask for it. If target venue, audience, or
 例如，"this system is lighter than VMs and more isolated than containers" 应拆分为关于 VM overhead、avoided mechanisms、container isolation boundaries、new isolation semantics、measured overhead、以及需要两种属性的 real workloads 的独立主张。
 
 将 CS 主张分类为：factual, mechanism, limitation, causal, boundary, TCB, threat, performance, correctness, expressiveness, compatibility, deployability, novelty, evaluation。
+
+#### Checkpoint B
+
+在 **Claim Decomposition 结束后、First-Principles Decomposition 开始前**，必须向用户呈现：
+
+1. 核心主张清单（带分类：factual / mechanism / performance / ...）
+2. 每个主张的重要性评级（core / supporting）
+3. 已识别的隐藏假设
+
+使用 `AskUserQuestion` 请求用户确认或修正。若用户修正，回到 Claim Decomposition 重新提取；若确认通过，进入 First-Principles Decomposition 和后续的 Evidence Search。
 
 **1.4 First-Principles Decomposition**
 
@@ -88,20 +117,9 @@ If the user has not provided material, ask for it. If target venue, audience, or
 
 **Pass 1 输出**：Problem Object, Claim Ledger, Assumption Ledger。
 
-### Checkpoint A
-
-在 Pass 1 结束后，必须向用户呈现：
-
-1. 归一化的问题定义（Target phenomenon, baseline, limitation）
-2. 核心主张清单（带分类：factual / mechanism / performance / ...）
-3. 关键假设和隐藏假设
-4. 第一性原理分解中的关键边界和基线
-
-请求用户确认或修正。若用户修正，回到 Pass 1 重新分解；若确认通过，进入 Pass 2。
-
 ### Pass 2: Validation
 
-整合证据搜索、证据归一化、对抗性批判和差距 backlog。在 Standard 和 Deep 模式下，Evidence Search 与 Adversarial Critique 可作为并行的 Role-Lens Pass 执行（详见 `references/role-lenses.md`），但最终必须统一归一化。
+整合证据搜索、证据归一化、对抗性批判和差距 backlog。在 Standard 模式下，按顺序执行；在 Deep 模式下，可先通过 Role-Lens 并行搜索，再统一归一化（详见 `agents/deep-role-lens-instructions.md`）。
 
 **2.1 Evidence Search**
 
@@ -149,15 +167,15 @@ If the user has not provided material, ask for it. If target venue, audience, or
 
 **Pass 2 输出**：Evidence Ledger, Critique Ledger, Gap Backlog。
 
-### Checkpoint B / C
+#### Checkpoint C
 
-在 Pass 2 结束后，向用户呈现：
+在 **Evidence Normalization 和 Adversarial Critique 结束后**，向用户呈现：
 
-1. **证据摘要**：核心主张的证据饱和度（有 ≥A 级证据的主张占比）、最强证据、最弱证据。
+1. **证据摘要**：核心主张的证据饱和度（有 ≥A 级证据且无任何未解决 fatal/high critique 的主张占比）、最强证据、最弱证据。
 2. **关键批判**：按严重程度排序的 top 3-5 条 adversarial critique。
 3. **Gap Backlog**：按优先级排序的开放差距，标注哪些可在预算内关闭、哪些需额外资源。
 
-询问用户决策：
+使用 `AskUserQuestion` 询问用户决策：
 - **继续深入**：进入 Pass 3（若 Gap 少且饱和度高）。
 - **额外 Re-search**：返回 Pass 2 针对特定 Gap 补充证据（消耗预算轮次）。
 - **提前收敛**：若用户认为当前深度已足够，跳过 Pass 3 的完整展开，直接输出压缩结论（标记剩余风险）。
@@ -168,11 +186,11 @@ If the user has not provided material, ask for it. If target venue, audience, or
 
 **3.1 Budget Control**
 
-在执行 Pass 3 之前，声明本轮预算：
+在执行 Pass 3 之前，声明本轮预算并阅读 `references/budget-guide.md`：
 
-- **最大 Re-search 轮次**：Lightweight 0，Standard 1，Deep 默认 2（可配置 `--max-research-rounds`）。
-- **证据饱和度阈值**：Core Claims 有 ≥A 级证据的比例。≥80% 可触发提前收敛。
-- **强制退出**：当预算耗尽时，无论剩余多少开放 Gap，必须进入 Final Report，并显式标记所有剩余风险和未验证主张。
+- **最大 Re-search 轮次**：Lightweight 0，Standard 1，Deep 默认 2。可通过 `--max-research-rounds N` 覆盖，或在启动时询问用户。
+- **证据饱和度阈值**：Core Claims 中同时拥有 ≥A 级证据且无未解决 fatal/high critique 的主张所占比例。≥80% 可触发提前收敛。
+- **强制退出**：当预算耗尽时，无论剩余多少开放 Gap，必须进入 Final Report，并显式标记所有剩余风险、未验证主张、开放差距和证据短缺。
 
 **3.2 Targeted Re-search**
 
