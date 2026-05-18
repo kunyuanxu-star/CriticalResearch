@@ -54,6 +54,15 @@ Limitation:
 
 Root cause:
 
+**Strawman Analysis**（仅 limitation / challenge 类 claim 必填）：
+- Strawman S1（最直接方案）：
+- S1 satisfies ___ because ___:
+- S1 violates ___ because ___:
+- Strawman S2（相反方向方案）：
+- S2 satisfies ___ because ___:
+- S2 violates ___ because ___:
+- Root cause（两个 strawman 为何同时失败）：
+
 Evidence needed:
 
 Evaluation needed:

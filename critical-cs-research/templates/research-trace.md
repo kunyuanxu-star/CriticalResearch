@@ -38,6 +38,12 @@ must_not_assume: [所有内核版本都支持, 所有架构都适用]
 |---|---|---|---|---|---|
 | X1 | C1 | Firecracker 使用更轻量的 VM-based 监控 | Firecracker NSDI'20 | narrows | 明确 eBPF  vs VM-based 的适用边界 |
 
+### Rebuttal Ledger
+
+| Rebuttal ID | Target Critique | Rebuttal Content | Rebuttal Type | New Evidence Required | Resolution | Status |
+|---|---|---|---|---|---|---|
+| R1 | A1 | 审稿人引用的基线版本过旧（v1.2），v2.0 已解决该问题 | new_evidence | v2.0 changelog 和 benchmark | critique_resolved | confirmed |
+
 ### Decision Ledger
 
 | Decision ID | Target Claim | Decision | Old Claim | New Claim | Reason | Remaining Risk |
@@ -58,7 +64,8 @@ must_not_assume: [所有内核版本都支持, 所有架构都适用]
 - **追加而非覆盖**：每个新的 Pass 或 Re-search 轮次应在文件末尾新增一个章节（如 `## Research Round 1`），保留所有历史内容。
 - **已废弃条目不删除**：若假设被证伪或主张被删除，将其状态更新为 `falsified` / `deleted`，并追加 Decision Ledger 记录，不要从历史表格中物理删除行。
 - **Lens 原始输出保留**：在 Deep 模式下，每个 Role-Lens 的原始输出应作为子章节保留（`## Raw Lens Output: Research Scout` 等），即使部分内容未进入最终结论。
-- **决策链可追溯**：任何 Decision Ledger 的变更必须能通过行号/章节引用回溯到具体的证据或批判条目。
+- **Rebuttal Ledger 追加**：Checkpoint D 的每条 rebuttal 必须记录到 Rebuttal Ledger，标注 rebuttal type、resolution 和 status。已解决（confirmed/applied）和已拒绝（rejected）的 rebuttal 均保留在 Ledger 中。
+- **决策链可追溯**：任何 Decision Ledger 的变更必须能通过行号/章节引用回溯到具体的证据、批判或 rebuttal 条目。
 
 ---
 
@@ -94,6 +101,12 @@ must_not_assume: []
 | ID | Target Claim | Counterexample / Prior Work / Alternative | Source | Effect On Claim | Follow-up |
 |---|---|---|---|---|---|
 | X1 | C1 |  |  | weakens / contradicts / narrows / contextualizes |  |
+
+### Rebuttal Ledger
+
+| Rebuttal ID | Target Critique | Rebuttal Content | Rebuttal Type | New Evidence Required | Resolution | Status |
+|---|---|---|---|---|---|---|
+| R1 | A1 |  | clarification / new_evidence / scope_redefinition |  | critique_resolved / claim_updated / evidence_added / scope_narrowed / insufficient | pending / confirmed / applied / rejected |
 
 ### Decision Ledger
 

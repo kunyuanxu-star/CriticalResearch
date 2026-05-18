@@ -35,47 +35,35 @@
 - 分子 = 2（C1, C2）
 - 饱和度 = 2/4 = 50%
 
-## Round Accounting
+## Round Accounting (Advisory Only)
 
-| 模式 | 默认最大 Re-search 轮次 | 配置方式 | 提前收敛阈值 |
-|---|---|---|---|
-| Lightweight | 0 | 不可配置 | 不适用（无 Re-search） |
-| Standard | 1 | 不可配置 | 不适用（通常一轮即完成） |
-| Deep | 2 | `--max-research-rounds N` 或启动时询问用户 | 饱和度 ≥80% |
+**核心规则已变更**：所有轮次和阈值均为**建议性指标**，用于跟踪进度而非强制停止。唯一退出条件是用户明确表示满意（见 SKILL.md §3.5 Convergence Check）。
+
+| 模式 | 建议首轮深度 | 参考饱和度 |
+|---|---|---|
+| Lightweight | 首轮内部知识为主 | 供参考，不强制 |
+| Standard | 首轮 1 次搜索 | 供参考，不强制 |
+| Deep | 首轮深度搜索 + 并发 Role-Lens | 供参考，不强制 |
 
 ### 轮次计数规则
 
-- **轮次定义**：从 Checkpoint C 决定"额外 Re-search"到再次回到 Checkpoint C 为 1 轮。
-- **Pass 2 初始执行不计入 Re-search 轮次**：Re-search 仅指针对性的补充搜索。
-- **最大轮次到达时**：强制进入 Final Report，无论饱和度多少。
+- **轮次定义**：从用户提出新反驳或新 Gap 到再次回到 User Satisfaction Gate 为 1 轮。
+- **Pass 2 初始执行计为 Round 1**。
+- **无最大轮次限制**：只要用户未被说服，持续循环。
 
-## Forced-Stop Final Report Wording
+## Saturation as Progress Indicator (Not Stop Condition)
 
-当预算耗尽时，Final Report 必须包含以下章节：
-
-```markdown
-## Remaining Risks and Open Gaps (Budget-Forced Stop)
-
-由于达到最大 Re-search 预算（N 轮），以下项目未完全关闭，已标记为风险：
-
-- **未验证主张**：...
-- **开放差距**：...
-- **证据短缺**：...
-- **未解决批判**：...
-
-这些风险不影响已完成验证的结论，但限制了本研究的适用范围。
-```
-
-## Configurable Defaults
-
-在 Deep 模式启动时，向用户呈现预算配置选项：
+证据饱和度是向用户汇报进度的指标，不是停止条件：
 
 ```
-Deep 模式默认预算：
-- 最大 Re-search 轮次：2
-- 提前收敛阈值：80%
-
-是否需要调整？[直接回车确认 / 输入 --max-research-rounds N 修改]
+饱和度 = (拥有 ≥A 级证据且无未解决 fatal/high critique 的 core claims 数量)
+         ─────────────────────────────────────────────────────────────────
+         (总 core claims 数量，不含已删除的 claims)
 ```
 
-若用户未响应，使用默认值并继续。
+- 饱和度 ≥80%：告知用户"分析已达发布级深度"，但用户仍可要求继续。
+- 饱和度 <80%：告知用户当前薄弱点，建议继续深挖方向。
+
+## Configurable Defaults (Deprecated)
+
+~~在 Deep 模式启动时，向用户呈现预算配置选项。~~ 该机制已被 User Satisfaction Gate 取代。不再需要 --max-research-rounds 配置。若用户明确要求设置硬性预算上限，可例外启用。
