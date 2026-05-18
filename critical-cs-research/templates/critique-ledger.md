@@ -22,9 +22,3 @@
 | ID | Target Claim | Critique Type | Severity | Critique | Required Follow-up | Linked Gap |
 |---|---|---|---|---|---|---|
 | A1 | C1 | overclaim / missing_baseline / missing_workload / ambiguous_definition / weak_causality / alternative_solution / unproven_generality / evaluation_gap / artifact_gap | low / medium / high / fatal |  |  | G1 |
-
-## Template
-
-| ID | Target Claim | Critique Type | Severity | Critique | Required Follow-up |
-|---|---|---|---|---|---|
-| A1 | C1 | overclaim / missing_baseline / missing_workload / ambiguous_definition / weak_causality / alternative_solution / unproven_generality / evaluation_gap / artifact_gap | low / medium / high / fatal |  |  |

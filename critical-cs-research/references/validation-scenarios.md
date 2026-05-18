@@ -67,21 +67,22 @@
 **Checkpoint Prompts**:
 - **Checkpoint A**: 确认 rebuttal 目标：证明"比 VMs 轻"和"比容器隔离强"两个方向。用户补充：需要引用 OSDI/SOSP 近 5 年工作。
 - **Checkpoint B**: 提取 12 个核心主张（VM 开销、容器隔离边界、新隔离语义、测量方法、真实工作负载等）。用户确认。
-- **Checkpoint C**: 第一轮证据饱和度 45%（大量 claims 仅有 B/C 级证据）。用户允许启动并行 Role-Lens。
+- **并行 Lens 许可**（Checkpoint B 之后、Pass 2 之前）：向用户询问"是否允许启动并行分析 Agent？"用户允许。
+- **Checkpoint C**: Pass 2 完成后，证据饱和度 58%（7/12 个 claims 有 ≥A 级证据且无 fatal/high critique）。用户选择继续深入。
 
 **Parallel Lenses**:
 - **Research Scout + Counterexample Finder**：并发启动，搜索支持证据和反例。
 - **Adversarial Reviewer**：在首轮证据返回后启动，基于 draft evidence 进行预判 critique。
-- **执行方式**：向用户询问"是否允许启动并行分析 Agent？"，用户允许后启动。
+- **执行方式**：许可已在 Checkpoint B 后获得。Claim Parser 在 Pass 1 已完成，不纳入 Pass 2 并发组。
 
 **Merge Behavior**:
 - Research Scout 找到 E1-E8（支持证据）。
 - Counterexample Finder 找到 X1-X3（反例：Firecracker 的轻量级 VM、gVisor 的用户态内核）。
 - Adversarial Reviewer 提出 A1-A5（critique）。
 - Merge 后：E1-E8 归一化；X1-X3 作为 `weakens` / `narrows` 关联到对应 claims；A1-A5 写入 Critique Ledger，其中 A2、A4 为 high severity，转化为 G1、G2。
-- 饱和度重新计算：从 45% → 65%。
+- 饱和度计算：7/12 = 58%。
 
-**Saturation Calculation (Round 1)**:
+**Saturation Calculation (After Pass 2 Merge)**:
 - 分母：12
 - 分子：7（7 个 claims 在 Merge 后拥有 ≥A 证据且无 fatal/high critique）
 - 饱和度：58%（<80%，继续 Re-search）
@@ -102,3 +103,4 @@
 2. **Standard 模式的饱和度触发条件**：明确 Standard 模式也可以触发提前收敛，但最大 Re-search 为 1 轮，因此提前收敛最多节省 1 轮。
 3. **Deep 模式的 Agent 许可**：必须在启动并行 Lens 前显式询问用户，否则 fallback 到顺序执行。
 4. **饱和度计算中的 weakened claims**：明确 weakened claims 只要拥有 ≥A 证据且无 fatal/high critique，仍计入分子。
+5. **Claim Parser 的定位**：明确 Claim Parser 在 Pass 1 执行，其原始输出保留在 Research Trace 中；Deep 模式的并行 Lens 权限提示仅涉及 Pass 2 的 Research Scout / Counterexample Finder / Adversarial Reviewer。

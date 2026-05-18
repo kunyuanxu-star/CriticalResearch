@@ -8,9 +8,11 @@
 
 在启动任何并行 Role-Lens 之前，必须向用户说明：
 
-> "Deep 模式建议启用并行 Role-Lens（Claim Parser / Research Scout / Counterexample Finder / Adversarial Reviewer）以加速验证。这需要启动多个分析 Agent。是否允许？"
+> "Deep 模式的 Pass 2: Validation 建议启用并行 Role-Lens（Research Scout / Counterexample Finder / Adversarial Reviewer）以加速证据搜索和批判。这需要启动 2-3 个分析 Agent。是否允许？"
 
-- **若用户允许**：使用 `Agent` 工具并发启动各 Lens（见下方 Concurrent Execution）。
+注意：Claim Parser 已在 **Pass 1: Discovery** 的 Checkpoint B 之前完成，不属于 Pass 2 的并发 Lens。其原始输出已在 Research Trace 的 `## Raw Lens Output: Claim Parser` 中保留。
+
+- **若用户允许**：使用 `Agent` 工具并发启动 Pass 2 的 Lens（见下方 Concurrent Execution）。
 - **若用户拒绝或平台不支持并发 Agent**：使用 **Non-Subagent Fallback**（见下方），在同一 Agent 上下文中按顺序执行 Lens passes，但保留相同的输出格式和 Merge Rules。
 
 ## Concurrent Execution (User Allowed)
@@ -20,9 +22,38 @@
 - **Group 1**: Research Scout + Counterexample Finder（两者独立搜索，互不依赖）
 - **Group 2**: Adversarial Reviewer（基于 Claim Ledger 和已有证据进行预判 critique，可在 Group 1 开始后 30 秒或首轮证据返回后启动）
 
-Claim Parser 已在 Pass 1 完成，无需重复。
+Claim Parser 在 Pass 1 执行，不纳入 Pass 2 并发组。
 
-### Lens Prompts
+### Claim Parser (Pass 1 Lens)
+
+虽然 Claim Parser 不在 Pass 2 并发组中，但作为 Role-Lens 体系的一部分，其输出必须保留完整痕迹并符合以下契约：
+
+**输入**：用户原始材料 + Checkpoint A 确认后的问题定义
+**输出格式**：
+- Claim Ledger 的初始条目（仅含 Claim Decomposition，不含 First-Principles）
+- Assumption Ledger 的初始条目（隐藏假设识别）
+
+**Prompt**：
+```
+你是一名主张解析员。你的唯一任务是：从用户材料中提取所有实质性主张，拆分为可检验的独立 claim，并识别隐藏假设。
+
+输入：用户原始材料 + 归一化后的问题定义
+输出格式：
+1. Claim Ledger 初始条目（ID, Claim, Type, Importance, Hidden Assumptions, Required Definitions）
+2. Assumption Ledger 初始条目（ID, Related Claim, Assumption, Why It Matters）
+
+约束：
+- 不要评价主张真假。
+- 不要补充外部证据。
+- 将宽泛陈述拆分为最小可检验单元。
+- 每个 claim 必须可对应到具体的 evidence_needed 和 falsification_condition（由 First-Principles Decomposition 后续补充）。
+```
+
+**Trace 保留**：Claim Parser 的原始输出必须保存到 Research Trace 的 `## Raw Lens Output: Claim Parser` 章节，位于 Checkpoint B 之前。
+
+---
+
+### Lens Prompts (Pass 2)
 
 #### Research Scout
 
@@ -84,7 +115,7 @@ Claim Parser 已在 Pass 1 完成，无需重复。
    - 分子：拥有 ≥A 级证据且无未解决 fatal/high critique 的 core claims 数量。
    - 分母：总 core claims 数量（不含 deleted）。
    - 被 weakened 的 claim 仍计入分母，但分子仅统计 supported 或 weakened（有 A 级证据）的 claim。
-5. **Write Raw Traces**: 每个 Lens 的原始输出（未合并前的完整文本）必须写入 Research Trace Appendix，作为独立章节（`## Raw Lens Output: Research Scout` 等）。
+5. **Write Raw Traces**: 每个 Lens 的原始输出（未合并前的完整文本）必须写入 Research Trace Appendix，作为独立章节（`## Raw Lens Output: Claim Parser`（已在 Pass 1 写入）、`## Raw Lens Output: Research Scout` 等）。
 
 ## Anti-Duplication Rules
 
