@@ -26,8 +26,8 @@ if [ -f "$OUTPUT_DIR/evidence-ledger.md" ]; then
         fi
     done
     # Evidence levels
-    s_count=$(grep -cE '\bS\b' "$OUTPUT_DIR/evidence-ledger.md" 2>/dev/null || echo 0)
-    a_count=$(grep -cE '\bA\b' "$OUTPUT_DIR/evidence-ledger.md" 2>/dev/null || echo 0)
+    s_count=$(grep -cE '\bS\b' "$OUTPUT_DIR/evidence-ledger.md" 2>/dev/null || true)
+    a_count=$(grep -cE '\bA\b' "$OUTPUT_DIR/evidence-ledger.md" 2>/dev/null || true)
     echo "  Evidence: S=$s_count A=$a_count"
     if [ "$((s_count + a_count))" -ge 1 ]; then
         pass "At least one S/A level evidence present"
@@ -50,14 +50,14 @@ if [ -f "$OUTPUT_DIR/critique-ledger.md" ]; then
         fi
     done
     # Severity coverage: must have at least medium+ critiques
-    fatal_high=$(grep -cE '\b(fatal|high)\b' "$OUTPUT_DIR/critique-ledger.md" 2>/dev/null || echo 0)
+    fatal_high=$(grep -cE '\b(fatal|high)\b' "$OUTPUT_DIR/critique-ledger.md" 2>/dev/null || true)
     if [ "$fatal_high" -ge 1 ]; then
         pass "At least one fatal/high critique present"
     else
         warn "No fatal/high critiques — critique may be insufficiently deep (D.3 requires ≥3 medium+)"
     fi
     # Critiques must link to Gap IDs
-    linked=$(grep -cE 'G[0-9]' "$OUTPUT_DIR/critique-ledger.md" 2>/dev/null || echo 0)
+    linked=$(grep -cE 'G[0-9]' "$OUTPUT_DIR/critique-ledger.md" 2>/dev/null || true)
     if [ "$linked" -ge 1 ]; then
         pass "Critique-to-Gap links present ($linked)"
     else
@@ -91,8 +91,8 @@ fi
 # Evidence saturation estimate
 echo "── Saturation ──"
 if [ -f "$OUTPUT_DIR/claim-ledger.md" ] && [ -f "$OUTPUT_DIR/evidence-ledger.md" ]; then
-    core_claims=$(grep -c '| C[0-9]' "$OUTPUT_DIR/claim-ledger.md" 2>/dev/null || echo "?")
-    evidence_entries=$(grep -c '| E[0-9]' "$OUTPUT_DIR/evidence-ledger.md" 2>/dev/null || echo "?")
+    core_claims=$(grep -c '| C[0-9]' "$OUTPUT_DIR/claim-ledger.md" 2>/dev/null || true)
+    evidence_entries=$(grep -c '| E[0-9]' "$OUTPUT_DIR/evidence-ledger.md" 2>/dev/null || true)
     echo "  Core claims (approx): $core_claims"
     echo "  Evidence entries:     $evidence_entries"
 fi

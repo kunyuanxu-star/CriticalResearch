@@ -143,7 +143,7 @@ if [ "$HAS_EVIDENCE" -eq 1 ] || [ "$HAS_CRITIQUE" -eq 1 ] || [ "$HAS_GAP" -eq 1 
     if [ "$HAS_CRITIQUE" -eq 1 ]; then
         check_file_not_empty "critique-ledger.md" "Critique Ledger"
         # Severity levels
-        local sev_count=$(grep -cE '\b(fatal|high|medium|low)\b' "$OUTPUT_DIR/critique-ledger.md" 2>/dev/null || echo 0)
+        sev_count=$(grep -cE '\b(fatal|high|medium|low)\b' "$OUTPUT_DIR/critique-ledger.md" 2>/dev/null || true)
         if [ "$sev_count" -ge 3 ]; then
             pass "Critique severity levels used ($sev_count occurrences)"
         else
@@ -178,8 +178,8 @@ if [ "$HAS_EVIDENCE" -eq 1 ] || [ "$HAS_CRITIQUE" -eq 1 ] || [ "$HAS_GAP" -eq 1 
     if [ "$HAS_CLAIM" -eq 1 ] && [ "$HAS_EVIDENCE" -eq 1 ]; then
         echo ""
         echo "  ── Evidence Saturation Estimate ──"
-        local total_claims=$(grep -c '| C[0-9]' "$OUTPUT_DIR/claim-ledger.md" 2>/dev/null || echo "?")
-        local evidence_entries=$(grep -c '| E[0-9]' "$OUTPUT_DIR/evidence-ledger.md" 2>/dev/null || echo "?")
+        total_claims=$(grep -c '| C[0-9]' "$OUTPUT_DIR/claim-ledger.md" 2>/dev/null || true)
+        evidence_entries=$(grep -c '| E[0-9]' "$OUTPUT_DIR/evidence-ledger.md" 2>/dev/null || true)
         echo "  Total claims (approx): $total_claims"
         echo "  Evidence entries:       $evidence_entries"
         if [ "$evidence_entries" != "?" ] && [ "$evidence_entries" -lt "$total_claims" ] 2>/dev/null; then
@@ -253,7 +253,7 @@ if [ "$HAS_FINAL" -eq 1 ]; then
     # Logic Audit
     if grep -q 'LOGIC-GAP\|Logic Consistency\|Logic Audit' "$OUTPUT_DIR/final-report.md" 2>/dev/null; then
         pass "Logic Audit section present"
-        local logic_gaps=$(grep -c 'LOGIC-GAP' "$OUTPUT_DIR/final-report.md" 2>/dev/null || echo 0)
+        logic_gaps=$(grep -c 'LOGIC-GAP' "$OUTPUT_DIR/final-report.md" 2>/dev/null || true)
         if [ "$logic_gaps" -eq 0 ]; then
             pass "Zero LOGIC-GAP entries"
         else
@@ -266,7 +266,7 @@ if [ "$HAS_FINAL" -eq 1 ]; then
     # Story Quality Audit
     if grep -q 'STORY-GAP\|Story Quality Audit\|17.*Point\|17-Point' "$OUTPUT_DIR/final-report.md" 2>/dev/null; then
         pass "Story Quality Audit section present"
-        local story_gaps=$(grep -c 'STORY-GAP' "$OUTPUT_DIR/final-report.md" 2>/dev/null || echo 0)
+        story_gaps=$(grep -c 'STORY-GAP' "$OUTPUT_DIR/final-report.md" 2>/dev/null || true)
         if [ "$story_gaps" -eq 0 ]; then
             pass "Zero STORY-GAP entries"
         elif [ "$story_gaps" -le 3 ]; then
@@ -281,8 +281,8 @@ if [ "$HAS_FINAL" -eq 1 ]; then
     # Writing quality: check for banned terms
     echo ""
     echo "  ── Writing Quality Scan ──"
-    local banned_terms="obviously\|clearly\|fundamentally\|many systems\|industry needs"
-    local banned_count=$(grep -ci "$banned_terms" "$OUTPUT_DIR/final-report.md" 2>/dev/null || echo 0)
+    banned_terms="obviously\|clearly\|fundamentally\|many systems\|industry needs"
+    banned_count=$(grep -ci "$banned_terms" "$OUTPUT_DIR/final-report.md" 2>/dev/null || true)
     if [ "$banned_count" -eq 0 ]; then
         pass "No banned absolute terms (obviously/clearly/fundamentally/etc.)"
     else

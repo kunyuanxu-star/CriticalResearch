@@ -42,7 +42,7 @@ done
 
 # Rebuttal type must be one of the three valid types
 echo "── Rebuttal Types ──"
-local found_types=0
+found_types=0
 for rtype in "clarification" "new_evidence" "scope_redefinition"; do
     if grep -q "$rtype" "$OUTPUT_DIR/research-trace.md" 2>/dev/null; then
         pass "Rebuttal type '$rtype' used"
@@ -55,7 +55,7 @@ fi
 
 # Resolution status
 echo "── Resolution Status ──"
-local found_resolutions=0
+found_resolutions=0
 for res in "confirmed" "applied" "rejected" "pending"; do
     if grep -q "$res" "$OUTPUT_DIR/research-trace.md" 2>/dev/null; then
         found_resolutions=$((found_resolutions + 1))
