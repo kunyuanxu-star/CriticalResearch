@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# cr-validate-writing — Writing progress validation (Inv5).
+# Checks that the paper draft was modified during the round and that
+# a writing diff was recorded.
+#
+# Usage: cr-validate-writing <project_dir> <round_dir>
+#
+# Exit codes:
+#   0 — all checks passed
+#   2 — one or more failures
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+ROUND_DIR="${2:-}"
+
+if [ -z "$PROJECT_DIR" ] || [ -z "$ROUND_DIR" ]; then
+    echo "Usage: cr-validate-writing <project_dir> <round_dir>" >&2
+    exit 2
+fi
+
+PROJECT_NAME="$(basename "$PROJECT_DIR")"
+ROUND_NAME="$(basename "$ROUND_DIR")"
+echo ""
+echo "══ Writing Validation: $PROJECT_NAME / $ROUND_NAME ══"
+
+# ── Find the primary writing artifact ───────────────────────────
+
+PRIMARY_DRAFT=""
+if [ -f "$PROJECT_DIR/writing/paper-draft.md" ]; then
+    PRIMARY_DRAFT="$PROJECT_DIR/writing/paper-draft.md"
+elif [ -f "$PROJECT_DIR/writing/presentation-draft.md" ]; then
+    PRIMARY_DRAFT="$PROJECT_DIR/writing/presentation-draft.md"
+else
+    fail "No writing artifact found (paper-draft.md or presentation-draft.md)"
+    cr_exit_summary
+fi
+
+# ── Draft mtime check ───────────────────────────────────────────
+
+# Extract round start time from round.yaml.
+ROUND_START=""
+if [ -f "$ROUND_DIR/round.yaml" ]; then
+    ROUND_START=$(grep -E '^started_at:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^started_at:\s*//' | xargs || echo "")
+fi
+
+if [ -z "$ROUND_START" ]; then
+    warn "Could not determine round start time — skipping mtime comparison"
+else
+    # Convert ISO 8601 to epoch seconds for comparison (macOS compatible).
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        ROUND_EPOCH=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$ROUND_START" +%s 2>/dev/null || echo 0)
+        DRAFT_MTIME=$(stat -f %m "$PRIMARY_DRAFT" 2>/dev/null || echo 0)
+    else
+        ROUND_EPOCH=$(date -d "$ROUND_START" +%s 2>/dev/null || echo 0)
+        DRAFT_MTIME=$(stat -c %Y "$PRIMARY_DRAFT" 2>/dev/null || echo 0)
+    fi
+
+    if [ "$DRAFT_MTIME" -gt "$ROUND_EPOCH" ]; then
+        pass "Draft was modified after round start ($(basename "$PRIMARY_DRAFT"))"
+    else
+        fail "Draft not modified since round start — writing progress required (Inv5)"
+    fi
+fi
+
+# ── Writing diff check ──────────────────────────────────────────
+
+if [ -f "$ROUND_DIR/writing-diff.md" ]; then
+    pass "writing-diff.md exists"
+
+    # Check for required sections.
+    for section in "Added" "Deleted" "Weakened" "Reframed" "Still Unstable"; do
+        if grep -qi "$section" "$ROUND_DIR/writing-diff.md" 2>/dev/null; then
+            pass "  Section: $section"
+        else
+            fail "  Required section missing in writing-diff.md: $section"
+        fi
+    done
+
+    # Check that sections are not all empty.
+    CONTENT_LINES=$(grep -cE '^-\s+\S' "$ROUND_DIR/writing-diff.md" 2>/dev/null || echo 0)
+    if [ "$CONTENT_LINES" -ge 1 ]; then
+        pass "  writing-diff.md has content ($CONTENT_LINES entries)"
+    else
+        warn "  writing-diff.md sections appear empty — no actual changes recorded"
+    fi
+else
+    fail "writing-diff.md not found — writing diff required (Inv5)"
+fi
+
+cr_exit_summary

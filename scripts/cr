@@ -1,0 +1,317 @@
+#!/usr/bin/env bash
+# cr — CriticalResearch CLI dispatcher.
+# Deterministic state management for the research workflow.
+#
+# Usage: cr <command> [args...]
+#
+# Commands:
+#   start <topic>       Create a new research project and first round
+#   continue            Read active project, output next-round task prompt
+#   round <project>     Open a new round for the given project
+#   close-round <proj>  Validate and close the active round
+#   validate <project>  Run all project invariant checks
+#   status              Show workspace and active project status
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+COMMAND="${1:-}"
+shift 2>/dev/null || true
+
+usage() {
+    echo "Usage: cr <command> [args...]"
+    echo ""
+    echo "Commands:"
+    echo "  start <topic>         Create a new research project and first round"
+    echo "  continue              Read active project, output next-round task prompt"
+    echo "  round <project>       Open a new round for the given project"
+    echo "  close-round <project> Validate and close the active round"
+    echo "  validate <project>    Run all project invariant checks"
+    echo "  status                Show workspace and active project status"
+    echo ""
+    echo "Run 'cr' from within a Research workspace directory."
+    exit 2
+}
+
+# Determine workspace root.
+WORKSPACE_ROOT="$(cr_workspace_root)"
+
+case "$COMMAND" in
+    start)
+        TOPIC="${1:-}"
+        if [ -z "$TOPIC" ]; then
+            echo "Usage: cr start <topic>" >&2
+            exit 2
+        fi
+
+        PROJECT_DIR="$WORKSPACE_ROOT/$TOPIC"
+        if [ -d "$PROJECT_DIR" ]; then
+            echo "Error: project directory already exists: $PROJECT_DIR" >&2
+            exit 2
+        fi
+
+        echo "Creating research project: $TOPIC"
+        mkdir -p "$PROJECT_DIR"/{state,literature,writing,rounds}
+
+        # Create project.yaml.
+        NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        cat > "$PROJECT_DIR/project.yaml" << YAML
+project_id: $TOPIC
+target_standard: ""
+created_at: $NOW
+description: "Research project: $TOPIC"
+schema_version: "1.0.0"
+YAML
+
+        # Create project-state.json.
+        cat > "$PROJECT_DIR/state/project-state.json" << JSON
+{
+  "project_id": "$TOPIC",
+  "status": "active",
+  "active_round": 1,
+  "total_rounds": 1,
+  "evidence_saturation": 0.0,
+  "open_gaps": 0,
+  "last_updated": "$NOW",
+  "schema_version": "1.0.0"
+}
+JSON
+
+        # Create initial paper draft.
+        cat > "$PROJECT_DIR/writing/paper-draft.md" << MD
+# $TOPIC — Research Paper Draft
+
+## Abstract
+
+
+
+## Introduction
+
+
+
+## Related Work
+
+
+
+## Approach
+
+
+
+## Evaluation
+
+
+
+## Conclusion
+
+
+MD
+
+        # Create round-001.
+        "$SCRIPT_DIR/cr-new-round" "$PROJECT_DIR" "setup"
+
+        # Set as active project.
+        mkdir -p "$WORKSPACE_ROOT/_cr"
+        echo "$TOPIC" > "$WORKSPACE_ROOT/_cr/active-project"
+
+        echo ""
+        echo "Project '$TOPIC' created at $PROJECT_DIR"
+        echo "Run 'cr status' to see current state."
+        ;;
+
+    continue)
+        ACTIVE_PROJECT_FILE="$WORKSPACE_ROOT/_cr/active-project"
+        if [ ! -f "$ACTIVE_PROJECT_FILE" ]; then
+            echo "No active project. Run 'cr start <topic>' first." >&2
+            exit 1
+        fi
+
+        ACTIVE_PROJECT=$(cat "$ACTIVE_PROJECT_FILE")
+        PROJECT_DIR="$WORKSPACE_ROOT/$ACTIVE_PROJECT"
+
+        if [ ! -d "$PROJECT_DIR" ]; then
+            echo "Active project directory not found: $PROJECT_DIR" >&2
+            exit 1
+        fi
+
+        echo "Active project: $ACTIVE_PROJECT"
+
+        # Read project state.
+        if [ -f "$PROJECT_DIR/state/project-state.json" ]; then
+            echo "Status: $(jq -r '.status' "$PROJECT_DIR/state/project-state.json")"
+            echo "Total rounds: $(jq -r '.total_rounds' "$PROJECT_DIR/state/project-state.json")"
+            echo "Open gaps: $(jq -r '.open_gaps' "$PROJECT_DIR/state/project-state.json")"
+            ACTIVE_RND=$(jq -r '.active_round // "none"' "$PROJECT_DIR/state/project-state.json")
+            echo "Active round: $ACTIVE_RND"
+        fi
+
+        echo ""
+        echo "── Next Round Task Prompt ──"
+        echo "Continue research on '$ACTIVE_PROJECT'."
+        echo "1. Review open gaps and select the highest-priority gap."
+        echo "2. Run 'cr round $ACTIVE_PROJECT' to open a new round."
+        echo "3. Execute research: search for evidence, critique claims, update writing."
+        echo "4. Run 'cr close-round $ACTIVE_PROJECT' when done."
+        ;;
+
+    round)
+        PROJECT="${1:-}"
+        if [ -z "$PROJECT" ]; then
+            echo "Usage: cr round <project>" >&2
+            exit 2
+        fi
+
+        PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
+        if [ ! -d "$PROJECT_DIR" ]; then
+            echo "Project directory not found: $PROJECT_DIR" >&2
+            exit 1
+        fi
+
+        # Validate project manifest first.
+        echo "Validating project manifest..."
+        "$SCRIPT_DIR/cr-validate-project" "$PROJECT_DIR" || {
+            echo "Project validation failed. Fix issues before starting a new round." >&2
+            exit 1
+        }
+
+        # Determine round type from current state.
+        TOTAL_ROUNDS=$(jq -r '.total_rounds // 1' "$PROJECT_DIR/state/project-state.json")
+        if [ "$TOTAL_ROUNDS" -eq 0 ]; then
+            ROUND_TYPE="setup"
+        else
+            ROUND_TYPE="discovery"
+        fi
+
+        "$SCRIPT_DIR/cr-new-round" "$PROJECT_DIR" "$ROUND_TYPE"
+        echo ""
+        echo "Round ready. Begin research execution."
+        ;;
+
+    close-round)
+        PROJECT="${1:-}"
+        if [ -z "$PROJECT" ]; then
+            echo "Usage: cr close-round <project>" >&2
+            exit 2
+        fi
+
+        PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
+        if [ ! -d "$PROJECT_DIR" ]; then
+            echo "Project directory not found: $PROJECT_DIR" >&2
+            exit 1
+        fi
+
+        ACTIVE_RND=$(jq -r '.active_round // 0' "$PROJECT_DIR/state/project-state.json")
+        if [ "$ACTIVE_RND" = "null" ] || [ "$ACTIVE_RND" -eq 0 ]; then
+            echo "No active round to close." >&2
+            exit 1
+        fi
+
+        ROUND_NUM=$(printf "%03d" "$ACTIVE_RND")
+        ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
+
+        echo "Closing round $ACTIVE_RND for project '$PROJECT'..."
+        echo ""
+
+        # Run all validations.
+        ALL_PASSED=true
+
+        "$SCRIPT_DIR/cr-validate-round" "$ROUND_DIR" || ALL_PASSED=false
+        "$SCRIPT_DIR/cr-validate-writing" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PASSED=false
+        "$SCRIPT_DIR/cr-validate-knowledge" "$ROUND_DIR" || ALL_PASSED=false
+
+        if [ "$ALL_PASSED" = false ]; then
+            echo ""
+            echo "Round cannot close. Fix the failures listed above and re-run 'cr close-round $PROJECT'."
+            exit 1
+        fi
+
+        # Mark round complete.
+        NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        if [ -f "$ROUND_DIR/round.yaml" ]; then
+            sed -i '' "s/^status:.*/status: complete/" "$ROUND_DIR/round.yaml" 2>/dev/null || \
+                sed -i "s/^status:.*/status: complete/" "$ROUND_DIR/round.yaml"
+            echo "completed_at: $NOW" >> "$ROUND_DIR/round.yaml"
+        fi
+
+        # Update project state.
+        TMP_STATE="$PROJECT_DIR/state/project-state.json.tmp"
+        jq --arg now "$NOW" \
+            '.active_round = null | .last_updated = $now' \
+            "$PROJECT_DIR/state/project-state.json" > "$TMP_STATE" && \
+            mv "$TMP_STATE" "$PROJECT_DIR/state/project-state.json"
+
+        echo ""
+        echo "Round $ACTIVE_RND closed successfully."
+        ;;
+
+    validate)
+        PROJECT="${1:-}"
+        if [ -z "$PROJECT" ]; then
+            echo "Usage: cr validate <project>" >&2
+            exit 2
+        fi
+
+        PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
+        "$SCRIPT_DIR/cr-validate-project" "$PROJECT_DIR"
+
+        # Also validate current round if active.
+        ACTIVE_RND=$(jq -r '.active_round // 0' "$PROJECT_DIR/state/project-state.json" 2>/dev/null || echo 0)
+        if [ "$ACTIVE_RND" != "null" ] && [ "$ACTIVE_RND" -gt 0 ]; then
+            ROUND_NUM=$(printf "%03d" "$ACTIVE_RND")
+            ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
+            if [ -d "$ROUND_DIR" ]; then
+                echo ""
+                "$SCRIPT_DIR/cr-validate-round" "$ROUND_DIR"
+                "$SCRIPT_DIR/cr-validate-writing" "$PROJECT_DIR" "$ROUND_DIR"
+                "$SCRIPT_DIR/cr-validate-knowledge" "$ROUND_DIR"
+            fi
+        fi
+        ;;
+
+    status)
+        echo "Workspace: $WORKSPACE_ROOT"
+        echo ""
+
+        if [ -d "$WORKSPACE_ROOT/_cr" ]; then
+            if [ -f "$WORKSPACE_ROOT/_cr/active-project" ]; then
+                ACTIVE=$(cat "$WORKSPACE_ROOT/_cr/active-project")
+                echo "Active project: $ACTIVE"
+            fi
+        fi
+
+        echo ""
+
+        # List all projects.
+        HAS_PROJECTS=false
+        for proj_dir in "$WORKSPACE_ROOT"/*/; do
+            [ ! -d "$proj_dir" ] && continue
+            PROJ_NAME=$(basename "$proj_dir")
+            case "$PROJ_NAME" in
+                _cr|.*|_*) continue ;;
+            esac
+            HAS_PROJECTS=true
+
+            if [ -f "$proj_dir/project.yaml" ]; then
+                PROJ_STATUS="?"
+                if [ -f "$proj_dir/state/project-state.json" ]; then
+                    PROJ_STATUS=$(jq -r '.status // "?"' "$proj_dir/state/project-state.json")
+                    PROJ_ROUNDS=$(jq -r '.total_rounds // 0' "$proj_dir/state/project-state.json")
+                    PROJ_ACTIVE=$(jq -r '.active_round // "none"' "$proj_dir/state/project-state.json")
+                    echo "  $PROJ_NAME — status: $PROJ_STATUS, rounds: $PROJ_ROUNDS, active round: $PROJ_ACTIVE"
+                else
+                    echo "  $PROJ_NAME — status: $PROJ_STATUS (no state file)"
+                fi
+            fi
+        done
+
+        if [ "$HAS_PROJECTS" = false ]; then
+            echo "  No research projects found."
+            echo "  Run 'cr start <topic>' to create one."
+        fi
+        ;;
+
+    *)
+        usage
+        ;;
+esac

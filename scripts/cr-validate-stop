@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# cr-validate-stop — Stop gate validation (Inv7).
+# Checks whether the session is allowed to stop based on round completeness
+# and user satisfaction state.
+#
+# Called by the Stop hook. Returns JSON for hook decision.
+#
+# Usage: cr-validate-stop <project_dir> [--force]
+#   --force: user explicitly requested stop (override incomplete round)
+#
+# Output (on stdout): JSON for hook decision
+#   {"decision":"allow"} or {"decision":"block","reason":"..."}
+#
+# Exit codes:
+#   0 — allow stop
+#   1 — block stop
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+FORCE_STOP=false
+[ "${2:-}" = "--force" ] && FORCE_STOP=true
+
+if [ -z "$PROJECT_DIR" ]; then
+    echo '{"decision":"allow"}'
+    exit 0
+fi
+
+# ── No active project → allow stop ──────────────────────────────
+
+if [ ! -d "$PROJECT_DIR" ]; then
+    echo '{"decision":"allow"}'
+    exit 0
+fi
+
+# ── No project state → allow stop ───────────────────────────────
+
+STATE_FILE="$PROJECT_DIR/state/project-state.json"
+if [ ! -f "$STATE_FILE" ]; then
+    echo '{"decision":"allow"}'
+    exit 0
+fi
+
+# ── No active round → allow stop ───────────────────────────────
+
+ACTIVE_ROUND=$(jq -r '.active_round // empty' "$STATE_FILE" 2>/dev/null || echo "")
+if [ -z "$ACTIVE_ROUND" ] || [ "$ACTIVE_ROUND" = "null" ]; then
+    echo '{"decision":"allow"}'
+    exit 0
+fi
+
+ROUND_NUM=$(printf "%03d" "$ACTIVE_ROUND")
+ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
+
+# ── No round directory → allow stop ─────────────────────────────
+
+if [ ! -d "$ROUND_DIR" ]; then
+    echo '{"decision":"allow"}'
+    exit 0
+fi
+
+# ── Check round status ──────────────────────────────────────────
+
+ROUND_STATUS=""
+if [ -f "$ROUND_DIR/round.yaml" ]; then
+    ROUND_STATUS=$(grep -E '^status:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^status:\s*//' | xargs || echo "")
+fi
+
+# Round already complete → allow stop.
+if [ "$ROUND_STATUS" = "complete" ]; then
+    echo '{"decision":"allow"}'
+    exit 0
+fi
+
+# ── Check satisfaction state ────────────────────────────────────
+
+SATISFACTION_FILE="$PROJECT_DIR/state/satisfaction.json"
+if [ -f "$SATISFACTION_FILE" ]; then
+    SAT_ROUND=$(jq -r '.round_id // empty' "$SATISFACTION_FILE" 2>/dev/null || echo "")
+    SAT_INTENT=$(jq -r '.user_intent // empty' "$SATISFACTION_FILE" 2>/dev/null || echo "")
+
+    if [ "$SAT_ROUND" = "$ACTIVE_ROUND" ] && [ "$SAT_INTENT" = "satisfied" ]; then
+        # Check content hash to verify state hasn't changed since satisfaction.
+        SAT_HASH=$(jq -r '.content_hash // empty' "$SATISFACTION_FILE" 2>/dev/null || echo "")
+
+        # Compute current hash of round artifacts.
+        if command -v shasum >/dev/null 2>&1; then
+            CURRENT_HASH=$(find "$ROUND_DIR" -type f -name '*.md' -exec cat {} \; 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
+        elif command -v sha256sum >/dev/null 2>&1; then
+            CURRENT_HASH=$(find "$ROUND_DIR" -type f -name '*.md' -exec cat {} \; 2>/dev/null | sha256sum | cut -d' ' -f1)
+        else
+            CURRENT_HASH="unavailable"
+        fi
+
+        if [ "$SAT_HASH" = "$CURRENT_HASH" ]; then
+            echo '{"decision":"allow"}'
+            exit 0
+        fi
+        # Hash mismatch — state changed, satisfaction invalidated.
+    fi
+fi
+
+# ── Force stop (user explicitly requested) ──────────────────────
+
+if [ "$FORCE_STOP" = true ]; then
+    cat << EOF
+{"decision":"allow","reason":"User explicitly requested stop. Active round $ROUND_NUM (status: ${ROUND_STATUS:-unknown}) not complete. Session summary required."}
+EOF
+    exit 0
+fi
+
+# ── Block: round incomplete ─────────────────────────────────────
+
+# Build a specific reason listing what's missing.
+MISSING=""
+for req_file in "report.md" "sources.md" "critique.md" "writing-diff.md" "knowledge-delta.md"; do
+    if [ ! -f "$ROUND_DIR/$req_file" ]; then
+        MISSING="$MISSING $req_file"
+    fi
+done
+
+REASON="Round $ROUND_NUM is incomplete (status: ${ROUND_STATUS:-unknown})."
+if [ -n "$MISSING" ]; then
+    REASON="$REASON Missing:$MISSING."
+fi
+REASON="$REASON Complete required outputs or explicitly request stop to override."
+
+cat << EOF
+{"decision":"block","reason":"$REASON"}
+EOF
+exit 1

@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+# cr-new-round — Create a new research round (Inv2).
+# Creates the round directory with all required file templates.
+#
+# Usage: cr-new-round <project_dir> [round_type]
+#   round_type: discovery (default), validation, re_search, rebuttal, writing, repair, finalization
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+ROUND_TYPE="${2:-discovery}"
+
+if [ -z "$PROJECT_DIR" ]; then
+    echo "Usage: cr-new-round <project_dir> [round_type]" >&2
+    echo "  round_type: discovery, validation, re_search, rebuttal, writing, repair, finalization, setup" >&2
+    exit 2
+fi
+
+if [ ! -d "$PROJECT_DIR" ]; then
+    echo "Error: project directory not found: $PROJECT_DIR" >&2
+    exit 2
+fi
+
+# Validate round type.
+VALID_TYPES="discovery validation re_search rebuttal writing repair finalization setup"
+if ! echo "$VALID_TYPES" | grep -qw "$ROUND_TYPE"; then
+    echo "Error: invalid round_type '$ROUND_TYPE'. Valid: $VALID_TYPES" >&2
+    exit 2
+fi
+
+# Determine next round number.
+ROUNDS_DIR="$PROJECT_DIR/rounds"
+mkdir -p "$ROUNDS_DIR"
+
+NEXT_ROUND=1
+if [ -d "$ROUNDS_DIR" ]; then
+    EXISTING=$(find "$ROUNDS_DIR" -maxdepth 1 -type d -name 'round-*' 2>/dev/null | wc -l | tr -d ' ')
+    NEXT_ROUND=$((EXISTING + 1))
+fi
+
+ROUND_NUM=$(printf "%03d" "$NEXT_ROUND")
+ROUND_DIR="$ROUNDS_DIR/round-$ROUND_NUM"
+
+mkdir -p "$ROUND_DIR"
+
+# Extract project_id from project.yaml if available.
+PROJECT_ID=""
+if [ -f "$PROJECT_DIR/project.yaml" ]; then
+    PROJECT_ID=$(grep -E '^project_id:' "$PROJECT_DIR/project.yaml" 2>/dev/null | sed 's/^project_id:\s*//' | tr -d '"' | xargs || echo "unknown")
+fi
+[ -z "$PROJECT_ID" ] && PROJECT_ID="$(basename "$PROJECT_DIR")"
+
+# Define required outputs based on round type.
+case "$ROUND_TYPE" in
+    setup)
+        REQUIRED_OUTPUTS='["report"]' ;;
+    repair)
+        REQUIRED_OUTPUTS='["report","knowledge_delta"]' ;;
+    writing)
+        REQUIRED_OUTPUTS='["writing_diff"]' ;;
+    finalization)
+        REQUIRED_OUTPUTS='["report","writing_diff","knowledge_delta"]' ;;
+    *)
+        REQUIRED_OUTPUTS='["report","evidence_update","critique_update","writing_diff","knowledge_delta"]' ;;
+esac
+
+NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Write round.yaml.
+cat > "$ROUND_DIR/round.yaml" << YAML
+round_id: $NEXT_ROUND
+project_id: $PROJECT_ID
+round_type: $ROUND_TYPE
+status: open
+started_at: $NOW
+completed_at: null
+target_gap: null
+required_outputs: $REQUIRED_OUTPUTS
+notes: ""
+schema_version: "1.0.0"
+YAML
+
+# Write empty report template.
+cat > "$ROUND_DIR/report.md" << MD
+# Round $NEXT_ROUND Report
+
+## Objective
+
+
+
+## Key Findings
+
+
+
+## Decisions Made
+
+
+
+## Next Steps
+
+
+MD
+
+# Write empty sources template.
+cat > "$ROUND_DIR/sources.md" << MD
+# Round $NEXT_ROUND — Sources
+
+<!-- Each source entry must include: title, source_type, why_relevant, supports, weakens, does_not_support, understanding_delta -->
+
+MD
+
+# Write empty critique template.
+cat > "$ROUND_DIR/critique.md" << MD
+# Round $NEXT_ROUND — Critique
+
+<!-- Each critique entry must include: critique_id, target_claim, severity, attack_type, attack_statement, why_damaging, required_action, status -->
+
+MD
+
+# Write empty writing diff template.
+cat > "$ROUND_DIR/writing-diff.md" << MD
+# Round $NEXT_ROUND — Writing Diff
+
+## Added
+
+
+## Deleted
+
+
+## Weakened
+
+
+## Reframed
+
+
+## Still Unstable
+
+
+MD
+
+# Write empty knowledge delta template.
+cat > "$ROUND_DIR/knowledge-delta.md" << MD
+# Round $NEXT_ROUND — Knowledge Delta
+
+## Literature Knowledge Updated
+<!-- Yes / No -->
+
+
+## Thinking Knowledge Updated
+<!-- Yes / No -->
+
+
+## Candidate Rules Generated
+<!-- List candidate reusable rules, or "None" -->
+
+
+## Project-Local Insights Only
+<!-- Yes / No -->
+
+
+## If No Updates
+<!-- Explain why no reusable knowledge was generated this round -->
+
+
+MD
+
+# Update project state.
+if [ -f "$PROJECT_DIR/state/project-state.json" ]; then
+    STATE_DIR="$PROJECT_DIR/state"
+    TMP_STATE="$STATE_DIR/project-state.json.tmp"
+    jq --arg round "$NEXT_ROUND" --arg now "$NOW" \
+        '.active_round = ($round | tonumber) | .total_rounds = ($round | tonumber) | .last_updated = $now' \
+        "$PROJECT_DIR/state/project-state.json" > "$TMP_STATE" 2>/dev/null && \
+        mv "$TMP_STATE" "$PROJECT_DIR/state/project-state.json" || true
+fi
+
+echo "Round $ROUND_NUM created: $ROUND_DIR"
+echo "  Type: $ROUND_TYPE"
+echo "  Required outputs: $REQUIRED_OUTPUTS"

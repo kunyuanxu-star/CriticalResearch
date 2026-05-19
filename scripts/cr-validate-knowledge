@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# cr-validate-knowledge — Knowledge distillation validation (Inv6).
+# Checks that every round records what was learned.
+#
+# Usage: cr-validate-knowledge <round_dir>
+#
+# Exit codes:
+#   0 — all checks passed
+#   2 — one or more failures
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+ROUND_DIR="${1:-}"
+
+if [ -z "$ROUND_DIR" ]; then
+    echo "Usage: cr-validate-knowledge <round_dir>" >&2
+    exit 2
+fi
+
+ROUND_NAME="$(basename "$ROUND_DIR")"
+echo ""
+echo "══ Knowledge Validation: $ROUND_NAME ══"
+
+# ── knowledge-delta.md existence ────────────────────────────────
+
+if [ ! -f "$ROUND_DIR/knowledge-delta.md" ]; then
+    fail "knowledge-delta.md not found — knowledge delta required (Inv6)"
+    cr_exit_summary
+fi
+
+pass "knowledge-delta.md exists"
+
+# ── Required content checks ─────────────────────────────────────
+
+HAS_LITERATURE=$(grep -cE '## Literature Knowledge Updated' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
+HAS_THINKING=$(grep -cE '## Thinking Knowledge Updated' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
+HAS_CANDIDATE=$(grep -cE '## Candidate Rules Generated' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
+HAS_LOCAL=$(grep -cE '## Project-Local Insights Only' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
+HAS_NO_UPDATE=$(grep -cE '## If No Updates' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
+
+[ "$HAS_LITERATURE" -ge 1 ] && pass "  Literature knowledge section" || fail "  Literature knowledge section missing"
+[ "$HAS_THINKING" -ge 1 ] && pass "  Thinking knowledge section" || fail "  Thinking knowledge section missing"
+[ "$HAS_CANDIDATE" -ge 1 ] && pass "  Candidate rules section" || warn "  Candidate rules section missing"
+[ "$HAS_LOCAL" -ge 1 ] && pass "  Project-local insights section" || warn "  Project-local insights section missing"
+[ "$HAS_NO_UPDATE" -ge 1 ] && pass "  No-update explanation section" || warn "  No-update explanation section missing"
+
+# ── Content vs template check ───────────────────────────────────
+
+# Check that the delta has meaningful content beyond the template.
+LINE_COUNT=$(wc -l < "$ROUND_DIR/knowledge-delta.md" 2>/dev/null | tr -d ' ')
+HAS_YES_NO=$(grep -cE 'Yes|No' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
+HAS_BULLET=$(grep -cE '^-\s+\S' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
+
+if [ "$LINE_COUNT" -gt 20 ]; then
+    pass "knowledge-delta.md has substantial content ($LINE_COUNT lines)"
+elif [ "$HAS_YES_NO" -ge 2 ] || [ "$HAS_BULLET" -ge 1 ]; then
+    pass "knowledge-delta.md has filled-in responses"
+else
+    fail "knowledge-delta.md appears to be empty template — must record learning or explain why none occurred"
+fi
+
+cr_exit_summary

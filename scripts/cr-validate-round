@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# cr-validate-round — Round completeness validation (Inv2, Inv4).
+# Checks that a round directory has all required artifacts for its type.
+#
+# Usage: cr-validate-round <round_dir> [--check critique]
+#
+# Exit codes:
+#   0 — all checks passed
+#   2 — one or more failures
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+ROUND_DIR="${1:-}"
+CHECK_CRITIQUE=false
+if [ "${2:-}" = "--check" ] && [ "${3:-}" = "critique" ]; then
+    CHECK_CRITIQUE=true
+fi
+
+if [ -z "$ROUND_DIR" ]; then
+    echo "Usage: cr-validate-round <round_dir> [--check critique]" >&2
+    exit 2
+fi
+
+if [ ! -d "$ROUND_DIR" ]; then
+    fail "Round directory not found: $ROUND_DIR"
+    cr_exit_summary
+fi
+
+ROUND_NAME="$(basename "$ROUND_DIR")"
+echo ""
+echo "══ Round Validation: $ROUND_NAME ══"
+
+# ── round.yaml existence ────────────────────────────────────────
+
+if [ -f "$ROUND_DIR/round.yaml" ]; then
+    pass "round.yaml exists"
+
+    # Extract round status.
+    ROUND_STATUS=$(grep -E '^status:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^status:\s*//' | xargs || echo "")
+    if [ "$ROUND_STATUS" = "open" ] || [ "$ROUND_STATUS" = "in_progress" ] || [ "$ROUND_STATUS" = "complete" ]; then
+        pass "  round status: $ROUND_STATUS"
+    else
+        fail "  round.yaml has invalid status: '$ROUND_STATUS'"
+    fi
+
+    # Schema validation.
+    SCHEMA_PATH="$(cr_schema_path "round.schema.json")"
+    if [ -n "$SCHEMA_PATH" ]; then
+        cr_validate_schema "$ROUND_DIR/round.yaml" "$SCHEMA_PATH" "yaml"
+    fi
+else
+    fail "round.yaml not found — every round must have round state"
+fi
+
+# ── Required output files ───────────────────────────────────────
+
+REQUIRED_FILES=("report.md" "sources.md" "critique.md" "writing-diff.md" "knowledge-delta.md")
+for req_file in "${REQUIRED_FILES[@]}"; do
+    if [ -f "$ROUND_DIR/$req_file" ]; then
+        # Check non-empty (more than just template headers).
+        LINE_COUNT=$(wc -l < "$ROUND_DIR/$req_file" 2>/dev/null | tr -d ' ')
+        if [ "$LINE_COUNT" -gt 4 ]; then
+            pass "$req_file exists ($LINE_COUNT lines)"
+        else
+            warn "$req_file exists but appears to be empty template ($LINE_COUNT lines)"
+        fi
+    else
+        fail "$req_file not found"
+    fi
+done
+
+# ── Evidence check (Inv3) ───────────────────────────────────────
+
+echo ""
+echo "── Evidence (Inv3) ──"
+
+if [ -f "$ROUND_DIR/sources.md" ]; then
+    HAS_EVIDENCE=$(grep -cE '^-\s+(title|source_type):' "$ROUND_DIR/sources.md" 2>/dev/null || echo 0)
+    HAS_SEARCH_FAILURE=$(grep -cE 'search_failure' "$ROUND_DIR/sources.md" 2>/dev/null || echo 0)
+
+    if [ "$HAS_EVIDENCE" -ge 1 ]; then
+        pass "Evidence entry found in sources.md"
+
+        # Check required evidence fields.
+        for field in "title:" "source_type:" "why_relevant:" "supports:" "weakens:" "does_not_support:" "understanding_delta:"; do
+            if grep -q "$field" "$ROUND_DIR/sources.md" 2>/dev/null; then
+                pass "  Field: $field"
+            else
+                fail "  Required evidence field missing: $field"
+            fi
+        done
+    elif [ "$HAS_SEARCH_FAILURE" -ge 1 ]; then
+        pass "Search failure recorded in sources.md"
+
+        for field in "query:" "searched_scope:" "reason_not_found:" "next_search_plan:"; do
+            if grep -q "$field" "$ROUND_DIR/sources.md" 2>/dev/null; then
+                pass "  Search failure field: $field"
+            else
+                fail "  Required search_failure field missing: $field"
+            fi
+        done
+    else
+        fail "No evidence entry or search_failure recorded in sources.md"
+    fi
+fi
+
+# ── Critique check (Inv4) ───────────────────────────────────────
+
+echo ""
+echo "── Critique (Inv4) ──"
+
+if [ -f "$ROUND_DIR/critique.md" ]; then
+    HAS_CRITIQUE=$(grep -cE 'critique_id:|target_claim:|severity:' "$ROUND_DIR/critique.md" 2>/dev/null || echo 0)
+    HAS_FATAL_HIGH=$(grep -cE '\b(fatal|high)\b' "$ROUND_DIR/critique.md" 2>/dev/null || echo 0)
+    HAS_MEDIUM=$(grep -cE '\b(medium)\b' "$ROUND_DIR/critique.md" 2>/dev/null || echo 0)
+    ALL_LOW=$(grep -cE '\b(low)\b' "$ROUND_DIR/critique.md" 2>/dev/null || echo 0)
+    HAS_EXEMPTION=$(grep -cE 'critique.*(exempt|not applicable|no claims|setup round)' "$ROUND_DIR/critique.md" 2>/dev/null || echo 0)
+
+    if [ "$HAS_CRITIQUE" -ge 1 ]; then
+        pass "Critique entries found"
+
+        # Check required critique fields.
+        for field in "critique_id:" "target_claim:" "severity:" "attack_type:" "attack_statement:" "why_damaging:" "required_action:" "status:"; do
+            if grep -q "$field" "$ROUND_DIR/critique.md" 2>/dev/null; then
+                pass "  Field: $field"
+            else
+                warn "  Critique field may be missing: $field"
+            fi
+        done
+
+        # Severity check: at least one medium+ critique.
+        if [ "$HAS_FATAL_HIGH" -ge 1 ] || [ "$HAS_MEDIUM" -ge 1 ]; then
+            pass "At least one critique with severity >= medium"
+        elif [ "$HAS_EXEMPTION" -ge 1 ]; then
+            pass "Critique exemption recorded (e.g., setup round with no claims)"
+        else
+            if [ "$ALL_LOW" -ge 1 ]; then
+                fail "All critiques are severity=low — at least one medium+ required unless round type exempts critique"
+            else
+                fail "No critiques with severity >= medium and no exemption reason recorded"
+            fi
+        fi
+    elif [ "$HAS_EXEMPTION" -ge 1 ]; then
+        pass "Critique exemption recorded (e.g., setup or repair round)"
+    else
+        fail "No critique entries found in critique.md"
+    fi
+fi
+
+cr_exit_summary

@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# cr-guard-path — PreToolUse path guard (Inv0).
+# Checks whether a proposed write target is allowed.
+# Called by the PreToolUse hook before Bash/Edit/Write/MultiEdit operations.
+#
+# Usage: cr-guard-path <tool_name> <tool_input_json>
+#   tool_name: Bash, Edit, Write, or MultiEdit
+#   tool_input_json: the tool's input as JSON string
+#
+# Exit codes:
+#   0 — path is allowed
+#   1 — path is blocked (outputs JSON for hook decision:block)
+#   2 — usage error
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+# Patterns that identify skill source files (must not appear in research projects).
+SKILL_SOURCE_PATTERNS=(
+    "SKILL.md"
+    "/workflow/"
+    "/roles/"
+    "/scripts/"
+    "/schemas/"
+    "/hooks/"
+)
+
+# Allowed directories within a research project.
+ALLOWED_RESEARCH_DIRS=(
+    "/literature/"
+    "/writing/"
+    "/rounds/"
+    "/state/"
+    "project.yaml"
+)
+
+TOOL_NAME="${1:-}"
+TOOL_INPUT="${2:-}"
+
+if [ -z "$TOOL_NAME" ]; then
+    echo '{"decision":"block","reason":"cr-guard-path: tool name required"}' >&2
+    exit 2
+fi
+
+# Extract file paths from tool input.
+# This is a best-effort extraction; it handles the common patterns.
+extract_paths() {
+    local input="$1"
+    # Try to extract "file_path" or "command" from JSON input.
+    echo "$input" | grep -oE '"(file_path|command)":\s*"[^"]*"' 2>/dev/null | \
+        sed 's/.*": "//' | sed 's/"$//' || true
+}
+
+# Check if a path matches any prohibited pattern for research projects.
+is_skill_source_path() {
+    local path="$1"
+    for pattern in "${SKILL_SOURCE_PATTERNS[@]}"; do
+        case "$path" in
+            *"$pattern"*) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+# Check if a path targets a research project directory.
+is_research_project_path() {
+    local path="$1"
+    case "$path" in
+        */research-[0-9]*/*|*/research-[0-9]*)
+            return 0 ;;
+        *)
+            return 1 ;;
+    esac
+}
+
+PATHS=$(extract_paths "$TOOL_INPUT")
+
+if [ -z "$PATHS" ]; then
+    # Can't extract paths — allow (false negative is safer than false positive
+    # for a guard that can't fully parse input).
+    exit 0
+fi
+
+BLOCKED=""
+while IFS= read -r file_path; do
+    [ -z "$file_path" ] && continue
+
+    # Only guard research project directories.
+    if ! is_research_project_path "$file_path"; then
+        continue
+    fi
+
+    # Block skill source files in research projects.
+    if is_skill_source_path "$file_path"; then
+        BLOCKED="$file_path"
+        break
+    fi
+
+    # Reject paths with parent directory traversal in research projects.
+    case "$file_path" in
+        *".."*)
+            BLOCKED="$file_path"
+            break
+            ;;
+    esac
+done <<< "$PATHS"
+
+if [ -n "$BLOCKED" ]; then
+    echo "{\"decision\":\"block\",\"reason\":\"cr-guard-path: write to prohibited path blocked: $BLOCKED\"}" >&2
+    exit 1
+fi
+
+exit 0

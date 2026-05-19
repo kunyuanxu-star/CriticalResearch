@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "https://critical-research/schemas/project.schema.json",
+  "title": "Research Project Manifest",
+  "description": "Schema for project.yaml — the manifest file that must exist before research rounds can begin.",
+  "type": "object",
+  "required": ["project_id", "target_standard", "created_at", "schema_version"],
+  "properties": {
+    "project_id": {
+      "type": "string",
+      "description": "Unique project identifier (e.g., 'framevm', 'sysabi'). Must be unique within the workspace.",
+      "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+      "minLength": 2,
+      "maxLength": 64
+    },
+    "target_standard": {
+      "type": "string",
+      "description": "The target venue, standard, or benchmark the research aims to meet.",
+      "minLength": 3
+    },
+    "created_at": {
+      "type": "string",
+      "description": "ISO 8601 timestamp of project creation.",
+      "format": "date-time"
+    },
+    "description": {
+      "type": "string",
+      "description": "Brief research project description.",
+      "minLength": 10
+    },
+    "cs_area": {
+      "type": "string",
+      "description": "Computer science area: systems, networking, security, database, PL/compiler, architecture, software engineering, AI infrastructure, distributed systems, HCI/CSCW.",
+      "enum": ["systems", "networking", "security", "database", "PL/compiler", "architecture", "software_engineering", "AI_infrastructure", "distributed_systems", "HCI/CSCW"]
+    },
+    "repository": {
+      "type": "string",
+      "description": "Optional repository URL for the project."
+    },
+    "schema_version": {
+      "type": "string",
+      "description": "Semantic version of this schema. Used by migration tooling to determine upgrade paths.",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    }
+  },
+  "additionalProperties": true
+}

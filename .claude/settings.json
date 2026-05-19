@@ -1,6 +1,17 @@
 {
-  "description": "critical-cs-research checkpoint hooks — validates artifacts at each workflow stage",
+  "description": "critical-cs-research deterministic enforcement hooks — validates artifacts at each workflow stage",
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR}/scripts/cr-guard-path\" \"${CLAUDE_TOOL_NAME}\" \"${CLAUDE_TOOL_INPUT}\""
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
@@ -17,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR}/hooks/check-all.sh\""
+            "command": "\"${CLAUDE_PROJECT_DIR}/scripts/cr-validate-stop\" \"${CLAUDE_PROJECT_DIR}\""
           }
         ]
       }

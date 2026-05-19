@@ -150,7 +150,7 @@ if [ "$HAS_EVIDENCE" -eq 1 ] || [ "$HAS_CRITIQUE" -eq 1 ] || [ "$HAS_GAP" -eq 1 
             warn "Few critique severity levels found (<3)"
         fi
         # Check for at least one fatal or high
-        if grep -qE '\bfatal\b.*\|.*\bhigh\b' "$OUTPUT_DIR/critique-ledger.md" 2>/dev/null; then
+        if grep -qE '\b(fatal|high)\b' "$OUTPUT_DIR/critique-ledger.md" 2>/dev/null; then
             pass "At least one fatal or high severity critique"
         else
             warn "No fatal/high critiques found — critique may be insufficient"

@@ -79,7 +79,7 @@ fi
 echo ""
 echo "── Logic Audit (§3.6) ──"
 
-local logic_gaps=$(grep -c '\[LOGIC-GAP' "$OUTPUT_DIR/final-report.md" 2>/dev/null || echo 0)
+logic_gaps=$(grep -c '\[LOGIC-GAP' "$OUTPUT_DIR/final-report.md" 2>/dev/null || echo 0)
 if [ "$logic_gaps" -eq 0 ]; then
     pass "Zero LOGIC-GAP entries"
 else
@@ -87,7 +87,7 @@ else
 fi
 
 # Banned terms
-local banned=$(grep -ciE '\bobviously\b|\bclearly\b.*\bfundamentally\b|\bmany systems\b|\bindustry needs\b' "$OUTPUT_DIR/final-report.md" 2>/dev/null || echo 0)
+banned=$(grep -ciE '\bobviously\b|\bclearly\b.*\bfundamentally\b|\bmany systems\b|\bindustry needs\b' "$OUTPUT_DIR/final-report.md" 2>/dev/null || echo 0)
 if [ "$banned" -eq 0 ]; then
     pass "No banned absolute terms"
 else
@@ -98,7 +98,7 @@ fi
 echo ""
 echo "── Story Quality Audit (§3.6) ──"
 
-local story_gaps=$(grep -c '\[STORY-GAP' "$OUTPUT_DIR/final-report.md" 2>/dev/null || echo 0)
+story_gaps=$(grep -c '\[STORY-GAP' "$OUTPUT_DIR/final-report.md" 2>/dev/null || echo 0)
 if [ "$story_gaps" -eq 0 ]; then
     pass "Zero STORY-GAP entries"
 elif [ "$story_gaps" -le 3 ]; then
@@ -115,7 +115,7 @@ if grep -qE 'Challenge.*Insight.*Design.*Experiment.*Metric' "$OUTPUT_DIR/final-
     pass "Story Closure Table header found"
 
     # Check for closure gaps
-    local closure_gaps=$(grep -cE '\bgap\b' "$OUTPUT_DIR/final-report.md" 2>/dev/null || echo 0)
+    closure_gaps=$(grep -cE '\bgap\b' "$OUTPUT_DIR/final-report.md" 2>/dev/null || echo 0)
     if [ "$closure_gaps" -eq 0 ]; then
         pass "All closure entries marked 'closed' (no gaps)"
     else
@@ -128,7 +128,7 @@ fi
 # ── One-Sentence Thesis Final Check ───────────────────────────
 echo ""
 echo "── One-Sentence Thesis ──"
-local thesis_count=$(grep -cE '问题句|洞见句|系统句' "$OUTPUT_DIR/final-report.md" 2>/dev/null || echo 0)
+thesis_count=$(grep -cE '问题句|洞见句|系统句' "$OUTPUT_DIR/final-report.md" 2>/dev/null || echo 0)
 if [ "$thesis_count" -ge 3 ]; then
     pass "Three-sentence thesis complete"
 elif [ "$thesis_count" -ge 1 ]; then
