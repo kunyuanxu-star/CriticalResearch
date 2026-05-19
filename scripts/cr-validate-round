@@ -57,7 +57,37 @@ fi
 
 # ── Required output files ───────────────────────────────────────
 
-REQUIRED_FILES=("report.md" "sources.md" "critique.md" "writing-diff.md" "knowledge-delta.md")
+# Build required file list from round.yaml required_outputs.
+# Maps output keys to expected filenames or directory paths.
+map_output_key_to_file() {
+    case "$1" in
+        report)              echo "report.md" ;;
+        evidence_update)     echo "sources.md" ;;
+        critique_update)     echo "critique.md" ;;
+        writing_diff)        echo "writing-diff.md" ;;
+        knowledge_delta)     echo "knowledge-delta.md" ;;
+        paper_patch)         echo "paper-patches.md" ;;
+        experiment_obligation) echo "experiment-patches.md" ;;
+        *)                   echo "" ;;
+    esac
+}
+
+REQUIRED_FILES=()
+if [ -f "$ROUND_DIR/round.yaml" ]; then
+    while IFS= read -r key; do
+        [ -z "$key" ] && continue
+        mapped=$(map_output_key_to_file "$key")
+        if [ -n "$mapped" ]; then
+            REQUIRED_FILES+=("$mapped")
+        fi
+    done < <(grep -E '^\s*-\s+' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^\s*-\s*//')
+fi
+
+# Fallback: if no required_outputs found, use default set.
+if [ ${#REQUIRED_FILES[@]} -eq 0 ]; then
+    REQUIRED_FILES=("report.md" "sources.md" "critique.md" "writing-diff.md" "knowledge-delta.md")
+fi
+
 for req_file in "${REQUIRED_FILES[@]}"; do
     if [ -f "$ROUND_DIR/$req_file" ]; then
         # Check non-empty (more than just template headers).

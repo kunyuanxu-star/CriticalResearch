@@ -1,0 +1,118 @@
+{
+  "$schema": "https://critical-research/schemas/artifact-registry.schema.json",
+  "description": "Canonical artifact registry mapping output keys to file paths, schemas, and validators. Consumed by cr-validate-round, cr-validate-stop, and cr close-round.",
+  "artifacts": {
+    "round_state": {
+      "path_template": "rounds/round-{round_num}/round.yaml",
+      "schema": "schemas/round.schema.json",
+      "validator": "cr-validate-schema",
+      "gate": "hard",
+      "description": "Round metadata and state file"
+    },
+    "critique": {
+      "path_template": "rounds/round-{round_num}/critique.md",
+      "schema": "schemas/critique.schema.json",
+      "validator": "cr-validate-critique",
+      "gate": "hard",
+      "description": "Critique entries for the round"
+    },
+    "critique_disposition": {
+      "path_template": "rounds/round-{round_num}/dispositions.yaml",
+      "schema": "schemas/critique_disposition.schema.json",
+      "validator": "cr-validate-paper-patches",
+      "gate": "hard",
+      "description": "Disposition records linking critiques to patches/decisions",
+      "modes": ["paper"]
+    },
+    "paper_patch": {
+      "path_template": "rounds/round-{round_num}/patches/PP-{patch_num}.yaml",
+      "schema": "schemas/paper_patch.schema.json",
+      "validator": "cr-validate-paper-patches",
+      "gate": "hard",
+      "description": "Paper patch proposing a draft change",
+      "modes": ["paper"]
+    },
+    "experiment_obligation": {
+      "path_template": "rounds/round-{round_num}/experiments/EXP-{exp_num}.yaml",
+      "schema": "schemas/experiment_obligation.schema.json",
+      "validator": "cr-validate-experiments",
+      "gate": "hard",
+      "description": "Experiment obligation linked to a claim-level patch",
+      "modes": ["paper"]
+    },
+    "knowledge_delta": {
+      "path_template": "rounds/round-{round_num}/knowledge-delta.md",
+      "schema": "schemas/knowledge_delta.schema.json",
+      "validator": "cr-validate-knowledge",
+      "gate": "hard",
+      "description": "Per-round knowledge distillation record"
+    },
+    "thinking_card": {
+      "path_template": "_cr/knowledge/thinking/cards/{card_id}.md",
+      "schema": "schemas/thinking_card.schema.json",
+      "validator": "cr-validate-thinking",
+      "gate": "soft",
+      "description": "Reusable thinking rule card (RP, WR, RV, AP, EP)",
+      "modes": ["paper"]
+    },
+    "literature_card": {
+      "path_template": "_cr/knowledge/literature/{card_type}/{card_id}.md",
+      "schema": "schemas/literature_card.schema.json",
+      "validator": "cr-validate-literature",
+      "gate": "soft",
+      "description": "Literature knowledge card (paper, system, concept, debate)",
+      "modes": ["paper"]
+    },
+    "human_decision": {
+      "path_template": "state/human-review-queue.yaml",
+      "schema": "schemas/human_decision.schema.json",
+      "validator": "cr-validate-human-gates",
+      "gate": "hard",
+      "description": "Human judgment gate decision queue",
+      "modes": ["paper"]
+    },
+    "paper_draft": {
+      "path_template": "writing/paper-draft.md",
+      "schema": "schemas/anchor-spec.json",
+      "validator": "cr-validate-anchors",
+      "gate": "soft",
+      "description": "Paper draft with declarable section anchors",
+      "modes": ["paper"]
+    },
+    "report": {
+      "path_template": "rounds/round-{round_num}/report.md",
+      "schema": null,
+      "validator": null,
+      "gate": "hard",
+      "description": "Round report (validated by cr-validate-round for file presence)"
+    },
+    "sources": {
+      "path_template": "rounds/round-{round_num}/sources.md",
+      "schema": null,
+      "validator": null,
+      "gate": "hard",
+      "description": "Sources and evidence (validated by cr-validate-round for field presence)"
+    },
+    "writing_diff": {
+      "path_template": "rounds/round-{round_num}/writing-diff.md",
+      "schema": null,
+      "validator": null,
+      "gate": "hard",
+      "description": "Diff log of writing changes (validated by cr-validate-round for file presence)"
+    }
+  },
+  "validator_pipeline": {
+    "description": "Ordered validators executed by cr-validate-stop on round close.",
+    "validators": [
+      {"order": 1, "name": "cr-validate-schema", "gate": "hard", "checks": "JSON Schema compliance for all YAML artifacts"},
+      {"order": 2, "name": "cr-validate-artifacts", "gate": "hard", "checks": "File presence per artifact registry and round type"},
+      {"order": 3, "name": "cr-validate-ids", "gate": "hard", "checks": "ID uniqueness within scope, pattern compliance, no dangling references"},
+      {"order": 4, "name": "cr-validate-references", "gate": "hard", "checks": "Bidirectional links: critique→disposition→patch→anchor→experiment"},
+      {"order": 5, "name": "cr-validate-anchors", "gate": "soft", "checks": "Patch targets resolve to draft sections (missing anchor warns, dangling patch blocks)"},
+      {"order": 6, "name": "cr-validate-paper-patches", "gate": "hard", "checks": "Dispositions present, lifecycle transitions valid, Knowledge Implication fields present"},
+      {"order": 7, "name": "cr-validate-knowledge", "gate": "soft", "checks": "knowledge-delta.md content quality (empty delta blocks, shallow content warns)"},
+      {"order": 8, "name": "cr-validate-experiments", "gate": "soft", "checks": "Experiment obligation completeness (missing obligation blocks, incomplete fields warns)"},
+      {"order": 9, "name": "cr-validate-human-gates", "gate": "hard", "checks": "No pending thesis-level decisions in human-review-queue.yaml"}
+    ]
+  }
+}

@@ -42,12 +42,18 @@
       "description": "Gap ID this round aims to close, or null for setup/finalization rounds.",
       "pattern": "^GAP-[0-9]+$"
     },
+    "workflow_mode": {
+      "type": "string",
+      "description": "The workflow mode for this round. Paper mode enables critique dispositions, paper patches, experiment obligations, and knowledge cards.",
+      "enum": ["lightweight", "standard", "deep", "paper"],
+      "default": "deep"
+    },
     "required_outputs": {
       "type": "array",
-      "description": "List of required output identifiers for this round type.",
+      "description": "List of required output identifiers for this round type. Paper mode adds paper_patch and experiment_obligation.",
       "items": {
         "type": "string",
-        "enum": ["report", "evidence_update", "critique_update", "writing_diff", "knowledge_delta"]
+        "enum": ["report", "evidence_update", "critique_update", "writing_diff", "knowledge_delta", "paper_patch", "experiment_obligation"]
       },
       "minItems": 1,
       "uniqueItems": true

@@ -114,10 +114,40 @@ fi
 
 # ── Block: round incomplete ─────────────────────────────────────
 
-# Build a specific reason listing what's missing.
+# Build the list of required files from round.yaml required_outputs,
+# same mapping as cr-validate-round.
+map_output_key_to_file() {
+    case "$1" in
+        report)              echo "report.md" ;;
+        evidence_update)     echo "sources.md" ;;
+        critique_update)     echo "critique.md" ;;
+        writing_diff)        echo "writing-diff.md" ;;
+        knowledge_delta)     echo "knowledge-delta.md" ;;
+        paper_patch)         echo "paper-patches.md" ;;
+        experiment_obligation) echo "experiment-patches.md" ;;
+        *)                   echo "" ;;
+    esac
+}
+
+REQUIRED_FILES=()
+if [ -f "$ROUND_DIR/round.yaml" ]; then
+    while IFS= read -r key; do
+        [ -z "$key" ] && continue
+        mapped=$(map_output_key_to_file "$key")
+        if [ -n "$mapped" ]; then
+            REQUIRED_FILES+=("$mapped")
+        fi
+    done < <(grep -E '^\s*-\s+' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^\s*-\s*//')
+fi
+
+# Fallback: default set.
+if [ ${#REQUIRED_FILES[@]} -eq 0 ]; then
+    REQUIRED_FILES=("report.md" "sources.md" "critique.md" "writing-diff.md" "knowledge-delta.md")
+fi
+
 MISSING=""
-for req_file in "report.md" "sources.md" "critique.md" "writing-diff.md" "knowledge-delta.md"; do
-    if [ ! -f "$ROUND_DIR/$req_file" ]; then
+for req_file in "${REQUIRED_FILES[@]}"; do
+    if [ ! -f "$ROUND_DIR/$req_file" ] && [ ! -d "$ROUND_DIR/$req_file" ]; then
         MISSING="$MISSING $req_file"
     fi
 done
@@ -127,6 +157,7 @@ if [ -n "$MISSING" ]; then
     REASON="$REASON Missing:$MISSING."
 fi
 REASON="$REASON Complete required outputs or explicitly request stop to override."
+REASON="$REASON Validator pipeline: cr-validate-schema, cr-validate-artifacts, cr-validate-ids, cr-validate-references, cr-validate-anchors, cr-validate-paper-patches, cr-validate-knowledge, cr-validate-experiments, cr-validate-human-gates."
 
 cat << EOF
 {"decision":"block","reason":"$REASON"}
