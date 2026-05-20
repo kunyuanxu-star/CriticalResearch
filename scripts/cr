@@ -72,11 +72,18 @@ case "$COMMAND" in
         echo "Creating research project: $PROJECT_ID"
         mkdir -p "$PROJECT_DIR"/{state,literature,writing,rounds}
 
+        # Parse --profile flag if present.
+        PAPER_PROFILE="systems"
+        if [ "${2:-}" = "--profile" ]; then
+            PAPER_PROFILE="${3:-systems}"
+        fi
+
         # Create project.yaml with valid defaults.
         NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
         cat > "$PROJECT_DIR/project.yaml" << YAML
 project_id: $PROJECT_ID
 target_standard: "SOSP/OSDI-level systems conference"
+paper_profile: $PAPER_PROFILE
 created_at: $NOW
 description: "Research project: $TOPIC"
 schema_version: "1.0.0"
@@ -272,49 +279,28 @@ MD
         echo "Closing round $ACTIVE_RND for project '$PROJECT'..."
         echo ""
 
-        # Run full validator pipeline from artifact registry.
-        # Order: schema → artifacts → ids → references → anchors →
-        #        paper-patches → knowledge → experiments → human-gates
+        # Run validator pipeline — uses cr-run-validator-pipeline if available,
+        # falls back to direct execution for backward compatibility.
         ALL_PASSED=true
         WORKFLOW_MODE=$(grep -E '^workflow_mode:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^workflow_mode:\s*//' | xargs || echo "")
 
-        # Stage 1: Schema validation (always run).
-        "$SCRIPT_DIR/cr-validate-round" "$ROUND_DIR" || ALL_PASSED=false
-
-        # Stage 2: Artifact presence (always run).
-        "$SCRIPT_DIR/cr-validate-artifacts" "$ROUND_DIR" || ALL_PASSED=false
-
-        # Stage 3: ID uniqueness (always run).
-        "$SCRIPT_DIR/cr-validate-ids" "$ROUND_DIR" "$PROJECT_DIR" || ALL_PASSED=false
-
-        # Stage 4: Writing diff (always run).
-        "$SCRIPT_DIR/cr-validate-writing" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PASSED=false
-
-        # Stage 5: Round report + knowledge delta (always run).
-        "$SCRIPT_DIR/cr-validate-knowledge" "$ROUND_DIR" || ALL_PASSED=false
-
-        # Paper-mode stages.
-        if [ "$WORKFLOW_MODE" = "paper" ]; then
-            echo ""
-            echo "── Paper Mode Pipeline ──"
-
-            # Stage 6: Cross-references.
-            "$SCRIPT_DIR/cr-validate-references" "$ROUND_DIR" "$PROJECT_DIR" || ALL_PASSED=false
-
-            # Stage 7: Anchor validation.
-            "$SCRIPT_DIR/cr-validate-anchors" "$ROUND_DIR" "$PROJECT_DIR" || ALL_PASSED=false
-
-            # Stage 8: Paper patches + dispositions.
-            "$SCRIPT_DIR/cr-validate-paper-patches" "$ROUND_DIR" || ALL_PASSED=false
-
-            # Stage 9: Experiment obligations.
-            "$SCRIPT_DIR/cr-validate-experiments" "$ROUND_DIR" || ALL_PASSED=false
-
-            # Stage 10: Human judgment gates.
-            "$SCRIPT_DIR/cr-validate-human-gates" "$ROUND_DIR" "$PROJECT_DIR" || ALL_PASSED=false
-
-            # Stage 11: Paper draft completeness.
-            "$SCRIPT_DIR/cr-validate-paper-completeness" "$PROJECT_DIR" || ALL_PASSED=false
+        if [ -x "$SCRIPT_DIR/cr-run-validator-pipeline" ]; then
+            "$SCRIPT_DIR/cr-run-validator-pipeline" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PASSED=false
+        else
+            # Fallback: direct validator execution.
+            "$SCRIPT_DIR/cr-validate-round" "$ROUND_DIR" || ALL_PASSED=false
+            "$SCRIPT_DIR/cr-validate-artifacts" "$ROUND_DIR" || ALL_PASSED=false
+            "$SCRIPT_DIR/cr-validate-ids" "$ROUND_DIR" "$PROJECT_DIR" || ALL_PASSED=false
+            "$SCRIPT_DIR/cr-validate-writing" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PASSED=false
+            "$SCRIPT_DIR/cr-validate-knowledge" "$ROUND_DIR" || ALL_PASSED=false
+            if [ "$WORKFLOW_MODE" = "paper" ]; then
+                "$SCRIPT_DIR/cr-validate-references" "$ROUND_DIR" "$PROJECT_DIR" || ALL_PASSED=false
+                "$SCRIPT_DIR/cr-validate-anchors" "$ROUND_DIR" "$PROJECT_DIR" || ALL_PASSED=false
+                "$SCRIPT_DIR/cr-validate-paper-patches" "$ROUND_DIR" || ALL_PASSED=false
+                "$SCRIPT_DIR/cr-validate-experiments" "$ROUND_DIR" || ALL_PASSED=false
+                "$SCRIPT_DIR/cr-validate-human-gates" "$ROUND_DIR" "$PROJECT_DIR" || ALL_PASSED=false
+                "$SCRIPT_DIR/cr-validate-paper-completeness" "$PROJECT_DIR" || ALL_PASSED=false
+            fi
         fi
 
         if [ "$ALL_PASSED" = false ]; then
@@ -449,6 +435,14 @@ MD
             scan)
                 echo "Workspace: $WORKSPACE_ROOT"
                 echo ""
+                INDEX_FILE="$WORKSPACE_ROOT/_cr/project-index.md"
+                # Rebuild index header.
+                cat > "$INDEX_FILE" << 'MD'
+# Project Index
+
+| Project | Status | Rounds | Active Round | Profile | Last Updated |
+|---------|--------|--------|--------------|---------|--------------|
+MD
                 HAS_PROJECTS=false
                 for proj_dir in "$WORKSPACE_ROOT"/*/; do
                     [ ! -d "$proj_dir" ] && continue
@@ -460,12 +454,18 @@ MD
                     if [ -f "$proj_dir/project.yaml" ]; then
                         STATUS=$(jq -r '.status // "?"' "$proj_dir/state/project-state.json" 2>/dev/null || echo "?")
                         ROUNDS=$(jq -r '.total_rounds // 0' "$proj_dir/state/project-state.json" 2>/dev/null || echo "0")
-                        echo "  $PROJ_NAME — status: $STATUS, rounds: $ROUNDS"
+                        ACTIVE=$(jq -r '.active_round // "none"' "$proj_dir/state/project-state.json" 2>/dev/null || echo "none")
+                        PROFILE=$(grep -E '^paper_profile:' "$proj_dir/project.yaml" 2>/dev/null | sed 's/^paper_profile:\s*//' | xargs || echo "generic")
+                        UPDATED=$(jq -r '.last_updated // "?"' "$proj_dir/state/project-state.json" 2>/dev/null || echo "?")
+                        echo "  $PROJ_NAME — status: $STATUS, rounds: $ROUNDS, profile: $PROFILE"
+                        echo "| $PROJ_NAME | $STATUS | $ROUNDS | $ACTIVE | $PROFILE | $UPDATED |" >> "$INDEX_FILE"
                     else
                         echo "  $PROJ_NAME — no project.yaml (not a research project?)"
                     fi
                 done
                 [ "$HAS_PROJECTS" = false ] && echo "  No research projects found. Run 'cr start <topic>' to create one."
+                echo ""
+                echo "Index written to $INDEX_FILE"
                 ;;
 
             *)

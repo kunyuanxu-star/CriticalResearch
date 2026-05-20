@@ -89,10 +89,11 @@ if [ -d "$PATCHES_DIR" ]; then
 
             # Recorded patches require BOTH: recorded in diff-log AND draft actually modified.
             # diff-log alone is not sufficient — cr-apply-paper-patch writes diff-log automatically.
-            if [ "$PATCH_IN_DIFF" = true ] && ( [ "$PATCH_IN_WRITING" = true ] || [ "$DRAFT_MODIFIED" = true ] ); then
-                pass "$PP_ID: recorded patch has diff-log entry and draft edit evidence"
-            elif [ "$PATCH_IN_DIFF" = true ]; then
-                fail "$PP_ID: lifecycle=recorded with diff-log entry but no evidence paper-draft.md was edited — apply changes to draft before round close (hard gate)"
+            # Recorded patches require: diff-log entry AND draft actually modified (mtime).
+            if [ "$PATCH_IN_DIFF" = true ] && [ "$DRAFT_MODIFIED" = true ]; then
+                pass "$PP_ID: recorded patch has diff-log entry and draft was modified after patch"
+            elif [ "$PATCH_IN_DIFF" = true ] && [ "$DRAFT_MODIFIED" = false ]; then
+                fail "$PP_ID: lifecycle=recorded with diff-log entry but paper-draft.md was not modified — apply changes to draft before round close (hard gate)"
             else
                 fail "$PP_ID: lifecycle=recorded but no diff-log entry — run cr-apply-paper-patch first (hard gate)"
             fi

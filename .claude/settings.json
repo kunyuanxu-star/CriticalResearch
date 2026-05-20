@@ -1,5 +1,5 @@
 {
-  "description": "critical-cs-research deterministic enforcement hooks — validates artifacts at each workflow stage. Uses CR_SKILL_HOME if set, falls back to CLAUDE_PROJECT_DIR.",
+  "description": "critical-cs-research deterministic enforcement hooks. Uses global critical-research-hook wrapper installed by install.sh to ~/.local/bin/.",
   "hooks": {
     "PreToolUse": [
       {
@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR}/scripts/critical-research-hook\" pre-tool-use \"${CLAUDE_TOOL_NAME}\" \"${CLAUDE_TOOL_INPUT}\""
+            "command": "critical-research-hook pre-tool-use \"${CLAUDE_TOOL_NAME}\" \"${CLAUDE_TOOL_INPUT}\""
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR}/scripts/critical-research-hook\" post-tool-use"
+            "command": "critical-research-hook post-tool-use"
           }
         ]
       }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR}/scripts/critical-research-hook\" stop \"${CLAUDE_PROJECT_DIR}\""
+            "command": "critical-research-hook stop \"${CLAUDE_PROJECT_DIR}\""
           }
         ]
       }
