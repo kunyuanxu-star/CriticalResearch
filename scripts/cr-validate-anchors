@@ -68,12 +68,38 @@ if [ -d "$PATCHES_DIR" ]; then
         # Extract affected_anchors from the patch.
         PATCH_ANCHORS=$(grep -E '^\s+-\s+(abstract|introduction|background|motivation|design|implementation|evaluation_plan|related_work|discussion|conclusion)' "$patch_file" 2>/dev/null | sed 's/^\s*-\s*//' || echo "")
 
+        # Recorded patches: verify draft was edited or writing-diff mentions the patch.
+        if [ "$LIFECYCLE" = "recorded" ]; then
+            DIFF_LOG="$PROJECT_DIR/writing/diff-log.md"
+            PATCH_IN_DIFF=false
+            [ -f "$DIFF_LOG" ] && grep -q "$PP_ID" "$DIFF_LOG" 2>/dev/null && PATCH_IN_DIFF=true
+
+            WRITING_DIFF="$ROUND_DIR/writing-diff.md"
+            PATCH_IN_WRITING=false
+            [ -f "$WRITING_DIFF" ] && grep -q "$PP_ID" "$WRITING_DIFF" 2>/dev/null && PATCH_IN_WRITING=true
+
+            # Check draft mtime vs patch updated_at.
+            PATCH_UPDATED=$(grep -E '^updated_at:' "$patch_file" 2>/dev/null | sed 's/^updated_at:\s*"//;s/"$//' | xargs || echo "")
+            DRAFT_MODIFIED=false
+            if [ -f "$DRAFT_FILE" ] && [ -n "$PATCH_UPDATED" ]; then
+                PATCH_TS=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$PATCH_UPDATED" +%s 2>/dev/null || echo 0)
+                DRAFT_TS=$(date -r "$DRAFT_FILE" +%s 2>/dev/null || echo 0)
+                [ "${DRAFT_TS:-0}" -gt "${PATCH_TS:-0}" ] && DRAFT_MODIFIED=true
+            fi
+
+            if [ "$PATCH_IN_DIFF" = true ] || [ "$PATCH_IN_WRITING" = true ] || [ "$DRAFT_MODIFIED" = true ]; then
+                pass "$PP_ID: recorded patch has evidence of draft edit"
+            else
+                fail "$PP_ID: lifecycle=recorded but no evidence of draft edit — apply changes to paper-draft.md before round close (hard gate)"
+            fi
+        fi
+
         for anchor in $PATCH_ANCHORS; do
             if [ -n "${DRAFT_ANCHORS[$anchor]:-}" ]; then
                 pass "$PP_ID → $anchor (resolved)"
             else
-                if [ "$LIFECYCLE" = "applied" ]; then
-                    fail "$PP_ID → $anchor: applied patch targets missing anchor in paper-draft.md"
+                if [ "$LIFECYCLE" = "applied" ] || [ "$LIFECYCLE" = "recorded" ]; then
+                    fail "$PP_ID → $anchor: applied/recorded patch targets missing anchor in paper-draft.md"
                 else
                     warn "$PP_ID → $anchor: anchor not yet in paper-draft.md (patch not yet applied)"
                 fi

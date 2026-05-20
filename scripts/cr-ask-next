@@ -65,11 +65,11 @@ for patch_file in "$PATCHES_DIR"/PP-*.yaml; do
     AGENT_CHOICE=$(grep -E '^\s+choice:' "$patch_file" 2>/dev/null | head -1 | sed 's/.*choice:\s*//' | tr -d '"' | xargs || echo "")
     AGENT_REASON=$(grep -E '^\s+reason:' "$patch_file" 2>/dev/null | head -1 | sed 's/.*reason:\s*//' | tr -d '"' | xargs || echo "")
 
-    echo "  accept              — Apply this change as proposed"
-    echo "  accept_with_modifications — Apply with your modifications"
-    echo "  reject              — Reject this change"
-    echo "  defer               — Defer to a future round"
-    echo "  needs_more_evidence — Gather more evidence first"
+    echo "  accepted              — Apply this change as proposed"
+    echo "  accepted_with_modifications — Apply with your modifications"
+    echo "  rejected              — Reject this change"
+    echo "  deferred              — Defer to a future round"
+    echo "  needs_more_evidence   — Gather more evidence first"
     echo ""
 
     if [ -n "$AGENT_CHOICE" ]; then

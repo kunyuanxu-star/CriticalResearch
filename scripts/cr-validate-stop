@@ -129,15 +129,18 @@ map_output_key_to_file() {
     esac
 }
 
+# Use cr_required_outputs for consistent parsing (handles both YAML bullet and inline formats).
+REQUIRED_OUTPUT_KEYS=$(cr_required_outputs "$ROUND_DIR/round.yaml" 2>/dev/null || echo "")
+
 REQUIRED_FILES=()
-if [ -f "$ROUND_DIR/round.yaml" ]; then
-    while IFS= read -r key; do
+if [ -n "$REQUIRED_OUTPUT_KEYS" ]; then
+    for key in $REQUIRED_OUTPUT_KEYS; do
         [ -z "$key" ] && continue
         mapped=$(map_output_key_to_file "$key")
         if [ -n "$mapped" ]; then
             REQUIRED_FILES+=("$mapped")
         fi
-    done < <(grep -E '^\s*-\s+' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^\s*-\s*//')
+    done
 fi
 
 # Fallback: default set.

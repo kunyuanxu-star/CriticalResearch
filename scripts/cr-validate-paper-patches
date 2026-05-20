@@ -132,11 +132,19 @@ if [ -d "$PATCHES_DIR" ]; then
 
             # Validate against paper_patch schema if jq+schemas available.
             SCHEMA_PATH="$(cr_schema_path "paper_patch.schema.json")"
-            if [ -n "$SCHEMA_PATH" ] && command -v yq >/dev/null 2>&1; then
-                PATCH_JSON=$(yq -o json '.' "$patch_file" 2>/dev/null || echo "")
-                if [ -n "$PATCH_JSON" ] && [ "$PATCH_JSON" != "null" ]; then
-                    cr_validate_json_schema "$PATCH_JSON" "$(cat "$SCHEMA_PATH")" || true
+            if [ -n "$SCHEMA_PATH" ]; then
+                if ! command -v yq >/dev/null 2>&1; then
+                    fail "$PATCH_ID: yq required for paper-mode schema validation"
+                else
+                    PATCH_JSON=$(yq -o json '.' "$patch_file" 2>/dev/null || echo "")
+                    if [ -z "$PATCH_JSON" ] || [ "$PATCH_JSON" = "null" ]; then
+                        fail "$PATCH_ID: failed to parse YAML"
+                    elif ! cr_validate_json_schema "$PATCH_JSON" "$(cat "$SCHEMA_PATH")"; then
+                        fail "$PATCH_ID: schema validation failed (hard gate)"
+                    fi
                 fi
+            else
+                fail "$PATCH_ID: paper_patch.schema.json not found — cannot validate"
             fi
 
             # ── Lifecycle validation ────────────────────────────────

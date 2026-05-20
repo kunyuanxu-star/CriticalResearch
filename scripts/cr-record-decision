@@ -3,7 +3,8 @@
 # Updates patch lifecycle status and writes to decision ledger.
 #
 # Usage: cr-record-decision <round_dir> <project_dir> <patch_id> <decision> [rationale]
-#   decision: accept | accept_with_modifications | reject | defer | needs_more_evidence
+#   decision: accepted | accepted_with_modifications | rejected | deferred | needs_more_evidence
+#   (CLI aliases accept/reject/defer are normalized to the schema-compatible form.)
 
 set -euo pipefail
 
@@ -13,19 +14,26 @@ source "$SCRIPT_DIR/cr-common.sh"
 ROUND_DIR="${1:-}"
 PROJECT_DIR="${2:-}"
 PATCH_ID="${3:-}"
-DECISION="${4:-}"
+DECISION_RAW="${4:-}"
 RATIONALE="${5:-}"
 
-if [ -z "$ROUND_DIR" ] || [ -z "$PROJECT_DIR" ] || [ -z "$PATCH_ID" ] || [ -z "$DECISION" ]; then
+if [ -z "$ROUND_DIR" ] || [ -z "$PROJECT_DIR" ] || [ -z "$PATCH_ID" ] || [ -z "$DECISION_RAW" ]; then
     echo "Usage: cr-record-decision <round_dir> <project_dir> <patch_id> <decision> [rationale]" >&2
-    echo "  decision: accept | accept_with_modifications | reject | defer | needs_more_evidence" >&2
+    echo "  decision: accepted | accepted_with_modifications | rejected | deferred | needs_more_evidence" >&2
+    echo "  (aliases: accept→accepted, reject→rejected, defer→deferred)" >&2
     exit 2
 fi
 
-# Validate decision value.
-case "$DECISION" in
-    accept|accept_with_modifications|reject|defer|needs_more_evidence) ;;
-    *) echo "Error: invalid decision '$DECISION'" >&2; exit 2 ;;
+# Normalize CLI aliases to schema-compatible enum values.
+DECISION=""
+case "$DECISION_RAW" in
+    accept)                    DECISION="accepted" ;;
+    accept_with_modifications) DECISION="accepted_with_modifications" ;;
+    reject)                    DECISION="rejected" ;;
+    defer)                     DECISION="deferred" ;;
+    needs_more_evidence)       DECISION="needs_more_evidence" ;;
+    accepted|accepted_with_modifications|rejected|deferred) DECISION="$DECISION_RAW" ;;
+    *) echo "Error: invalid decision '$DECISION_RAW'" >&2; exit 2 ;;
 esac
 
 PATCH_FILE="$ROUND_DIR/patches/${PATCH_ID}.yaml"
@@ -43,14 +51,12 @@ DECISION_ID=$(printf "DEC-%03d" "$DECISION_NUM")
 OLD_STATUS=$(grep -E '^lifecycle_status:' "$PATCH_FILE" 2>/dev/null | sed 's/^lifecycle_status:\s*//' | xargs || echo "proposed")
 
 case "$DECISION" in
-    accept|accept_with_modifications)
+    accepted|accepted_with_modifications)
         NEW_STATUS="approved"
-        # If accept_with_modifications, note in the rationale.
-        [ "$DECISION" = "accept_with_modifications" ] && RATIONALE="[MODIFIED] $RATIONALE"
+        [ "$DECISION" = "accepted_with_modifications" ] && RATIONALE="[MODIFIED] $RATIONALE"
         ;;
-    reject)
+    rejected)
         NEW_STATUS="rejected"
-        # Update rejection_reason in the patch.
         if grep -q '^rejection_reason:' "$PATCH_FILE" 2>/dev/null; then
             if [ "$(uname)" = "Darwin" ]; then
                 sed -i '' "s|^rejection_reason:.*|rejection_reason: \"$RATIONALE\"|" "$PATCH_FILE"
@@ -59,11 +65,11 @@ case "$DECISION" in
             fi
         fi
         ;;
-    defer)
-        NEW_STATUS="$OLD_STATUS"  # Keep current status, just record decision.
+    deferred)
+        NEW_STATUS="$OLD_STATUS"
         ;;
     needs_more_evidence)
-        NEW_STATUS="$OLD_STATUS"  # Keep current status, decision is to gather more.
+        NEW_STATUS="$OLD_STATUS"
         ;;
 esac
 
@@ -89,12 +95,12 @@ if [ "$(uname)" = "Darwin" ]; then
     linked_patch_id: '"$PATCH_ID"'\
     decision: '"$DECISION"'\
     rationale: "'"$RATIONALE"'"\
-    blocks_round_close: '"$( [ "$DECISION" = "defer" ] && echo "false" || echo "true")"'\
+    blocks_round_close: '"$( [ "$DECISION" = "deferred" ] && echo "false" || echo "true")"'\
     timestamp: '"$NOW"'\
     resolved_at: '"$NOW"'
     "$QUEUE_FILE"
 else
-    sed -i '/^decisions:/a\  - decision_id: '"$DECISION_ID"'\n    linked_patch_id: '"$PATCH_ID"'\n    decision: '"$DECISION"'\n    rationale: "'"$RATIONALE"'"\n    blocks_round_close: '"$( [ "$DECISION" = "defer" ] && echo "false" || echo "true")"'\n    timestamp: '"$NOW"'\n    resolved_at: '"$NOW"'" "$QUEUE_FILE"
+    sed -i '/^decisions:/a\  - decision_id: '"$DECISION_ID"'\n    linked_patch_id: '"$PATCH_ID"'\n    decision: '"$DECISION"'\n    rationale: "'"$RATIONALE"'"\n    blocks_round_close: '"$( [ "$DECISION" = "deferred" ] && echo "false" || echo "true")"'\n    timestamp: '"$NOW"'\n    resolved_at: '"$NOW"'" "$QUEUE_FILE"
 fi
 
 echo ""
