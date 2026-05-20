@@ -12,6 +12,7 @@
 #   validate <project>        Run all project invariant checks
 #   migrate-to-paper <proj>   Scaffold paper mode directories for a project
 #   promote-knowledge         Check thinking cards for promotion eligibility
+#   ask-next <round> <proj>   Show next pending human judgment question
 #   workspace init            Initialize Research workspace with _cr/ structure
 #   workspace scan            List all research-* projects in workspace
 #   status                    Show workspace and active project status

@@ -5,8 +5,6 @@ description: A domain-general but computer-science-specific critical research lo
 
 # Critical CS Research
 
-> **Current workflow**: Paper mode (below) is the active workflow direction. Legacy Pass 1/2/11-phase content is preserved in `references/legacy-workflow.md` and `hooks/legacy/` but is not the default path. New rounds should use paper mode with `cr round --mode paper`.
-
 ## Core Rule
 
 Do not directly polish or defend the user's original idea. Run the research control loop **indefinitely until the user is convinced**:
@@ -25,7 +23,7 @@ The final answer must preserve the trace from each conclusion back to claims, ev
 4. Read `references/evidence-standards.md` before doing source-backed research or assigning evidence levels.
 5. Read `references/role-lenses.md` when the task is large enough to benefit from separate parsing, scouting, counterexample, review, audit, experiment, and synthesis passes.
 6. Use `templates/*.md` when the user asks for reusable artifacts, files, or exhaustive output.
-7. Use `hooks/run-checkpoint.sh <stage>` to validate artifacts at each checkpoint (pass1 / pass2 / rebuttal / convergence / all). Hooks enforce the quality bar before proceeding to the next stage.
+7. Run `cr validate <project>` to enforce the paper-mode validator pipeline. Use `cr close-round <project>` to close a round — it runs all validators and blocks if invariants are violated.
 
 If the user has not provided material, ask for it. If target venue, audience, or output form is missing, infer a reasonable default and state it briefly.
 
@@ -62,9 +60,3 @@ To use paper mode, run: `cr migrate-to-paper-mode <project>` to scaffold directo
 **Key invariants**: Every round preserves a complete paper draft. Critique→Disposition→Patch→Knowledge Delta chain is enforced. Round cannot close with pending human decisions or missing knowledge delta.
 
 See `.humanize/IMPROVE.md` for the full design specification.
-
-## Legacy Workflow
-
-The original Pass 1/2/3 and 11-Phase workflow has been superseded by Paper Mode.
-Legacy checkpoint scripts: `hooks/legacy/`
-Full legacy documentation: `references/legacy-workflow.md`
