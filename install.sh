@@ -18,6 +18,31 @@ echo "CriticalResearch Installer"
 echo "========================="
 echo ""
 
+# ── Dependency check ────────────────────────────────────────────
+echo "Checking dependencies..."
+MISSING_DEPS=""
+for dep in jq git bash; do
+    if ! command -v "$dep" >/dev/null 2>&1; then
+        echo "  MISSING: $dep (required)"
+        MISSING_DEPS="$MISSING_DEPS $dep"
+    else
+        echo "  FOUND: $dep"
+    fi
+done
+if ! command -v yq >/dev/null 2>&1; then
+    echo "  MISSING: yq (required for paper mode — brew install yq)"
+    MISSING_DEPS="$MISSING_DEPS yq"
+else
+    echo "  FOUND: yq"
+fi
+if [ -n "$MISSING_DEPS" ]; then
+    echo ""
+    echo "Install missing dependencies before continuing:$MISSING_DEPS"
+    echo "  brew install jq yq"
+    exit 1
+fi
+echo ""
+
 # ── Install skill ───────────────────────────────────────────────
 
 echo "Installing skill to: $SKILL_DIR"

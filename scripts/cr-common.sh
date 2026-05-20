@@ -298,7 +298,17 @@ cr_validate_schema() {
         return 1
     fi
 
+    # Detect paper mode: if the round.yaml has workflow_mode=paper, enforce hard gates.
+    local paper_mode=false
+    if [ -f "$(dirname "$data_file")/round.yaml" ] 2>/dev/null; then
+        grep -q 'workflow_mode:\s*paper' "$(dirname "$data_file")/round.yaml" 2>/dev/null && paper_mode=true
+    fi
+
     if ! command -v jq >/dev/null 2>&1; then
+        if [ "$paper_mode" = true ]; then
+            fail "jq required for paper mode schema validation — install jq (brew install jq)"
+            return 1
+        fi
         warn "jq not available — skipping schema validation for $data_file"
         return 0
     fi
@@ -307,6 +317,10 @@ cr_validate_schema() {
     case "$format" in
         yaml|yml)
             if ! command -v yq >/dev/null 2>&1; then
+                if [ "$paper_mode" = true ]; then
+                    fail "yq required for paper mode YAML validation — install yq (brew install yq)"
+                    return 1
+                fi
                 warn "yq not available — cannot validate YAML schema for $data_file"
                 return 0
             fi

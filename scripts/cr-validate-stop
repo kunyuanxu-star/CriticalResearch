@@ -123,7 +123,8 @@ map_output_key_to_file() {
         critique_update)     echo "critique.md" ;;
         writing_diff)        echo "writing-diff.md" ;;
         knowledge_delta)     echo "knowledge-delta.md" ;;
-        paper_patch)         echo "paper-patches.md" ;;
+        paper_patch)         echo "patches" ;;
+        experiment_obligation) echo "experiments" ;;
         experiment_obligation) echo "experiment-patches.md" ;;
         *)                   echo "" ;;
     esac
@@ -179,7 +180,7 @@ if [ "$WORKFLOW_MODE" = "paper" ]; then
             for pp in $PENDING_PATCHES; do
                 PP_STATUS=$(grep -E '^lifecycle_status:' "$pp" 2>/dev/null | sed 's/^lifecycle_status:\s*//' | xargs || echo "")
                 case "$PP_STATUS" in
-                    approved|applied|rejected|superseded) ;; # resolved
+                    approved|recorded|applied|rejected|superseded) ;; # resolved
                     *) HUMAN_GATE_BLOCK=true ;;
                 esac
             done

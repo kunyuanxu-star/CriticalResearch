@@ -66,7 +66,8 @@ map_output_key_to_file() {
         critique_update)     echo "critique.md" ;;
         writing_diff)        echo "writing-diff.md" ;;
         knowledge_delta)     echo "knowledge-delta.md" ;;
-        paper_patch)         echo "paper-patches.md" ;;
+        paper_patch)         echo "patches" ;;
+        experiment_obligation) echo "experiments" ;;
         experiment_obligation) echo "experiment-patches.md" ;;
         *)                   echo "" ;;
     esac

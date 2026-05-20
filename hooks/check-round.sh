@@ -14,11 +14,8 @@ SKILL_HOME="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Source common framework if available.
 [ -f "$SKILL_HOME/scripts/cr-common.sh" ] && source "$SKILL_HOME/scripts/cr-common.sh"
 
-# Find workspace root.
-WORKSPACE_ROOT="${CR_WORKSPACE_ROOT:-}"
-if [ -z "$WORKSPACE_ROOT" ]; then
-    WORKSPACE_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-fi
+# Find workspace root via shared resolver.
+WORKSPACE_ROOT=$(cr_workspace_root 2>/dev/null || echo "${CR_WORKSPACE_ROOT:-$(pwd)}")
 
 # Check if there's an active project.
 ACTIVE_PROJECT_FILE="$WORKSPACE_ROOT/_cr/active-project"

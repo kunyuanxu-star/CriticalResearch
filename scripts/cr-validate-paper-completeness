@@ -32,24 +32,47 @@ PROJECT_NAME=$(basename "$PROJECT_DIR")
 echo ""
 echo "══ Paper Completeness: $PROJECT_NAME ══"
 
-# Required sections for a complete paper draft.
+# Detect paper profile from project.yaml, default to generic.
+PAPER_PROFILE="generic"
+if [ -f "$PROJECT_DIR/project.yaml" ]; then
+    PAPER_PROFILE=$(grep -E '^paper_profile:' "$PROJECT_DIR/project.yaml" 2>/dev/null | sed 's/^paper_profile:\s*//' | xargs || echo "generic")
+fi
+echo "  Paper profile: $PAPER_PROFILE"
+
+# Universal required sections (all profiles).
 REQUIRED_SECTIONS=(
     "Abstract"
     "Introduction"
-    "Background"
-    "Motivation"
-    "Design"
-    "Implementation Plan"
-    "Evaluation Plan"
     "Related Work"
-    "Discussion"
     "Conclusion"
 )
+
+# Profile-specific required sections.
+case "$PAPER_PROFILE" in
+    systems)
+        REQUIRED_SECTIONS+=("Background" "Motivation" "Design" "Implementation Plan" "Evaluation Plan" "Discussion") ;;
+    ml)
+        REQUIRED_SECTIONS+=("Background" "Method" "Experimental Setup" "Results" "Discussion") ;;
+    security)
+        REQUIRED_SECTIONS+=("Background" "Threat Model" "Design" "Security Analysis" "Evaluation" "Discussion") ;;
+    pl|formal)
+        REQUIRED_SECTIONS+=("Background" "Formalization" "Theorems and Proofs" "Implementation or Case Study" "Discussion") ;;
+    hci)
+        REQUIRED_SECTIONS+=("Background" "Study Design" "Participants and Tasks" "Results" "Discussion") ;;
+    se)
+        REQUIRED_SECTIONS+=("Background" "Tool or Method" "Study Design" "Results" "Discussion") ;;
+    database)
+        REQUIRED_SECTIONS+=("Background" "System Design" "Experimental Evaluation" "Discussion") ;;
+    theory_empirical)
+        REQUIRED_SECTIONS+=("Background" "Definitions" "Theorems and Proofs" "Empirical Validation" "Discussion") ;;
+    *)
+        # Generic: universal sections only.
+        ;;
+esac
 
 # Optional but recommended sections.
 OPTIONAL_SECTIONS=(
     "Appendix.*Claim-Evidence"
-    "Appendix.*Experiment Matrix"
     "Appendix.*Open Risks"
 )
 

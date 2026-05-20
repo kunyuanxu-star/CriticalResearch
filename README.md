@@ -12,32 +12,31 @@ Covers: OS, networking, security, databases, PL/compilers, architecture, AI infr
 - Git
 - Bash (macOS / Linux)
 
-### Install as a Claude Code skill
+### Quick Install
 
 ```bash
-# Clone the repository
-git clone https://github.com/YOUR_USERNAME/CriticalResearch.git ~/.claude/skills/critical-cs-research
+git clone https://github.com/Plucky923/CriticalResearch.git
+cd CriticalResearch
+bash install.sh
+
+# Then initialize your research workspace:
+cd ~/Research
+cr workspace init
+cr start my-topic
+cr round my-topic --mode paper
 ```
 
-Or via the Claude Code plugin registry (if published):
+The installer:
+- Copies the skill to `~/.claude/skills/critical-cs-research/`
+- Checks dependencies (jq, yq, git, bash)
+- Adds `cr` CLI to your PATH
+- Exports `CR_SKILL_HOME` for hook path resolution
 
-```
-/plugin install critical-cs-research
-```
-
-### Install the CLI tools (optional)
-
-The `cr` CLI provides deterministic state management for research projects outside of Claude Code conversations.
+### Manual Install
 
 ```bash
-# Add to your PATH in ~/.zshrc or ~/.bashrc
+git clone https://github.com/Plucky923/CriticalResearch.git ~/.claude/skills/critical-cs-research
 export PATH="$HOME/.claude/skills/critical-cs-research/scripts:$PATH"
-```
-
-Then reload your shell:
-
-```bash
-source ~/.zshrc
 ```
 
 ## Usage
