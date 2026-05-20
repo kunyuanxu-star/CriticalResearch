@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# cr-record-decision — Record a human decision for a paper patch.
+# Updates patch lifecycle status and writes to decision ledger.
+#
+# Usage: cr-record-decision <round_dir> <project_dir> <patch_id> <decision> [rationale]
+#   decision: accept | accept_with_modifications | reject | defer | needs_more_evidence
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+ROUND_DIR="${1:-}"
+PROJECT_DIR="${2:-}"
+PATCH_ID="${3:-}"
+DECISION="${4:-}"
+RATIONALE="${5:-}"
+
+if [ -z "$ROUND_DIR" ] || [ -z "$PROJECT_DIR" ] || [ -z "$PATCH_ID" ] || [ -z "$DECISION" ]; then
+    echo "Usage: cr-record-decision <round_dir> <project_dir> <patch_id> <decision> [rationale]" >&2
+    echo "  decision: accept | accept_with_modifications | reject | defer | needs_more_evidence" >&2
+    exit 2
+fi
+
+# Validate decision value.
+case "$DECISION" in
+    accept|accept_with_modifications|reject|defer|needs_more_evidence) ;;
+    *) echo "Error: invalid decision '$DECISION'" >&2; exit 2 ;;
+esac
+
+PATCH_FILE="$ROUND_DIR/patches/${PATCH_ID}.yaml"
+if [ ! -f "$PATCH_FILE" ]; then
+    echo "Error: patch file not found: $PATCH_FILE" >&2
+    exit 1
+fi
+
+NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+DECISION_NUM=$(grep -cE '^decision_id:' "$PROJECT_DIR/state/human-review-queue.yaml" 2>/dev/null || echo 0)
+DECISION_NUM=$((DECISION_NUM + 1))
+DECISION_ID=$(printf "DEC-%03d" "$DECISION_NUM")
+
+# Update patch lifecycle.
+OLD_STATUS=$(grep -E '^lifecycle_status:' "$PATCH_FILE" 2>/dev/null | sed 's/^lifecycle_status:\s*//' | xargs || echo "proposed")
+
+case "$DECISION" in
+    accept|accept_with_modifications)
+        NEW_STATUS="approved"
+        # If accept_with_modifications, note in the rationale.
+        [ "$DECISION" = "accept_with_modifications" ] && RATIONALE="[MODIFIED] $RATIONALE"
+        ;;
+    reject)
+        NEW_STATUS="rejected"
+        # Update rejection_reason in the patch.
+        if grep -q '^rejection_reason:' "$PATCH_FILE" 2>/dev/null; then
+            if [ "$(uname)" = "Darwin" ]; then
+                sed -i '' "s|^rejection_reason:.*|rejection_reason: \"$RATIONALE\"|" "$PATCH_FILE"
+            else
+                sed -i "s|^rejection_reason:.*|rejection_reason: \"$RATIONALE\"|" "$PATCH_FILE"
+            fi
+        fi
+        ;;
+    defer)
+        NEW_STATUS="$OLD_STATUS"  # Keep current status, just record decision.
+        ;;
+    needs_more_evidence)
+        NEW_STATUS="$OLD_STATUS"  # Keep current status, decision is to gather more.
+        ;;
+esac
+
+# Update lifecycle.
+if [ "$NEW_STATUS" != "$OLD_STATUS" ]; then
+    if [ "$(uname)" = "Darwin" ]; then
+        sed -i '' "s|^lifecycle_status:.*|lifecycle_status: $NEW_STATUS|" "$PATCH_FILE"
+    else
+        sed -i "s|^lifecycle_status:.*|lifecycle_status: $NEW_STATUS|" "$PATCH_FILE"
+    fi
+    echo "  Patch $PATCH_ID: $OLD_STATUS -> $NEW_STATUS"
+fi
+
+# Record decision in human-review-queue.
+QUEUE_FILE="$PROJECT_DIR/state/human-review-queue.yaml"
+mkdir -p "$(dirname "$QUEUE_FILE")"
+[ ! -f "$QUEUE_FILE" ] && echo "decisions: []" > "$QUEUE_FILE"
+
+# Append decision to queue.
+if [ "$(uname)" = "Darwin" ]; then
+    sed -i '' '/^decisions:/a\
+  - decision_id: '"$DECISION_ID"'\
+    linked_patch_id: '"$PATCH_ID"'\
+    decision: '"$DECISION"'\
+    rationale: "'"$RATIONALE"'"\
+    blocks_round_close: '"$( [ "$DECISION" = "defer" ] && echo "false" || echo "true")"'\
+    timestamp: '"$NOW"'\
+    resolved_at: '"$NOW"'
+    "$QUEUE_FILE"
+else
+    sed -i '/^decisions:/a\  - decision_id: '"$DECISION_ID"'\n    linked_patch_id: '"$PATCH_ID"'\n    decision: '"$DECISION"'\n    rationale: "'"$RATIONALE"'"\n    blocks_round_close: '"$( [ "$DECISION" = "defer" ] && echo "false" || echo "true")"'\n    timestamp: '"$NOW"'\n    resolved_at: '"$NOW"'" "$QUEUE_FILE"
+fi
+
+echo ""
+echo "Decision $DECISION_ID recorded: $PATCH_ID -> $DECISION"
+echo "  Rationale: $RATIONALE"

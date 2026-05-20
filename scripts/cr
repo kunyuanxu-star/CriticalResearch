@@ -7,7 +7,7 @@
 # Commands:
 #   start <topic>             Create a new research project and first round
 #   continue                  Read active project, output next-round task prompt
-#   round <project>           Open a new round for the given project
+#   round <project> [--mode]  Open a new round (--mode paper for paper mode)
 #   close-round <project>     Validate and close the active round
 #   validate <project>        Run all project invariant checks
 #   migrate-to-paper <proj>   Scaffold paper mode directories for a project
@@ -87,31 +87,69 @@ YAML
 }
 JSON
 
-        # Create initial paper draft.
+        # Create initial paper draft with complete structure.
         cat > "$PROJECT_DIR/writing/paper-draft.md" << MD
 # $TOPIC — Research Paper Draft
 
+<!-- anchor: abstract -->
 ## Abstract
 
 
 
+<!-- anchor: introduction -->
 ## Introduction
 
 
 
+<!-- anchor: background -->
+## Background
+
+
+
+<!-- anchor: motivation -->
+## Motivation
+
+
+
+<!-- anchor: design -->
+## Design
+
+
+
+<!-- anchor: implementation -->
+## Implementation Plan
+
+
+
+<!-- anchor: evaluation_plan -->
+## Evaluation Plan
+
+
+
+<!-- anchor: related_work -->
 ## Related Work
 
 
 
-## Approach
+<!-- anchor: discussion -->
+## Discussion and Limitations
 
 
 
-## Evaluation
-
-
-
+<!-- anchor: conclusion -->
 ## Conclusion
+
+
+
+## Appendix A. Claim-Evidence Map
+
+
+
+## Appendix B. Experiment Matrix
+
+
+
+## Appendix C. Open Risks
 
 
 MD
@@ -165,8 +203,12 @@ MD
 
     round)
         PROJECT="${1:-}"
+        MODE_FLAG=""
+        if [ "${2:-}" = "--mode" ]; then
+            MODE_FLAG="--mode ${3:-}"
+        fi
         if [ -z "$PROJECT" ]; then
-            echo "Usage: cr round <project>" >&2
+            echo "Usage: cr round <project> [--mode paper|deep|standard|lightweight]" >&2
             exit 2
         fi
 
@@ -191,7 +233,7 @@ MD
             ROUND_TYPE="discovery"
         fi
 
-        "$SCRIPT_DIR/cr-new-round" "$PROJECT_DIR" "$ROUND_TYPE"
+        "$SCRIPT_DIR/cr-new-round" "$PROJECT_DIR" "$ROUND_TYPE" $MODE_FLAG
         echo ""
         echo "Round ready. Begin research execution."
         ;;

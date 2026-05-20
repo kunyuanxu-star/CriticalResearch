@@ -2,7 +2,7 @@
 # cr-new-round — Create a new research round (Inv2).
 # Creates the round directory with all required file templates.
 #
-# Usage: cr-new-round <project_dir> [round_type]
+# Usage: cr-new-round <project_dir> [round_type] [--mode paper|lightweight|standard|deep]
 #   round_type: discovery (default), validation, re_search, rebuttal, writing, repair, finalization
 
 set -euo pipefail
@@ -12,9 +12,19 @@ source "$SCRIPT_DIR/cr-common.sh"
 
 PROJECT_DIR="${1:-}"
 ROUND_TYPE="${2:-discovery}"
+WORKFLOW_MODE=""
+
+# Parse --mode flag from remaining args.
+shift 2 2>/dev/null || true
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --mode) WORKFLOW_MODE="${2:-}"; shift 2 ;;
+        *) shift ;;
+    esac
+done
 
 if [ -z "$PROJECT_DIR" ]; then
-    echo "Usage: cr-new-round <project_dir> [round_type]" >&2
+    echo "Usage: cr-new-round <project_dir> [round_type] [--mode paper|lightweight|standard|deep]" >&2
     echo "  round_type: discovery, validation, re_search, rebuttal, writing, repair, finalization, setup" >&2
     exit 2
 fi
@@ -22,6 +32,23 @@ fi
 if [ ! -d "$PROJECT_DIR" ]; then
     echo "Error: project directory not found: $PROJECT_DIR" >&2
     exit 2
+fi
+
+# If no mode specified, detect from project state.
+if [ -z "$WORKFLOW_MODE" ]; then
+    if [ -f "$PROJECT_DIR/state/project-state.json" ]; then
+        WORKFLOW_MODE=$(jq -r '.workflow_mode // "deep"' "$PROJECT_DIR/state/project-state.json" 2>/dev/null || echo "deep")
+    fi
+    # Also check previous round's mode.
+    if [ "$WORKFLOW_MODE" = "deep" ] || [ -z "$WORKFLOW_MODE" ]; then
+        # Look at last round's mode.
+        local last_round
+        last_round=$(find "$PROJECT_DIR/rounds" -name 'round.yaml' -type f 2>/dev/null | sort -r | head -1)
+        if [ -n "$last_round" ]; then
+            WORKFLOW_MODE=$(grep -E '^workflow_mode:' "$last_round" 2>/dev/null | sed 's/^workflow_mode:\s*//' | xargs || echo "deep")
+        fi
+    fi
+    [ -z "$WORKFLOW_MODE" ] && WORKFLOW_MODE="deep"
 fi
 
 # Validate round type.
@@ -53,7 +80,7 @@ if [ -f "$PROJECT_DIR/project.yaml" ]; then
 fi
 [ -z "$PROJECT_ID" ] && PROJECT_ID="$(basename "$PROJECT_DIR")"
 
-# Define required outputs based on round type.
+# Define required outputs based on round type and workflow mode.
 case "$ROUND_TYPE" in
     setup)
         REQUIRED_OUTPUTS='["report"]' ;;
@@ -67,9 +94,14 @@ case "$ROUND_TYPE" in
         REQUIRED_OUTPUTS='["report","evidence_update","critique_update","writing_diff","knowledge_delta"]' ;;
 esac
 
+# Paper mode: add paper_patch and experiment_obligation to required outputs.
+if [ "$WORKFLOW_MODE" = "paper" ]; then
+    REQUIRED_OUTPUTS=$(echo "$REQUIRED_OUTPUTS" | sed 's/]$/, "paper_patch", "experiment_obligation"]/')
+fi
+
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-# Write round.yaml.
+# Write round.yaml with workflow_mode.
 cat > "$ROUND_DIR/round.yaml" << YAML
 round_id: $NEXT_ROUND
 project_id: $PROJECT_ID
@@ -78,10 +110,55 @@ status: open
 started_at: $NOW
 completed_at: null
 target_gap: null
+workflow_mode: $WORKFLOW_MODE
 required_outputs: $REQUIRED_OUTPUTS
 notes: ""
 schema_version: "1.0.0"
 YAML
+
+# Paper mode: scaffold paper-mode directories and files.
+if [ "$WORKFLOW_MODE" = "paper" ]; then
+    mkdir -p "$ROUND_DIR/patches"
+    mkdir -p "$ROUND_DIR/experiments"
+
+    # Create dispositions.yaml template.
+    cat > "$ROUND_DIR/dispositions.yaml" << 'YAML'
+# Critique Disposition Records
+# One entry per medium+ critique.
+
+dispositions: []
+YAML
+
+    # Create questions.md template.
+    cat > "$ROUND_DIR/questions.md" << MD
+# Round $NEXT_ROUND — Human Judgment Questions
+
+<!-- Blocking questions that need human decisions before round close. -->
+
+MD
+
+    # Create paper-patches.md summary.
+    cat > "$ROUND_DIR/paper-patches.md" << MD
+# Round $NEXT_ROUND — Paper Patches
+
+| Patch ID | Critique | Patch Type | Affected Sections | Lifecycle | Human Decision |
+|----------|----------|------------|-------------------|-----------|----------------|
+|          |          |            |                   |           |                |
+
+MD
+
+    # Create experiment-patches.md summary.
+    cat > "$ROUND_DIR/experiment-patches.md" << MD
+# Round $NEXT_ROUND — Experiment Obligations
+
+| Obligation ID | Target Claim | Baseline | Metric | Status |
+|---------------|-------------|----------|--------|--------|
+|               |             |          |        |        |
+
+MD
+
+    echo "  Paper mode: patches/, experiments/, dispositions.yaml, questions.md"
+fi
 
 # Write empty report template.
 cat > "$ROUND_DIR/report.md" << MD
