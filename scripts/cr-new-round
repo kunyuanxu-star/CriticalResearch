@@ -80,28 +80,26 @@ if [ -f "$PROJECT_DIR/project.yaml" ]; then
 fi
 [ -z "$PROJECT_ID" ] && PROJECT_ID="$(basename "$PROJECT_DIR")"
 
-# Define required outputs based on round type and workflow mode.
-case "$ROUND_TYPE" in
-    setup)
-        REQUIRED_OUTPUTS='["report"]' ;;
-    repair)
-        REQUIRED_OUTPUTS='["report","knowledge_delta"]' ;;
-    writing)
-        REQUIRED_OUTPUTS='["writing_diff"]' ;;
-    finalization)
-        REQUIRED_OUTPUTS='["report","writing_diff","knowledge_delta"]' ;;
-    *)
-        REQUIRED_OUTPUTS='["report","evidence_update","critique_update","writing_diff","knowledge_delta"]' ;;
-esac
-
-# Paper mode: add paper_patch and experiment_obligation to required outputs.
-if [ "$WORKFLOW_MODE" = "paper" ]; then
-    REQUIRED_OUTPUTS=$(echo "$REQUIRED_OUTPUTS" | sed 's/]$/, "paper_patch", "experiment_obligation"]/')
-fi
+# Define required outputs as YAML list items (not inline JSON).
+# Validators parse with grep '^\s*-\s+', so we emit proper YAML bullet format.
+gen_required_outputs() {
+    case "$1" in
+        setup)        echo "  - report" ;;
+        repair)       echo -e "  - report\n  - knowledge_delta" ;;
+        writing)      echo "  - writing_diff" ;;
+        finalization) echo -e "  - report\n  - writing_diff\n  - knowledge_delta" ;;
+        *)            echo -e "  - report\n  - evidence_update\n  - critique_update\n  - writing_diff\n  - knowledge_delta" ;;
+    esac
+    # Paper mode: add extra outputs.
+    if [ "$WORKFLOW_MODE" = "paper" ]; then
+        echo "  - paper_patch"
+        echo "  - experiment_obligation"
+    fi
+}
 
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-# Write round.yaml with workflow_mode.
+# Write round.yaml with workflow_mode and proper YAML list format.
 cat > "$ROUND_DIR/round.yaml" << YAML
 round_id: $NEXT_ROUND
 project_id: $PROJECT_ID
@@ -111,7 +109,8 @@ started_at: $NOW
 completed_at: null
 target_gap: null
 workflow_mode: $WORKFLOW_MODE
-required_outputs: $REQUIRED_OUTPUTS
+required_outputs:
+$(gen_required_outputs "$ROUND_TYPE")
 notes: ""
 schema_version: "1.0.0"
 YAML
@@ -256,4 +255,5 @@ fi
 
 echo "Round $ROUND_NUM created: $ROUND_DIR"
 echo "  Type: $ROUND_TYPE"
-echo "  Required outputs: $REQUIRED_OUTPUTS"
+echo "  Mode: $WORKFLOW_MODE"
+echo "  Required outputs: see $ROUND_DIR/round.yaml"

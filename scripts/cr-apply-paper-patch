@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# cr-apply-paper-patch — Apply an approved paper patch to the paper draft.
+# Records the change in diff-log.md and updates the patch lifecycle.
+#
+# Patches are applied manually by the agent/human using the before/after
+# description as guidance. This script validates preconditions and records
+# the application — it does not perform automated text replacement.
+#
+# Usage: cr-apply-paper-patch <round_dir> <project_dir> <patch_id>
+#
+# Exit codes:
+#   0 — patch applied and recorded
+#   2 — preconditions not met
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+ROUND_DIR="${1:-}"
+PROJECT_DIR="${2:-}"
+PATCH_ID="${3:-}"
+
+if [ -z "$ROUND_DIR" ] || [ -z "$PROJECT_DIR" ] || [ -z "$PATCH_ID" ]; then
+    echo "Usage: cr-apply-paper-patch <round_dir> <project_dir> <patch_id>" >&2
+    exit 2
+fi
+
+PATCH_FILE="$ROUND_DIR/patches/${PATCH_ID}.yaml"
+DRAFT_FILE="$PROJECT_DIR/writing/paper-draft.md"
+DIFF_LOG="$PROJECT_DIR/writing/diff-log.md"
+
+if [ ! -f "$PATCH_FILE" ]; then
+    fail "Patch file not found: $PATCH_FILE"
+    cr_exit_summary
+fi
+
+echo ""
+echo "══ Apply Paper Patch: $PATCH_ID ══"
+
+# ── Precondition checks ─────────────────────────────────────────
+
+LIFECYCLE=$(grep -E '^lifecycle_status:' "$PATCH_FILE" 2>/dev/null | sed 's/^lifecycle_status:\s*//' | xargs || echo "")
+NEEDS_HUMAN=$(grep -E '^needs_human_decision:' "$PATCH_FILE" 2>/dev/null | sed 's/^needs_human_decision:\s*//' | xargs || echo "false")
+
+# Must be approved (or proposed without human gate).
+if [ "$LIFECYCLE" != "approved" ] && [ "$LIFECYCLE" != "proposed" ]; then
+    fail "$PATCH_ID: lifecycle is '$LIFECYCLE' — must be approved or proposed to apply"
+    cr_exit_summary
+fi
+
+if [ "$NEEDS_HUMAN" = "true" ] && [ "$LIFECYCLE" != "approved" ]; then
+    fail "$PATCH_ID: needs human decision but not yet approved (lifecycle=$LIFECYCLE)"
+    cr_exit_summary
+fi
+
+# ── Extract patch details ────────────────────────────────────────
+
+BEFORE=$(sed -n '/^proposed_change:/,/^[a-z]/p' "$PATCH_FILE" 2>/dev/null | grep -A 10 'before:' | grep -v 'before:' | sed 's/^\s*//' | tr '\n' ' ' | head -c 200)
+AFTER=$(sed -n '/^proposed_change:/,/^[a-z]/p' "$PATCH_FILE" 2>/dev/null | grep -A 10 'after:' | grep -v 'after:' | sed 's/^\s*//' | tr '\n' ' ' | head -c 200)
+AFFECTED=$(grep -A 20 '^affected_anchors:' "$PATCH_FILE" 2>/dev/null | grep -E '^\s+-\s+' | sed 's/^\s*-\s*//' | tr '\n' ', ' | sed 's/,$//')
+RATIONALE=$(sed -n '/^proposed_change:/,/^[a-z]/p' "$PATCH_FILE" 2>/dev/null | grep -A 10 'rationale:' | grep -v 'rationale:' | sed 's/^\s*//' | tr '\n' ' ' | head -c 200)
+
+echo ""
+echo "  Affected sections: $AFFECTED"
+echo "  Before: $BEFORE"
+echo "  After:  $AFTER"
+echo ""
+
+# ── Record in diff-log ──────────────────────────────────────────
+
+NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+mkdir -p "$(dirname "$DIFF_LOG")"
+[ ! -f "$DIFF_LOG" ] && echo "# Writing Diff Log" > "$DIFF_LOG"
+
+cat >> "$DIFF_LOG" << LOG
+
+## $PATCH_ID — Applied $NOW
+
+**Affected sections**: $AFFECTED
+
+**Change**:
+- Before: $BEFORE
+- After:  $AFTER
+
+**Rationale**: $RATIONALE
+
+LOG
+
+pass "Recorded in diff-log.md"
+
+# ── Update patch lifecycle ──────────────────────────────────────
+
+if [ "$(uname)" = "Darwin" ]; then
+    sed -i '' "s|^lifecycle_status:.*|lifecycle_status: applied|" "$PATCH_FILE"
+    sed -i '' "s|^applied_at:.*|applied_at: \"$NOW\"|" "$PATCH_FILE"
+else
+    sed -i "s|^lifecycle_status:.*|lifecycle_status: applied|" "$PATCH_FILE"
+    sed -i "s|^applied_at:.*|applied_at: \"$NOW\"|" "$PATCH_FILE"
+fi
+
+pass "$PATCH_ID: lifecycle $LIFECYCLE -> applied"
+
+# ── Post-apply instructions ─────────────────────────────────────
+
+echo ""
+echo "── Manual Application Required ──"
+echo ""
+echo "The patch metadata has been recorded, but you must manually apply"
+echo "the text changes to \`$DRAFT_FILE\`:"
+echo ""
+echo "  Sections to edit: $AFFECTED"
+echo "  Change from: $BEFORE"
+echo "  Change to:   $AFTER"
+echo ""
+echo "After editing, the patch will be validated by cr-validate-anchors"
+echo "on close-round to verify anchors still resolve."
+echo ""
+
+cr_exit_summary

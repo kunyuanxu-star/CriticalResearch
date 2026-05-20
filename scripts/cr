@@ -51,23 +51,31 @@ case "$COMMAND" in
         TOPIC="${1:-}"
         if [ -z "$TOPIC" ]; then
             echo "Usage: cr start <topic>" >&2
+            echo "  topic: a short, lowercase identifier with hyphens (e.g., 'framevm', 'cache-study')" >&2
             exit 2
         fi
 
-        PROJECT_DIR="$WORKSPACE_ROOT/$TOPIC"
+        # Sanitize topic to a valid project_id: lowercase, replace spaces/underscores with hyphens.
+        PROJECT_ID=$(echo "$TOPIC" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
+        if [ -z "$PROJECT_ID" ] || [ ${#PROJECT_ID} -lt 2 ]; then
+            echo "Error: topic '$TOPIC' sanitizes to invalid project_id '$PROJECT_ID'. Use letters, numbers, hyphens." >&2
+            exit 2
+        fi
+
+        PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT_ID"
         if [ -d "$PROJECT_DIR" ]; then
             echo "Error: project directory already exists: $PROJECT_DIR" >&2
             exit 2
         fi
 
-        echo "Creating research project: $TOPIC"
+        echo "Creating research project: $PROJECT_ID"
         mkdir -p "$PROJECT_DIR"/{state,literature,writing,rounds}
 
-        # Create project.yaml.
+        # Create project.yaml with valid defaults.
         NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
         cat > "$PROJECT_DIR/project.yaml" << YAML
-project_id: $TOPIC
-target_standard: ""
+project_id: $PROJECT_ID
+target_standard: "SOSP/OSDI-level systems conference"
 created_at: $NOW
 description: "Research project: $TOPIC"
 schema_version: "1.0.0"
@@ -76,7 +84,7 @@ YAML
         # Create project-state.json.
         cat > "$PROJECT_DIR/state/project-state.json" << JSON
 {
-  "project_id": "$TOPIC",
+  "project_id": "$PROJECT_ID",
   "status": "active",
   "active_round": 1,
   "total_rounds": 1,
@@ -89,7 +97,7 @@ JSON
 
         # Create initial paper draft with complete structure.
         cat > "$PROJECT_DIR/writing/paper-draft.md" << MD
-# $TOPIC — Research Paper Draft
+# $PROJECT_ID — Research Paper Draft
 
 <!-- anchor: abstract -->
 ## Abstract
@@ -159,10 +167,10 @@ MD
 
         # Set as active project.
         mkdir -p "$WORKSPACE_ROOT/_cr"
-        echo "$TOPIC" > "$WORKSPACE_ROOT/_cr/active-project"
+        echo "$PROJECT_ID" > "$WORKSPACE_ROOT/_cr/active-project"
 
         echo ""
-        echo "Project '$TOPIC' created at $PROJECT_DIR"
+        echo "Project '$PROJECT_ID' created at $PROJECT_DIR"
         echo "Run 'cr status' to see current state."
         ;;
 
