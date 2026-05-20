@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# cr-validate-anchors — Paper draft anchor validation.
+# Checks that patches targeting draft sections can resolve their anchors
+# against the current paper-draft.md.
+#
+# Usage: cr-validate-anchors <round_dir> <project_dir>
+#
+# Exit codes:
+#   0 — anchors valid
+#   2 — one or more failures (hard gate for dangling applied patches)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+ROUND_DIR="${1:-}"
+PROJECT_DIR="${2:-}"
+
+if [ -z "$ROUND_DIR" ] || [ -z "$PROJECT_DIR" ]; then
+    echo "Usage: cr-validate-anchors <round_dir> <project_dir>" >&2
+    exit 2
+fi
+
+ROUND_NAME="$(basename "$ROUND_DIR")"
+echo ""
+echo "══ Anchor Validation: $ROUND_NAME ══"
+
+DRAFT_FILE="$PROJECT_DIR/writing/paper-draft.md"
+
+# Valid anchor identifiers.
+VALID_ANCHORS=("abstract" "introduction" "background" "motivation" "design" "implementation" "evaluation_plan" "related_work" "discussion" "conclusion")
+
+# Check paper draft exists.
+if [ ! -f "$DRAFT_FILE" ]; then
+    fail "paper-draft.md not found at $DRAFT_FILE"
+    cr_exit_summary
+fi
+
+# Extract declared anchors from paper-draft.md.
+declare -A DRAFT_ANCHORS
+while IFS= read -r line; do
+    anchor=$(echo "$line" | grep -oE 'anchor:\s*([a-z_][a-z0-9_.]*)' | sed 's/anchor:\s*//' || echo "")
+    [ -n "$anchor" ] && DRAFT_ANCHORS[$anchor]=1
+done < "$DRAFT_FILE"
+
+# Also add base section names as implicit anchors (from markdown headers).
+for sec in "${VALID_ANCHORS[@]}"; do
+    if grep -qi "$sec" "$DRAFT_FILE" 2>/dev/null; then
+        DRAFT_ANCHORS[$sec]=1
+    fi
+done
+
+if [ ${#DRAFT_ANCHORS[@]} -eq 0 ]; then
+    warn "No anchors found in paper-draft.md — add HTML comments for anchor targeting"
+else
+    pass "Found ${#DRAFT_ANCHORS[@]} anchors in paper-draft.md"
+fi
+
+# Check patch anchors resolve.
+PATCHES_DIR="$ROUND_DIR/patches"
+if [ -d "$PATCHES_DIR" ]; then
+    for patch_file in "$PATCHES_DIR"/PP-*.yaml; do
+        [ ! -f "$patch_file" ] && continue
+        PP_ID=$(basename "$patch_file" .yaml)
+        LIFECYCLE=$(grep -E '^lifecycle_status:' "$patch_file" 2>/dev/null | sed 's/^lifecycle_status:\s*//' | xargs || echo "")
+
+        # Extract affected_anchors from the patch.
+        PATCH_ANCHORS=$(grep -E '^\s+-\s+(abstract|introduction|background|motivation|design|implementation|evaluation_plan|related_work|discussion|conclusion)' "$patch_file" 2>/dev/null | sed 's/^\s*-\s*//' || echo "")
+
+        for anchor in $PATCH_ANCHORS; do
+            if [ -n "${DRAFT_ANCHORS[$anchor]:-}" ]; then
+                pass "$PP_ID → $anchor (resolved)"
+            else
+                if [ "$LIFECYCLE" = "applied" ]; then
+                    fail "$PP_ID → $anchor: applied patch targets missing anchor in paper-draft.md"
+                else
+                    warn "$PP_ID → $anchor: anchor not yet in paper-draft.md (patch not yet applied)"
+                fi
+            fi
+        done
+    done
+fi
+
+cr_exit_summary

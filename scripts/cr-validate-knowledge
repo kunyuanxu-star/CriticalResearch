@@ -78,9 +78,14 @@ fi
 ALL_NO_COUNT=$(grep -cE ':\s*(no|No|NO)\s*$' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
 HAS_NO_UPDATE=$(grep -cE '## (If No Updates|No-Update Justification)' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
 if [ "$ALL_NO_COUNT" -ge 4 ] && [ "$HAS_NO_UPDATE" -eq 0 ]; then
-    fail "knowledge-delta.md reports no updates across all categories but has no no-update justification section"
+    fail "knowledge-delta.md reports no updates across all categories but has no no-update justification — must explain why (hard gate)"
 elif [ "$ALL_NO_COUNT" -ge 4 ] && [ "$HAS_NO_UPDATE" -ge 1 ]; then
-    pass "knowledge-delta.md has no-update justification"
+    HAS_JUSTIFICATION_CONTENT=$(sed -n '/## \(If No Updates\|No-Update Justification\)/,/^## /p' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null | grep -cE '^\w' || echo 0)
+    if [ "${HAS_JUSTIFICATION_CONTENT:-0}" -ge 2 ]; then
+        pass "knowledge-delta.md has substantive no-update justification"
+    else
+        fail "knowledge-delta.md has no-update section but justification is empty — must explain why no knowledge was distilled"
+    fi
 fi
 
 # ── Cross-check: bank_update references ─────────────────────────
@@ -95,7 +100,7 @@ if [ -n "$BANK_UPDATE_REFS" ]; then
         if [ -f "$WORKSPACE_ROOT/_cr/knowledge/$ref" ] || [ -f "$ref" ]; then
             pass "bank_update target exists: $ref"
         else
-            warn "bank_update references non-existent file: $ref (card may need creation)"
+            fail "bank_update references non-existent file: $ref — card must be created before round close"
         fi
     done <<< "$BANK_UPDATE_REFS"
 fi

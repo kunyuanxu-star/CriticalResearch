@@ -12,6 +12,8 @@
 #   validate <project>        Run all project invariant checks
 #   migrate-to-paper <proj>   Scaffold paper mode directories for a project
 #   promote-knowledge         Check thinking cards for promotion eligibility
+#   workspace init            Initialize Research workspace with _cr/ structure
+#   workspace scan            List all research-* projects in workspace
 #   status                    Show workspace and active project status
 
 set -euo pipefail
@@ -33,6 +35,8 @@ usage() {
     echo "  validate <project>            Run all project invariant checks"
     echo "  migrate-to-paper-mode <proj>  Scaffold paper mode directories"
     echo "  promote-knowledge             Check thinking cards for promotion"
+    echo "  workspace init                Initialize Research workspace"
+    echo "  workspace scan                List research projects in workspace"
     echo "  status                        Show workspace and active project status"
     echo ""
     echo "Run 'cr' from within a Research workspace directory."
@@ -217,17 +221,49 @@ MD
         echo "Closing round $ACTIVE_RND for project '$PROJECT'..."
         echo ""
 
-        # Run all validations.
+        # Run full validator pipeline from artifact registry.
+        # Order: schema → artifacts → ids → references → anchors →
+        #        paper-patches → knowledge → experiments → human-gates
         ALL_PASSED=true
+        WORKFLOW_MODE=$(grep -E '^workflow_mode:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^workflow_mode:\s*//' | xargs || echo "")
 
+        # Stage 1: Schema validation (always run).
         "$SCRIPT_DIR/cr-validate-round" "$ROUND_DIR" || ALL_PASSED=false
+
+        # Stage 2: Artifact presence (always run).
+        "$SCRIPT_DIR/cr-validate-artifacts" "$ROUND_DIR" || ALL_PASSED=false
+
+        # Stage 3: ID uniqueness (always run).
+        "$SCRIPT_DIR/cr-validate-ids" "$ROUND_DIR" "$PROJECT_DIR" || ALL_PASSED=false
+
+        # Stage 4: Writing diff (always run).
         "$SCRIPT_DIR/cr-validate-writing" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PASSED=false
+
+        # Stage 5: Round report + knowledge delta (always run).
         "$SCRIPT_DIR/cr-validate-knowledge" "$ROUND_DIR" || ALL_PASSED=false
 
-        # Paper mode: validate paper patches and dispositions.
-        WORKFLOW_MODE=$(grep -E '^workflow_mode:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^workflow_mode:\s*//' | xargs || echo "")
+        # Paper-mode stages.
         if [ "$WORKFLOW_MODE" = "paper" ]; then
+            echo ""
+            echo "── Paper Mode Pipeline ──"
+
+            # Stage 6: Cross-references.
+            "$SCRIPT_DIR/cr-validate-references" "$ROUND_DIR" "$PROJECT_DIR" || ALL_PASSED=false
+
+            # Stage 7: Anchor validation.
+            "$SCRIPT_DIR/cr-validate-anchors" "$ROUND_DIR" "$PROJECT_DIR" || ALL_PASSED=false
+
+            # Stage 8: Paper patches + dispositions.
             "$SCRIPT_DIR/cr-validate-paper-patches" "$ROUND_DIR" || ALL_PASSED=false
+
+            # Stage 9: Experiment obligations.
+            "$SCRIPT_DIR/cr-validate-experiments" "$ROUND_DIR" || ALL_PASSED=false
+
+            # Stage 10: Human judgment gates.
+            "$SCRIPT_DIR/cr-validate-human-gates" "$ROUND_DIR" "$PROJECT_DIR" || ALL_PASSED=false
+
+            # Stage 11: Paper draft completeness.
+            "$SCRIPT_DIR/cr-validate-paper-completeness" "$PROJECT_DIR" || ALL_PASSED=false
         fi
 
         if [ "$ALL_PASSED" = false ]; then
@@ -272,12 +308,19 @@ MD
             ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
             if [ -d "$ROUND_DIR" ]; then
                 echo ""
+                WORKFLOW_MODE=$(grep -E '^workflow_mode:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^workflow_mode:\s*//' | xargs || echo "")
                 "$SCRIPT_DIR/cr-validate-round" "$ROUND_DIR"
+                "$SCRIPT_DIR/cr-validate-artifacts" "$ROUND_DIR"
+                "$SCRIPT_DIR/cr-validate-ids" "$ROUND_DIR" "$PROJECT_DIR"
                 "$SCRIPT_DIR/cr-validate-writing" "$PROJECT_DIR" "$ROUND_DIR"
                 "$SCRIPT_DIR/cr-validate-knowledge" "$ROUND_DIR"
-                WORKFLOW_MODE=$(grep -E '^workflow_mode:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^workflow_mode:\s*//' | xargs || echo "")
                 if [ "$WORKFLOW_MODE" = "paper" ]; then
+                    "$SCRIPT_DIR/cr-validate-references" "$ROUND_DIR" "$PROJECT_DIR"
+                    "$SCRIPT_DIR/cr-validate-anchors" "$ROUND_DIR" "$PROJECT_DIR"
                     "$SCRIPT_DIR/cr-validate-paper-patches" "$ROUND_DIR"
+                    "$SCRIPT_DIR/cr-validate-experiments" "$ROUND_DIR"
+                    "$SCRIPT_DIR/cr-validate-human-gates" "$ROUND_DIR" "$PROJECT_DIR"
+                    "$SCRIPT_DIR/cr-validate-paper-completeness" "$PROJECT_DIR"
                 fi
             fi
         fi
@@ -295,6 +338,92 @@ MD
 
     promote-knowledge)
         exec "$SCRIPT_DIR/cr-promote-knowledge" "$WORKSPACE_ROOT"
+        ;;
+
+    workspace)
+        SUB="${1:-}"
+        case "$SUB" in
+            init)
+                echo "Initializing Research workspace at $WORKSPACE_ROOT..."
+                mkdir -p "$WORKSPACE_ROOT/_cr/knowledge/thinking/cards"
+                mkdir -p "$WORKSPACE_ROOT/_cr/knowledge/literature"/{papers,systems,concepts,debates,comparisons}
+                mkdir -p "$WORKSPACE_ROOT/_cr/logs"
+
+                # Create workspace.yaml if absent.
+                if [ ! -f "$WORKSPACE_ROOT/_cr/workspace.yaml" ]; then
+                    cat > "$WORKSPACE_ROOT/_cr/workspace.yaml" << YAML
+workspace_name: $(basename "$WORKSPACE_ROOT")
+created_at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+schema_version: "1.0.0"
+YAML
+                    echo "  Created _cr/workspace.yaml"
+                fi
+
+                # Create CLAUDE.md if absent.
+                if [ ! -f "$WORKSPACE_ROOT/CLAUDE.md" ]; then
+                    cat > "$WORKSPACE_ROOT/CLAUDE.md" << 'MD'
+# Research Workspace
+
+This is a CriticalResearch workspace. Research projects live in `research-*/` directories.
+Cross-project knowledge is stored in `_cr/knowledge/`.
+
+## Active Project
+
+Run `cr status` to see active project and round state.
+
+## Knowledge Banks
+
+- Literature: `_cr/knowledge/literature/` (papers, systems, concepts, debates)
+- Thinking: `_cr/knowledge/thinking/cards/` (research principles, writing rules, reviewer patterns)
+MD
+                    echo "  Created CLAUDE.md"
+                fi
+
+                # Create project-index.md if absent.
+                if [ ! -f "$WORKSPACE_ROOT/_cr/project-index.md" ]; then
+                    cat > "$WORKSPACE_ROOT/_cr/project-index.md" << 'MD'
+# Project Index
+
+| Project | Status | Rounds | Active Round | Last Updated |
+|---------|--------|--------|--------------|--------------|
+MD
+                    echo "  Created _cr/project-index.md"
+                fi
+
+                echo ""
+                echo "Workspace initialized at $WORKSPACE_ROOT"
+                echo "Run 'cr start <topic>' to create your first research project."
+                ;;
+
+            scan)
+                echo "Workspace: $WORKSPACE_ROOT"
+                echo ""
+                HAS_PROJECTS=false
+                for proj_dir in "$WORKSPACE_ROOT"/*/; do
+                    [ ! -d "$proj_dir" ] && continue
+                    PROJ_NAME=$(basename "$proj_dir")
+                    case "$PROJ_NAME" in
+                        _cr|.*|_*) continue ;;
+                    esac
+                    HAS_PROJECTS=true
+                    if [ -f "$proj_dir/project.yaml" ]; then
+                        STATUS=$(jq -r '.status // "?"' "$proj_dir/state/project-state.json" 2>/dev/null || echo "?")
+                        ROUNDS=$(jq -r '.total_rounds // 0' "$proj_dir/state/project-state.json" 2>/dev/null || echo "0")
+                        echo "  $PROJ_NAME — status: $STATUS, rounds: $ROUNDS"
+                    else
+                        echo "  $PROJ_NAME — no project.yaml (not a research project?)"
+                    fi
+                done
+                [ "$HAS_PROJECTS" = false ] && echo "  No research projects found. Run 'cr start <topic>' to create one."
+                ;;
+
+            *)
+                echo "Usage: cr workspace <init|scan>" >&2
+                echo "  init   Initialize a Research workspace with _cr/ structure"
+                echo "  scan   List all research-* projects in the workspace"
+                exit 2
+                ;;
+        esac
         ;;
 
     status)

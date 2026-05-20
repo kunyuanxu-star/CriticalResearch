@@ -26,11 +26,25 @@ CR_WARNINGS=0
 # ── Path resolution ──────────────────────────────────────────────
 
 # Resolve the workspace root.
-# Priority: CR_WORKSPACE_ROOT env var > git root > current directory.
+# Priority: CR_WORKSPACE_ROOT env var > nearest _cr/workspace.yaml ancestor > git root > pwd.
 cr_workspace_root() {
     if [ -n "${CR_WORKSPACE_ROOT:-}" ]; then
         echo "$CR_WORKSPACE_ROOT"
-    elif git rev-parse --show-toplevel >/dev/null 2>&1; then
+        return
+    fi
+
+    # Walk up from CWD looking for _cr/workspace.yaml.
+    local dir
+    dir="${CR_CWD:-$(pwd)}"
+    while [ "$dir" != "/" ]; do
+        if [ -f "$dir/_cr/workspace.yaml" ]; then
+            echo "$dir"
+            return
+        fi
+        dir=$(dirname "$dir")
+    done
+
+    if git rev-parse --show-toplevel >/dev/null 2>&1; then
         git rev-parse --show-toplevel
     else
         pwd

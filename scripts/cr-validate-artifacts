@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# cr-validate-artifacts — File presence validation driven by artifact registry.
+# Checks that all required output files/directories exist for the current round type.
+#
+# Usage: cr-validate-artifacts <round_dir>
+#
+# Exit codes:
+#   0 — all required artifacts present
+#   2 — one or more failures
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+ROUND_DIR="${1:-}"
+
+if [ -z "$ROUND_DIR" ]; then
+    echo "Usage: cr-validate-artifacts <round_dir>" >&2
+    exit 2
+fi
+
+if [ ! -d "$ROUND_DIR" ]; then
+    fail "Round directory not found: $ROUND_DIR"
+    cr_exit_summary
+fi
+
+ROUND_NAME="$(basename "$ROUND_DIR")"
+echo ""
+echo "══ Artifact Presence: $ROUND_NAME ══"
+
+# Load required_outputs from round.yaml.
+REQUIRED_OUTPUTS=""
+if [ -f "$ROUND_DIR/round.yaml" ]; then
+    REQUIRED_OUTPUTS=$(grep -E '^\s*-\s+' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^\s*-\s*//' | sort -u || echo "")
+fi
+
+if [ -z "$REQUIRED_OUTPUTS" ]; then
+    REQUIRED_OUTPUTS="report
+evidence_update
+critique_update
+writing_diff
+knowledge_delta"
+fi
+
+# Map output keys to expected paths.
+check_artifact() {
+    local key="$1"
+    case "$key" in
+        report)              echo "$ROUND_DIR/report.md" ;;
+        evidence_update)     echo "$ROUND_DIR/sources.md" ;;
+        critique_update)     echo "$ROUND_DIR/critique.md" ;;
+        writing_diff)        echo "$ROUND_DIR/writing-diff.md" ;;
+        knowledge_delta)     echo "$ROUND_DIR/knowledge-delta.md" ;;
+        paper_patch)         echo "$ROUND_DIR/patches" ;;
+        experiment_obligation) echo "$ROUND_DIR/experiments" ;;
+        *)                   echo "" ;;
+    esac
+}
+
+while IFS= read -r key; do
+    [ -z "$key" ] && continue
+    target=$(check_artifact "$key")
+    if [ -z "$target" ]; then
+        warn "Unknown required_output: $key"
+        continue
+    fi
+    if [ -f "$target" ]; then
+        pass "$key: $(basename "$target") exists"
+    elif [ -d "$target" ]; then
+        # Directory must be non-empty.
+        if [ -n "$(ls -A "$target" 2>/dev/null)" ]; then
+            pass "$key: $(basename "$target")/ exists and non-empty"
+        else
+            fail "$key: $(basename "$target")/ exists but is empty"
+        fi
+    else
+        fail "$key: $(basename "$target") not found"
+    fi
+done <<< "$REQUIRED_OUTPUTS"
+
+cr_exit_summary

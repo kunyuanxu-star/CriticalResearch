@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# cr-validate-paper-completeness — Paper draft structure validation.
+# Checks that paper-draft.md contains all required sections for a
+# complete systems paper draft.
+#
+# Usage: cr-validate-paper-completeness <project_dir>
+#
+# Exit codes:
+#   0 — paper draft has complete structure
+#   2 — missing required sections
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+
+if [ -z "$PROJECT_DIR" ]; then
+    echo "Usage: cr-validate-paper-completeness <project_dir>" >&2
+    exit 2
+fi
+
+DRAFT_FILE="$PROJECT_DIR/writing/paper-draft.md"
+
+if [ ! -f "$DRAFT_FILE" ]; then
+    fail "paper-draft.md not found at $DRAFT_FILE"
+    cr_exit_summary
+fi
+
+PROJECT_NAME=$(basename "$PROJECT_DIR")
+echo ""
+echo "══ Paper Completeness: $PROJECT_NAME ══"
+
+# Required sections for a complete paper draft.
+REQUIRED_SECTIONS=(
+    "Abstract"
+    "Introduction"
+    "Background"
+    "Motivation"
+    "Design"
+    "Implementation Plan"
+    "Evaluation Plan"
+    "Related Work"
+    "Discussion"
+    "Conclusion"
+)
+
+# Optional but recommended sections.
+OPTIONAL_SECTIONS=(
+    "Appendix.*Claim-Evidence"
+    "Appendix.*Experiment Matrix"
+    "Appendix.*Open Risks"
+)
+
+MISSING=""
+for section in "${REQUIRED_SECTIONS[@]}"; do
+    # Case-insensitive header match.
+    if grep -qi "^##\s*$section" "$DRAFT_FILE" 2>/dev/null; then
+        pass "Section: $section"
+    else
+        fail "Missing section: $section"
+        MISSING="$MISSING $section"
+    fi
+done
+
+for section in "${OPTIONAL_SECTIONS[@]}"; do
+    if grep -qi "^##\s*$section" "$DRAFT_FILE" 2>/dev/null; then
+        pass "Optional section: $section"
+    else
+        warn "Optional section missing: $section"
+    fi
+done
+
+# Check for content in each section (not just empty headers).
+EMPTY_SECTIONS=""
+for section in "${REQUIRED_SECTIONS[@]}"; do
+    # Get content between this header and next header.
+    CONTENT=$(sed -n "/^## $section/,/^## /p" "$DRAFT_FILE" 2>/dev/null | grep -cE '^\w' || echo 0)
+    if [ "${CONTENT:-0}" -lt 2 ]; then
+        warn "Section '$section' appears empty or has minimal content"
+        EMPTY_SECTIONS="$EMPTY_SECTIONS $section"
+    fi
+done
+
+# Check for status markers.
+UNSTABLE_COUNT=$(grep -cE '\[unstable\]|\[needs evidence\]|\[blocked by' "$DRAFT_FILE" 2>/dev/null || echo 0)
+if [ "$UNSTABLE_COUNT" -gt 0 ]; then
+    warn "$UNSTABLE_COUNT unstable marker(s) in paper draft ([unstable], [needs evidence], [blocked by])"
+fi
+
+# Summary.
+SECTION_COUNT=$(grep -ci '^## ' "$DRAFT_FILE" 2>/dev/null || echo 0)
+LINE_COUNT=$(wc -l < "$DRAFT_FILE" 2>/dev/null | tr -d ' ')
+
+echo ""
+echo "  Paper draft: $SECTION_COUNT sections, $LINE_COUNT lines"
+
+if [ -n "$MISSING" ]; then
+    echo "  Missing sections:$MISSING"
+fi
+
+cr_exit_summary

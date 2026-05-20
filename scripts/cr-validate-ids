@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# cr-validate-ids — ID uniqueness and format validation.
+# Checks that CRT-XXX, PP-XXX, EXP-XXX, CLM-XXX, etc. follow patterns
+# and are unique within their scope.
+#
+# Usage: cr-validate-ids <round_dir> [project_dir]
+#
+# Exit codes:
+#   0 — all IDs valid and unique
+#   2 — one or more failures
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+ROUND_DIR="${1:-}"
+PROJECT_DIR="${2:-}"
+
+if [ -z "$ROUND_DIR" ]; then
+    echo "Usage: cr-validate-ids <round_dir> [project_dir]" >&2
+    exit 2
+fi
+
+ROUND_NAME="$(basename "$ROUND_DIR")"
+echo ""
+echo "══ ID Validation: $ROUND_NAME ══"
+
+# Per-project ID patterns (3 digits).
+declare -A PROJECT_SCOPED_PATTERNS
+PROJECT_SCOPED_PATTERNS["CRT"]="^CRT-[0-9]{3}$"
+PROJECT_SCOPED_PATTERNS["PP"]="^PP-[0-9]{3}$"
+PROJECT_SCOPED_PATTERNS["CLM"]="^CLM-[0-9]{3}$"
+PROJECT_SCOPED_PATTERNS["GAP"]="^GAP-[0-9]{3}$"
+PROJECT_SCOPED_PATTERNS["EXP"]="^EXP-[0-9]{3}$"
+PROJECT_SCOPED_PATTERNS["DEC"]="^DEC-[0-9]{3}$"
+
+# Collect all IDs and check for duplicates within each prefix.
+declare -A SEEN_IDS
+ERRORS=0
+
+scan_ids() {
+    local prefix="$1"
+    local file="$2"
+    [ ! -f "$file" ] && return
+    local ids
+    ids=$(grep -oE "${prefix}-[0-9]{3,4}" "$file" 2>/dev/null || echo "")
+    for id in $ids; do
+        local pattern="${PROJECT_SCOPED_PATTERNS[$prefix]:-}"
+        if [ -n "$pattern" ] && ! echo "$id" | grep -qE "$pattern" 2>/dev/null; then
+            # For workspace-scoped IDs (4 digits: RP, WR, RV, AP, EP), different pattern.
+            if ! echo "$id" | grep -qE "^${prefix}-[0-9]{4}$" 2>/dev/null; then
+                fail "Malformed ID: $id in $(basename "$file")"
+                ERRORS=$((ERRORS + 1))
+                continue
+            fi
+        fi
+
+        if [ -n "${SEEN_IDS[$id]:-}" ]; then
+            fail "Duplicate ID: $id (first seen in ${SEEN_IDS[$id]}, also in $(basename "$file"))"
+            ERRORS=$((ERRORS + 1))
+        else
+            SEEN_IDS[$id]="$(basename "$file")"
+        fi
+    done
+}
+
+# Scan critique.md for CRT-IDs.
+scan_ids "CRT" "$ROUND_DIR/critique.md"
+
+# Scan patches/ for PP-IDs and EXP references.
+if [ -d "$ROUND_DIR/patches" ]; then
+    for pf in "$ROUND_DIR/patches"/PP-*.yaml; do
+        [ -f "$pf" ] && scan_ids "PP" "$pf" && scan_ids "EXP" "$pf" && scan_ids "CRT" "$pf" && scan_ids "CLM" "$pf"
+    done
+fi
+
+# Scan experiments/ for EXP-IDs.
+if [ -d "$ROUND_DIR/experiments" ]; then
+    for ef in "$ROUND_DIR/experiments"/EXP-*.yaml; do
+        [ -f "$ef" ] && scan_ids "EXP" "$ef" && scan_ids "PP" "$ef" && scan_ids "CLM" "$ef"
+    done
+fi
+
+# Scan dispositions.yaml for CRT/PP/EXP-IDs.
+if [ -f "$ROUND_DIR/dispositions.yaml" ]; then
+    scan_ids "CRT" "$ROUND_DIR/dispositions.yaml"
+    scan_ids "PP" "$ROUND_DIR/dispositions.yaml"
+    scan_ids "EXP" "$ROUND_DIR/dispositions.yaml"
+fi
+
+if [ "$ERRORS" -eq 0 ] && [ "${#SEEN_IDS[@]}" -gt 0 ]; then
+    pass "All ${#SEEN_IDS[@]} IDs unique and valid"
+elif [ "${#SEEN_IDS[@]}" -eq 0 ]; then
+    pass "No IDs found in round artifacts"
+fi
+
+cr_exit_summary
