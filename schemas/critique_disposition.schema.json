@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "https://critical-research/schemas/critique_disposition.schema.json",
+  "title": "Critique Disposition",
+  "description": "Schema for a critique disposition record — determines what action, if any, is taken in response to a medium/high/fatal critique.",
+  "type": "object",
+  "required": ["critique_id", "disposition_type", "justification", "status"],
+  "properties": {
+    "critique_id": {
+      "type": "string",
+      "description": "The critique this disposition addresses.",
+      "pattern": "^CRT-[0-9]{3}$"
+    },
+    "disposition_type": {
+      "type": "string",
+      "description": "Type of action taken for this critique.",
+      "enum": ["paper_patch", "experiment_obligation", "claim_deleted", "deferred", "rejected_with_reason", "no_op"]
+    },
+    "linked_patch_id": {
+      "type": "string",
+      "description": "Paper patch ID (required when disposition_type is paper_patch).",
+      "pattern": "^PP-[0-9]{3}$"
+    },
+    "linked_experiment_id": {
+      "type": "string",
+      "description": "Experiment obligation ID (required when disposition_type is experiment_obligation).",
+      "pattern": "^EXP-[0-9]{3}$"
+    },
+    "linked_claim_id": {
+      "type": "string",
+      "description": "Claim deleted (required when disposition_type is claim_deleted).",
+      "pattern": "^CLM-[0-9]{3}$"
+    },
+    "justification": {
+      "type": "string",
+      "description": "Why this disposition was chosen. Required for all types, especially no_op, deferred, and rejected_with_reason."
+    },
+    "status": {
+      "type": "string",
+      "description": "Resolution status of this disposition.",
+      "enum": ["open", "resolved"]
+    },
+    "resolved_at": {
+      "type": ["string", "null"],
+      "description": "ISO 8601 timestamp when resolved.",
+      "format": "date-time"
+    },
+    "severity": {
+      "type": "string",
+      "description": "Severity of the original critique.",
+      "enum": ["fatal", "high", "medium"]
+    },
+    "linked_round": {
+      "type": "string",
+      "description": "Round that produced this disposition."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": { "disposition_type": { "const": "paper_patch" } }
+      },
+      "then": {
+        "required": ["linked_patch_id"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "disposition_type": { "const": "experiment_obligation" } }
+      },
+      "then": {
+        "required": ["linked_experiment_id"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "disposition_type": { "const": "claim_deleted" } }
+      },
+      "then": {
+        "required": ["linked_claim_id"]
+      }
+    }
+  ]
+}

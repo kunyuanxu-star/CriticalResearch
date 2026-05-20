@@ -1,0 +1,14 @@
+# Critique Disposition Records
+# One entry per medium+ critique. Each maps a critique to its resolution action.
+
+- critique_id: CRT-XXX
+  disposition_type: paper_patch          # paper_patch | experiment_obligation | claim_deleted | deferred | rejected_with_reason | no_op
+  linked_patch_id: PP-XXX               # required when disposition_type=paper_patch
+  linked_experiment_id: ""              # required when disposition_type=experiment_obligation
+  linked_claim_id: ""                   # required when disposition_type=claim_deleted
+  justification: "Why this disposition was chosen."
+  status: resolved                      # open | resolved
+  severity: high
+  linked_round: round-XXX
+  created_at: ""
+  resolved_at: ""

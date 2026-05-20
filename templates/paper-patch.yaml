@@ -1,0 +1,51 @@
+# Paper Patch Template
+# Fill in all fields. This is a structured YAML record that maps to paper_patch.schema.json.
+# Only created when a critique disposition has disposition_type: paper_patch.
+
+patch_id: PP-XXX          # e.g., PP-007
+linked_critique: CRT-XXX  # e.g., CRT-007
+linked_claim: CLM-XXX     # optional
+linked_round: round-XXX   # e.g., round-005
+severity: high            # fatal | high | medium
+
+patch_type:
+  - weaken_claim          # see schema enum for all values
+
+affected_anchors:
+  - abstract              # see schema enum for all values
+
+proposed_change:
+  before: "Current text or claim in the paper draft."
+  after: "Proposed replacement text or claim."
+  rationale: "Why this change addresses the triggering critique."
+
+experiment_obligations: []  # EXP-XXX IDs if claim-level change
+
+needs_human_decision: false
+human_decision_rationale: ""
+
+options: []                 # Alternative options if human decision needed
+agent_recommendation:
+  choice: ""
+  reason: ""
+
+knowledge_implication:
+  literature_updates: []    # literature card file paths to update
+  thinking_candidates:      # thinking rules derived from this patch
+    - rule: "Candidate rule statement."
+      category: writing_rule  # research_principle | writing_rule | reviewer_pattern | anti_pattern | experiment_pattern
+
+lifecycle_status: proposed  # proposed | needs_human_decision | approved | applied | rejected | superseded
+lifecycle_history:
+  - from: ""
+    to: proposed
+    timestamp: ""
+    reason: "Patch created from critique disposition."
+
+superseded_by: ""           # PP-XXX if superseded
+rejection_reason: ""        # required if lifecycle_status is rejected
+
+created_at: ""
+updated_at: ""
+applied_at: ""
+applied_diff_anchor: ""

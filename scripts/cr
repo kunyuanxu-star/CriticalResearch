@@ -220,6 +220,12 @@ MD
         "$SCRIPT_DIR/cr-validate-writing" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PASSED=false
         "$SCRIPT_DIR/cr-validate-knowledge" "$ROUND_DIR" || ALL_PASSED=false
 
+        # Paper mode: validate paper patches and dispositions.
+        WORKFLOW_MODE=$(grep -E '^workflow_mode:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^workflow_mode:\s*//' | xargs || echo "")
+        if [ "$WORKFLOW_MODE" = "paper" ]; then
+            "$SCRIPT_DIR/cr-validate-paper-patches" "$ROUND_DIR" || ALL_PASSED=false
+        fi
+
         if [ "$ALL_PASSED" = false ]; then
             echo ""
             echo "Round cannot close. Fix the failures listed above and re-run 'cr close-round $PROJECT'."
@@ -265,6 +271,10 @@ MD
                 "$SCRIPT_DIR/cr-validate-round" "$ROUND_DIR"
                 "$SCRIPT_DIR/cr-validate-writing" "$PROJECT_DIR" "$ROUND_DIR"
                 "$SCRIPT_DIR/cr-validate-knowledge" "$ROUND_DIR"
+                WORKFLOW_MODE=$(grep -E '^workflow_mode:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^workflow_mode:\s*//' | xargs || echo "")
+                if [ "$WORKFLOW_MODE" = "paper" ]; then
+                    "$SCRIPT_DIR/cr-validate-paper-patches" "$ROUND_DIR"
+                fi
             fi
         fi
         ;;
