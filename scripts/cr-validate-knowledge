@@ -49,7 +49,6 @@ HAS_NO_UPDATE=$(grep -cE '## If No Updates' "$ROUND_DIR/knowledge-delta.md" 2>/d
 
 # ── Content vs template check ───────────────────────────────────
 
-# Check that the delta has meaningful content beyond the template.
 LINE_COUNT=$(wc -l < "$ROUND_DIR/knowledge-delta.md" 2>/dev/null | tr -d ' ')
 HAS_YES_NO=$(grep -cE 'Yes|No' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
 HAS_BULLET=$(grep -cE '^-\s+\S' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
@@ -60,6 +59,68 @@ elif [ "$HAS_YES_NO" -ge 2 ] || [ "$HAS_BULLET" -ge 1 ]; then
     pass "knowledge-delta.md has filled-in responses"
 else
     fail "knowledge-delta.md appears to be empty template — must record learning or explain why none occurred"
+fi
+
+# ── Typed update classification ─────────────────────────────────
+
+# Check that knowledge delta classifies updates as project_local,
+# candidate_reusable, or bank_update.
+HAS_CLASSIFICATION=$(grep -cE '(project_local|candidate_reusable|bank_update)' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
+if [ "$HAS_CLASSIFICATION" -ge 1 ]; then
+    pass "knowledge-delta.md has typed update classification"
+else
+    warn "knowledge-delta.md missing typed classification (project_local, candidate_reusable, bank_update)"
+fi
+
+# ── No-update justification ─────────────────────────────────────
+
+# If knowledge delta sections are all marked "no", check for justification.
+ALL_NO_COUNT=$(grep -cE ':\s*(no|No|NO)\s*$' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
+HAS_NO_UPDATE=$(grep -cE '## (If No Updates|No-Update Justification)' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
+if [ "$ALL_NO_COUNT" -ge 4 ] && [ "$HAS_NO_UPDATE" -eq 0 ]; then
+    fail "knowledge-delta.md reports no updates across all categories but has no no-update justification section"
+elif [ "$ALL_NO_COUNT" -ge 4 ] && [ "$HAS_NO_UPDATE" -ge 1 ]; then
+    pass "knowledge-delta.md has no-update justification"
+fi
+
+# ── Cross-check: bank_update references ─────────────────────────
+
+# If knowledge-delta claims bank_update, verify target card files exist.
+BANK_UPDATE_REFS=$(grep -E 'bank_update|Target file:' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null | grep -oE '/[a-z0-9_/.-]+\.md' || echo "")
+if [ -n "$BANK_UPDATE_REFS" ]; then
+    WORKSPACE_ROOT="$(cr_workspace_root)"
+    while IFS= read -r ref; do
+        [ -z "$ref" ] && continue
+        ref="${ref#/}"
+        if [ -f "$WORKSPACE_ROOT/_cr/knowledge/$ref" ] || [ -f "$ref" ]; then
+            pass "bank_update target exists: $ref"
+        else
+            warn "bank_update references non-existent file: $ref (card may need creation)"
+        fi
+    done <<< "$BANK_UPDATE_REFS"
+fi
+
+# ── Knowledge Implication on patches ────────────────────────────
+
+# Paper mode: check that patches in patches/ have Knowledge Implication.
+PATCHES_DIR="$ROUND_DIR/patches"
+if [ -d "$PATCHES_DIR" ]; then
+    PATCH_FILES=$(find "$PATCHES_DIR" -name 'PP-*.yaml' -type f 2>/dev/null || echo "")
+    if [ -n "$PATCH_FILES" ]; then
+        for patch_file in $PATCH_FILES; do
+            PATCH_ID=$(basename "$patch_file" .yaml)
+            HAS_KNOWLEDGE_IMPL=$(grep -cE '^knowledge_implication:' "$patch_file" 2>/dev/null || echo 0)
+            if [ "$HAS_KNOWLEDGE_IMPL" -ge 1 ]; then
+                # Check sub-fields exist.
+                HAS_LIT=$(grep -cE 'literature_updates:' "$patch_file" 2>/dev/null || echo 0)
+                HAS_THINK=$(grep -cE 'thinking_candidates:' "$patch_file" 2>/dev/null || echo 0)
+                [ "$HAS_LIT" -ge 1 ] && pass "$PATCH_ID: knowledge_implication.literature_updates present"
+                [ "$HAS_THINK" -ge 1 ] && pass "$PATCH_ID: knowledge_implication.thinking_candidates present"
+            else
+                fail "$PATCH_ID: missing knowledge_implication field"
+            fi
+        done
+    fi
 fi
 
 cr_exit_summary

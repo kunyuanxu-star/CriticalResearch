@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# cr-promote-knowledge — Thinking card maturity promotion checker.
+# Scans thinking cards and reports which are eligible for promotion
+# based on usage history and promotion rules.
+#
+# Usage: cr-promote-knowledge <workspace_root>
+#
+# Promotion rules:
+#   candidate -> used:     recorded usage in >=1 round
+#   used -> validated:     usage in >=2 projects OR 3+ rounds, not contradicted
+#   validated -> canonical: explicit human approval required
+#   any -> deprecated:     contradictory evidence recorded
+#
+# Exit codes:
+#   0 — check completed (warnings may be issued)
+#   2 — validation failures
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+WORKSPACE_ROOT="${1:-$(cr_workspace_root)}"
+
+CARDS_DIR="$WORKSPACE_ROOT/_cr/knowledge/thinking/cards"
+if [ ! -d "$CARDS_DIR" ]; then
+    echo "No thinking cards directory found at $CARDS_DIR"
+    exit 0
+fi
+
+echo ""
+echo "══ Knowledge Promotion Check ══"
+
+CARDS=$(find "$CARDS_DIR" -name '*.md' -type f 2>/dev/null || echo "")
+
+if [ -z "$CARDS" ]; then
+    echo "  No thinking cards found."
+    cr_exit_summary
+fi
+
+for card_file in $CARDS; do
+    CARD_ID=""
+    CARD_STATUS=""
+
+    # Extract YAML front matter fields.
+    if grep -q '^---$' "$card_file" 2>/dev/null; then
+        CARD_ID=$(sed -n '/^---$/,/^---$/p' "$card_file" | grep -E '^card_id:' | sed 's/^card_id:\s*//' | xargs 2>/dev/null || echo "")
+        CARD_STATUS=$(sed -n '/^---$/,/^---$/p' "$card_file" | grep -E '^status:' | sed 's/^status:\s*//' | xargs 2>/dev/null || echo "")
+    fi
+
+    [ -z "$CARD_ID" ] && { warn "$(basename "$card_file"): no card_id in YAML front matter"; continue; }
+    [ -z "$CARD_STATUS" ] && { warn "$CARD_ID: no status in front matter"; continue; }
+
+    # Count usage history entries.
+    USAGE_COUNT=$(sed -n '/^---$/,/^---$/p' "$card_file" | grep -cE '^\s*-\s+(project|round):' 2>/dev/null || echo 0)
+
+    # Count unique projects in usage history.
+    UNIQUE_PROJECTS=$(sed -n '/^---$/,/^---$/p' "$card_file" | grep -E '^\s+project:' | sed 's/.*project:\s*//' | sort -u | wc -l | tr -d ' ')
+
+    # Check for deprecation evidence.
+    HAS_CONTRADICTION=$(grep -cE 'contradicted_by:' "$card_file" 2>/dev/null || echo 0)
+
+    case "$CARD_STATUS" in
+        candidate)
+            if [ "$USAGE_COUNT" -ge 1 ]; then
+                pass "$CARD_ID: eligible for candidate -> used ($USAGE_COUNT usage records)"
+            else
+                warn "$CARD_ID: candidate with 0 usage — not eligible for promotion"
+            fi
+            ;;
+        used)
+            if [ "$UNIQUE_PROJECTS" -ge 2 ] || [ "$USAGE_COUNT" -ge 3 ]; then
+                pass "$CARD_ID: eligible for used -> validated ($UNIQUE_PROJECTS projects, $USAGE_COUNT uses)"
+            else
+                warn "$CARD_ID: used but insufficient evidence for validated ($UNIQUE_PROJECTS projects, $USAGE_COUNT uses; need 2+ projects or 3+ uses)"
+            fi
+            ;;
+        validated)
+            HAS_APPROVAL=$(sed -n '/^---$/,/^---$/p' "$card_file" | grep -cE 'approved_by:' 2>/dev/null || echo 0)
+            if [ "$HAS_APPROVAL" -ge 1 ]; then
+                pass "$CARD_ID: eligible for validated -> canonical (human approval recorded)"
+            else
+                warn "$CARD_ID: validated but no human approval for canonical promotion"
+            fi
+            ;;
+        canonical)
+            pass "$CARD_ID: canonical — no further promotion needed"
+            ;;
+        deprecated)
+            if [ "$HAS_CONTRADICTION" -ge 1 ]; then
+                pass "$CARD_ID: deprecated with contradiction evidence"
+            else
+                warn "$CARD_ID: deprecated but no contradicted_by evidence recorded"
+            fi
+            ;;
+        *)
+            warn "$CARD_ID: unknown status '$CARD_STATUS'"
+            ;;
+    esac
+done
+
+cr_exit_summary
