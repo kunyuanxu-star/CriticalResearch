@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# cr-validate-experiments — Experiment obligation completeness validation.
+# Checks that claim-level paper patches have associated experiment obligations
+# with required fields: target_claim, baseline, metric, support/refute conditions.
+#
+# Usage: cr-validate-experiments <round_dir>
+#
+# Exit codes:
+#   0 — all checks passed
+#   2 — one or more failures
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+ROUND_DIR="${1:-}"
+
+if [ -z "$ROUND_DIR" ]; then
+    echo "Usage: cr-validate-experiments <round_dir>" >&2
+    exit 2
+fi
+
+if [ ! -d "$ROUND_DIR" ]; then
+    fail "Round directory not found: $ROUND_DIR"
+    cr_exit_summary
+fi
+
+ROUND_NAME="$(basename "$ROUND_DIR")"
+echo ""
+echo "══ Experiment Validation: $ROUND_NAME ══"
+
+# Only active for paper mode rounds.
+WORKFLOW_MODE=$(grep -E '^workflow_mode:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^workflow_mode:\s*//' | xargs || echo "")
+if [ "$WORKFLOW_MODE" != "paper" ]; then
+    echo "  Not paper mode. Skipping experiment validation."
+    cr_exit_summary
+fi
+
+# ── Check experiment obligations directory ────────────────────────
+
+EXPERIMENTS_DIR="$ROUND_DIR/experiments"
+if [ ! -d "$EXPERIMENTS_DIR" ]; then
+    # Check if any claims need experiments.
+    PATCHES_DIR="$ROUND_DIR/patches"
+    if [ -d "$PATCHES_DIR" ]; then
+        CLAIM_PATCHES=$(grep -lE '(weaken_claim|strengthen_claim|reframe_contribution|add_evaluation)' "$PATCHES_DIR"/PP-*.yaml 2>/dev/null || echo "")
+        if [ -n "$CLAIM_PATCHES" ]; then
+            fail "Claim-level patches found but no experiments/ directory — experiment obligations required"
+        else
+            pass "No claim-level patches — experiment obligations not required"
+        fi
+    else
+        pass "No patches — experiment obligations not required"
+    fi
+    cr_exit_summary
+fi
+
+EXP_FILES=$(find "$EXPERIMENTS_DIR" -name 'EXP-*.yaml' -type f 2>/dev/null || echo "")
+
+if [ -z "$EXP_FILES" ]; then
+    warn "experiments/ directory exists but no EXP-*.yaml files found"
+    cr_exit_summary
+fi
+
+for exp_file in $EXP_FILES; do
+    EXP_ID=$(basename "$exp_file" .yaml)
+
+    # Required fields check.
+    TARGET_CLAIM=$(grep -E '^target_claim:' "$exp_file" 2>/dev/null | sed 's/^target_claim:\s*//' | xargs || echo "")
+    BASELINE=$(grep -E '^baseline:' "$exp_file" 2>/dev/null | sed 's/^baseline:\s*//' | xargs || echo "")
+    METRIC=$(grep -E '^metric:' "$exp_file" 2>/dev/null | sed 's/^metric:\s*//' | xargs || echo "")
+    SUPPORT_COND=$(grep -E '^support_condition:' "$exp_file" 2>/dev/null | sed 's/^support_condition:\s*//' | xargs || echo "")
+    REFUTE_COND=$(grep -E '^refute_condition:' "$exp_file" 2>/dev/null | sed 's/^refute_condition:\s*//' | xargs || echo "")
+
+    [ -z "$TARGET_CLAIM" ] && fail "$EXP_ID: missing target_claim"
+    [ -z "$BASELINE" ] && fail "$EXP_ID: missing baseline"
+    [ -z "$METRIC" ] && fail "$EXP_ID: missing metric"
+    [ -z "$SUPPORT_COND" ] && fail "$EXP_ID: missing support_condition"
+    [ -z "$REFUTE_COND" ] && fail "$EXP_ID: missing refute_condition"
+
+    # Check linked patch exists.
+    LINKED_PATCH=$(grep -E '^linked_patch_id:' "$exp_file" 2>/dev/null | sed 's/^linked_patch_id:\s*//' | xargs || echo "")
+    if [ -n "$LINKED_PATCH" ]; then
+        PATCHES_DIR="$ROUND_DIR/patches"
+        if [ -f "$PATCHES_DIR/${LINKED_PATCH}.yaml" ]; then
+            pass "$EXP_ID: linked to $LINKED_PATCH (patch exists)"
+        else
+            fail "$EXP_ID: linked_patch_id $LINKED_PATCH not found in patches/"
+        fi
+    else
+        fail "$EXP_ID: missing linked_patch_id"
+    fi
+
+    # Check test cases.
+    HAS_TESTS=$(grep -cE '^\s+- name:' "$exp_file" 2>/dev/null || echo 0)
+    if [ "$HAS_TESTS" -ge 1 ]; then
+        pass "$EXP_ID: has test cases"
+    else
+        warn "$EXP_ID: no test cases defined"
+    fi
+
+    # Check for negative tests if claim type is isolation_semantics.
+    CLAIM_TYPE=$(grep -E '^claim_type:' "$exp_file" 2>/dev/null | sed 's/^claim_type:\s*//' | xargs || echo "")
+    if [ "$CLAIM_TYPE" = "isolation_semantics" ]; then
+        HAS_NEGATIVE=$(grep -cE 'is_negative_test:\s*true' "$exp_file" 2>/dev/null || echo 0)
+        if [ "$HAS_NEGATIVE" -ge 1 ]; then
+            pass "$EXP_ID: has negative tests for isolation semantics claim"
+        else
+            fail "$EXP_ID: isolation_semantics claim requires at least one negative test"
+        fi
+    fi
+done
+
+cr_exit_summary

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "https://critical-research/schemas/human_decision.schema.json",
+  "title": "Human Decision",
+  "description": "Schema for a human judgment gate decision — records user resolution of a thesis-level patch or blocking question.",
+  "type": "object",
+  "required": ["decision_id", "linked_patch_id", "decision", "rationale", "timestamp"],
+  "properties": {
+    "decision_id": { "type": "string", "pattern": "^DEC-[0-9]{3}$" },
+    "linked_patch_id": { "type": "string", "pattern": "^PP-[0-9]{3}$" },
+    "linked_question_id": { "type": "string", "description": "Optional question ID if decision addresses an open question." },
+    "decision": {
+      "type": "string",
+      "enum": ["accepted", "accepted_with_modifications", "rejected", "deferred", "needs_more_evidence"]
+    },
+    "rationale": { "type": "string", "description": "User's reasoning for this decision." },
+    "chosen_option": { "type": "string", "description": "Which proposed option was chosen." },
+    "knowledge_delta": {
+      "type": "object",
+      "description": "Whether this decision generates new thinking knowledge.",
+      "properties": {
+        "generates_rule": { "type": "boolean" },
+        "rule_candidate": { "type": "string" },
+        "rule_category": { "type": "string", "enum": ["research_principle", "writing_rule", "reviewer_pattern", "anti_pattern", "experiment_pattern"] }
+      }
+    },
+    "blocks_round_close": { "type": "boolean", "description": "Whether this decision must be resolved before round closure." },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "resolved_at": { "type": ["string", "null"], "format": "date-time" }
+  },
+  "additionalProperties": false
+}

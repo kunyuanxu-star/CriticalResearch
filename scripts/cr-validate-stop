@@ -152,12 +152,55 @@ for req_file in "${REQUIRED_FILES[@]}"; do
     fi
 done
 
+# ── Human gate check (paper mode) ────────────────────────────────
+
+WORKFLOW_MODE=$(grep -E '^workflow_mode:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^workflow_mode:\s*//' | xargs || echo "")
+HUMAN_GATE_BLOCK=false
+
+if [ "$WORKFLOW_MODE" = "paper" ]; then
+    HUMAN_QUEUE="$PROJECT_DIR/state/human-review-queue.yaml"
+    if [ -f "$HUMAN_QUEUE" ]; then
+        PENDING=$(grep -cE 'decision:\s*(accepted|accepted_with_modifications|rejected|deferred|needs_more_evidence)' "$HUMAN_QUEUE" 2>/dev/null || echo 0)
+        TOTAL=$(grep -cE 'decision_id:' "$HUMAN_QUEUE" 2>/dev/null || echo 0)
+        UNRESOLVED=$((TOTAL - PENDING))
+        if [ "$UNRESOLVED" -gt 0 ]; then
+            HUMAN_GATE_BLOCK=true
+        fi
+    fi
+
+    # Also check patches for pending human decisions.
+    PATCHES_DIR="$ROUND_DIR/patches"
+    if [ -d "$PATCHES_DIR" ]; then
+        PENDING_PATCHES=$(grep -lE '^needs_human_decision:\s*true' "$PATCHES_DIR"/PP-*.yaml 2>/dev/null || echo "")
+        if [ -n "$PENDING_PATCHES" ]; then
+            for pp in $PENDING_PATCHES; do
+                PP_STATUS=$(grep -E '^lifecycle_status:' "$pp" 2>/dev/null | sed 's/^lifecycle_status:\s*//' | xargs || echo "")
+                case "$PP_STATUS" in
+                    approved|applied|rejected|superseded) ;; # resolved
+                    *) HUMAN_GATE_BLOCK=true ;;
+                esac
+            done
+        fi
+    fi
+fi
+
 REASON="Round $ROUND_NUM is incomplete (status: ${ROUND_STATUS:-unknown})."
 if [ -n "$MISSING" ]; then
     REASON="$REASON Missing:$MISSING."
 fi
+if [ "$HUMAN_GATE_BLOCK" = true ]; then
+    REASON="$REASON Pending human decisions must be resolved before round close."
+fi
 REASON="$REASON Complete required outputs or explicitly request stop to override."
 REASON="$REASON Validator pipeline: cr-validate-schema, cr-validate-artifacts, cr-validate-ids, cr-validate-references, cr-validate-anchors, cr-validate-paper-patches, cr-validate-knowledge, cr-validate-experiments, cr-validate-human-gates."
+
+# Block if human gate has pending decisions.
+if [ "$HUMAN_GATE_BLOCK" = true ]; then
+    cat << EOF
+{"decision":"block","reason":"$REASON"}
+EOF
+    exit 1
+fi
 
 cat << EOF
 {"decision":"block","reason":"$REASON"}
