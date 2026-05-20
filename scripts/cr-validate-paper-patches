@@ -141,7 +141,7 @@ if [ -d "$PATCHES_DIR" ]; then
 
             # ── Lifecycle validation ────────────────────────────────
             LIFECYCLE_STATUS=$(grep -E '^lifecycle_status:' "$patch_file" 2>/dev/null | sed 's/^lifecycle_status:\s*//' | xargs || echo "")
-            VALID_STATUSES=("proposed" "needs_human_decision" "approved" "applied" "rejected" "superseded")
+            VALID_STATUSES=("proposed" "needs_human_decision" "approved" "recorded" "applied" "rejected" "superseded")
             STATUS_VALID=false
             for vs in "${VALID_STATUSES[@]}"; do
                 [ "$LIFECYCLE_STATUS" = "$vs" ] && STATUS_VALID=true && break

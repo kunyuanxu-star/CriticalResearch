@@ -127,7 +127,7 @@
     "lifecycle_status": {
       "type": "string",
       "description": "Current state in the patch lifecycle.",
-      "enum": ["proposed", "needs_human_decision", "approved", "applied", "rejected", "superseded"]
+      "enum": ["proposed", "needs_human_decision", "approved", "recorded", "applied", "rejected", "superseded"]
     },
     "lifecycle_history": {
       "type": "array",

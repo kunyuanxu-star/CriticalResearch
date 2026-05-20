@@ -89,17 +89,23 @@ LOG
 
 pass "Recorded in diff-log.md"
 
-# ── Update patch lifecycle ──────────────────────────────────────
+# ── Update patch lifecycle to recorded (not applied yet) ─────────
+# The patch is recorded in diff-log but paper-draft.md has not been
+# edited yet. Mark as 'recorded' — cr-validate-paper-completeness
+# and cr-validate-anchors will verify the draft was actually modified
+# on close-round. Only then can status advance to 'applied'.
+
+NEW_STATUS="recorded"
 
 if [ "$(uname)" = "Darwin" ]; then
-    sed -i '' "s|^lifecycle_status:.*|lifecycle_status: applied|" "$PATCH_FILE"
-    sed -i '' "s|^applied_at:.*|applied_at: \"$NOW\"|" "$PATCH_FILE"
+    sed -i '' "s|^lifecycle_status:.*|lifecycle_status: $NEW_STATUS|" "$PATCH_FILE"
+    sed -i '' "s|^applied_diff_anchor:.*|applied_diff_anchor: \"diff-log.md#$PATCH_ID\"|" "$PATCH_FILE"
 else
-    sed -i "s|^lifecycle_status:.*|lifecycle_status: applied|" "$PATCH_FILE"
-    sed -i "s|^applied_at:.*|applied_at: \"$NOW\"|" "$PATCH_FILE"
+    sed -i "s|^lifecycle_status:.*|lifecycle_status: $NEW_STATUS|" "$PATCH_FILE"
+    sed -i "s|^applied_diff_anchor:.*|applied_diff_anchor: \"diff-log.md#$PATCH_ID\"|" "$PATCH_FILE"
 fi
 
-pass "$PATCH_ID: lifecycle $LIFECYCLE -> applied"
+pass "$PATCH_ID: lifecycle $LIFECYCLE -> $NEW_STATUS (draft edit pending)"
 
 # ── Post-apply instructions ─────────────────────────────────────
 

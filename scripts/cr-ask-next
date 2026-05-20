@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# cr-ask-next — Present the next pending human judgment question.
+# Consumes the question queue one at a time: extract → ask → wait → next.
+#
+# Usage: cr-ask-next <round_dir> <project_dir>
+#
+# Output: a single question card with options. Use with:
+#   cr-ask-next ... | cr-record-decision ... <decision>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+ROUND_DIR="${1:-}"
+PROJECT_DIR="${2:-}"
+
+if [ -z "$ROUND_DIR" ] || [ -z "$PROJECT_DIR" ]; then
+    echo "Usage: cr-ask-next <round_dir> <project_dir>" >&2
+    exit 2
+fi
+
+PATCHES_DIR="$ROUND_DIR/patches"
+
+if [ ! -d "$PATCHES_DIR" ]; then
+    echo "No pending questions."
+    exit 0
+fi
+
+# Find the first unresolved human decision.
+for patch_file in "$PATCHES_DIR"/PP-*.yaml; do
+    [ ! -f "$patch_file" ] && continue
+
+    PP_ID=$(basename "$patch_file" .yaml)
+    NEEDS_HUMAN=$(grep -E '^needs_human_decision:' "$patch_file" 2>/dev/null | sed 's/^needs_human_decision:\s*//' | xargs || echo "false")
+    LIFECYCLE=$(grep -E '^lifecycle_status:' "$patch_file" 2>/dev/null | sed 's/^lifecycle_status:\s*//' | xargs || echo "")
+
+    [ "$NEEDS_HUMAN" != "true" ] && continue
+    case "$LIFECYCLE" in
+        approved|recorded|applied|rejected|superseded) continue ;;
+    esac
+
+    # Found first pending question — present it.
+    LINKED_CRT=$(grep -E '^linked_critique:' "$patch_file" 2>/dev/null | sed 's/^linked_critique:\s*//' | xargs || echo "")
+    RATIONALE=$(grep -E '^human_decision_rationale:' "$patch_file" 2>/dev/null | sed 's/^human_decision_rationale:\s*//' | xargs || echo "")
+    SEVERITY=$(grep -E '^severity:' "$patch_file" 2>/dev/null | sed 's/^severity:\s*//' | xargs || echo "")
+
+    # Extract proposed change summary.
+    BEFORE=$(sed -n '/^proposed_change:/,/^[a-z]/p' "$patch_file" 2>/dev/null | grep -A 5 'before:' | grep -v 'before:' | sed 's/^\s*//' | tr '\n' ' ' | head -c 150)
+    AFTER=$(sed -n '/^proposed_change:/,/^[a-z]/p' "$patch_file" 2>/dev/null | grep -A 5 'after:' | grep -v 'after:' | sed 's/^\s*//' | tr '\n' ' ' | head -c 150)
+
+    echo "=== Human Judgment Required ==="
+    echo ""
+    echo "Patch: $PP_ID"
+    echo "Trigger: $LINKED_CRT (severity: $SEVERITY)"
+    echo "Why: $RATIONALE"
+    echo ""
+    echo "Proposed change:"
+    echo "  From: $BEFORE"
+    echo "  To:   $AFTER"
+    echo ""
+    echo "Options:"
+
+    # Emit options for the user.
+    AGENT_CHOICE=$(grep -E '^\s+choice:' "$patch_file" 2>/dev/null | head -1 | sed 's/.*choice:\s*//' | tr -d '"' | xargs || echo "")
+    AGENT_REASON=$(grep -E '^\s+reason:' "$patch_file" 2>/dev/null | head -1 | sed 's/.*reason:\s*//' | tr -d '"' | xargs || echo "")
+
+    echo "  accept              — Apply this change as proposed"
+    echo "  accept_with_modifications — Apply with your modifications"
+    echo "  reject              — Reject this change"
+    echo "  defer               — Defer to a future round"
+    echo "  needs_more_evidence — Gather more evidence first"
+    echo ""
+
+    if [ -n "$AGENT_CHOICE" ]; then
+        echo "Agent recommends: $AGENT_CHOICE"
+        [ -n "$AGENT_REASON" ] && echo "  Reason: $AGENT_REASON"
+        echo ""
+    fi
+
+    echo "To record your decision:"
+    echo "  cr-record-decision $ROUND_DIR $PROJECT_DIR $PP_ID <decision> \"<rationale>\""
+    echo ""
+
+    # Only show one question at a time.
+    exit 0
+done
+
+echo "No pending human judgment questions — all resolved."

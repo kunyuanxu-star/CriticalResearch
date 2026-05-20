@@ -53,11 +53,12 @@ Start a conversation with Claude Code and the skill activates automatically when
 ### CLI (standalone)
 
 ```bash
-cr start "my research topic"    # Create a new research project
+cr workspace init                # Initialize a Research workspace
+cr start framevm                 # Create a new research project (use lowercase, hyphens)
 cr continue                      # Output next-round task prompt
-cr round <project>               # Open a new round
-cr close-round <project>         # Validate and close the active round
-cr validate <project>            # Run project invariant checks
+cr round framevm --mode paper    # Open a new paper-mode round
+cr close-round framevm           # Validate and close the active round
+cr validate framevm              # Run project invariant checks
 cr status                        # Show workspace status
 ```
 

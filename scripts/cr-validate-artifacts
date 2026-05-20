@@ -29,18 +29,13 @@ ROUND_NAME="$(basename "$ROUND_DIR")"
 echo ""
 echo "══ Artifact Presence: $ROUND_NAME ══"
 
-# Load required_outputs from round.yaml.
-REQUIRED_OUTPUTS=""
-if [ -f "$ROUND_DIR/round.yaml" ]; then
-    REQUIRED_OUTPUTS=$(grep -E '^\s*-\s+' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^\s*-\s*//' | sort -u || echo "")
-fi
-
-if [ -z "$REQUIRED_OUTPUTS" ]; then
-    REQUIRED_OUTPUTS="report
-evidence_update
-critique_update
-writing_diff
-knowledge_delta"
+# Load required_outputs via cr_required_outputs (handles both YAML bullet and inline formats).
+REQUIRED_OUTPUTS=$(cr_required_outputs "$ROUND_DIR/round.yaml" 2>/dev/null || echo "")
+if [ -z "$REQUIRED_OUTPUTS" ] || [ "$REQUIRED_OUTPUTS" = "report evidence_update critique_update writing_diff knowledge_delta" ]; then
+    # If cr_required_outputs returned defaults, double-check the round.yaml directly.
+    if [ -f "$ROUND_DIR/round.yaml" ] && grep -q '^\s*-\s+' "$ROUND_DIR/round.yaml" 2>/dev/null; then
+        REQUIRED_OUTPUTS=$(grep -E '^\s*-\s+' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^\s*-\s*//' | sort -u || echo "")
+    fi
 fi
 
 # Map output keys to expected paths.

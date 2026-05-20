@@ -5,6 +5,8 @@ description: A domain-general but computer-science-specific critical research lo
 
 # Critical CS Research
 
+> **Current workflow**: Paper mode (below) is the active workflow direction. Legacy Pass 1/2/11-phase content is preserved in `references/legacy-workflow.md` and `hooks/legacy/` but is not the default path. New rounds should use paper mode with `cr round --mode paper`.
+
 ## Core Rule
 
 Do not directly polish or defend the user's original idea. Run the research control loop **indefinitely until the user is convinced**:
@@ -71,7 +73,9 @@ See `.humanize/IMPROVE.md` for the full design specification.
 
 Legacy 模式仍受 Budget Control 约束，但保留完整的 Phase 0-11 编号以便用户对照旧文档。
 
-### Pass 1: Discovery
+### Pass 1: Discovery (Legacy — see hooks/legacy/)
+
+> **Note**: Pass 1/2/3 and the 11-Phase sequence below are the legacy workflow. For paper-centered research, use Paper Mode above. Old checkpoint scripts live in `hooks/legacy/`.
 
 整合问题定义、主张分解和第一性原理分析。目标是建立研究对象的结构化蓝图，**不急于搜索或下结论**。
 

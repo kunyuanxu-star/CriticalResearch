@@ -39,7 +39,7 @@ if [ -d "$PATCHES_DIR" ]; then
 
         if [ "$NEEDS_HUMAN" = "true" ]; then
             case "$LIFECYCLE" in
-                approved|applied|rejected|superseded)
+                approved|recorded|applied|rejected|superseded)
                     pass "$PP_ID: human decision resolved (lifecycle=$LIFECYCLE)"
                     ;;
                 *)
