@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# cr-load-thinking-rules — Emit relevant thinking rules for a given claim or context.
+# This is prompt scaffolding: it outputs matching rules that the agent should
+# consider before generating critique. Not a deterministic validator.
+#
+# Usage: cr-load-thinking-rules <workspace_root> [claim_text]
+#
+# Output: Markdown list of matching rules with IDs, titles, and rule statements.
+# Exit codes:
+#   0 — rules found or empty (no match is not an error)
+#   1 — cards directory not found (configuration issue, warns)
+
+set -euo pipefail
+
+WORKSPACE_ROOT="${1:-}"
+CLAIM_TEXT="${2:-}"
+
+if [ -z "$WORKSPACE_ROOT" ]; then
+    echo "Usage: cr-load-thinking-rules <workspace_root> [claim_text]" >&2
+    exit 1
+fi
+
+CARDS_DIR="$WORKSPACE_ROOT/_cr/knowledge/thinking/cards"
+
+if [ ! -d "$CARDS_DIR" ]; then
+    echo "WARNING: No thinking cards directory at $CARDS_DIR" >&2
+    echo "No thinking rules loaded. Critique will use default patterns only." >&2
+    exit 0
+fi
+
+CARDS=$(find "$CARDS_DIR" -name '*.md' -type f 2>/dev/null || echo "")
+
+if [ -z "$CARDS" ]; then
+    echo "No thinking cards found in $CARDS_DIR" >&2
+    echo "No thinking rules loaded." >&2
+    exit 0
+fi
+
+echo "## Loaded Thinking Rules"
+echo ""
+
+# Extract rules from cards, filtering by relevance to claim text if provided.
+for card_file in $CARDS; do
+    CARD_ID=""
+    CARD_STATUS=""
+    RULE=""
+
+    if grep -q '^---$' "$card_file" 2>/dev/null; then
+        CARD_ID=$(sed -n '/^---$/,/^---$/p' "$card_file" | grep -E '^card_id:' | sed 's/^card_id:\s*//' | xargs 2>/dev/null || echo "")
+        CARD_STATUS=$(sed -n '/^---$/,/^---$/p' "$card_file" | grep -E '^status:' | sed 's/^status:\s*//' | xargs 2>/dev/null || echo "")
+        RULE=$(sed -n '/^---$/,/^---$/p' "$card_file" | grep -E '^rule:' | sed 's/^rule:\s*//' | xargs 2>/dev/null || echo "")
+    fi
+
+    [ -z "$CARD_ID" ] && continue
+    [ "$CARD_STATUS" = "deprecated" ] && continue
+
+    # Simple relevance check: if claim text provided, check for keyword overlap.
+    if [ -n "$CLAIM_TEXT" ] && [ -n "$RULE" ]; then
+        # Extract applies_to domains from the card.
+        APPLIES_TO=$(sed -n '/^---$/,/^---$/p' "$card_file" | grep -E '^applies_to:' -A 20 | grep -E '^\s*-\s+' | sed 's/^\s*-\s*//' | tr '\n' ' ' 2>/dev/null || echo "")
+
+        # Check if any applies_to domain appears in the claim text.
+        MATCH=false
+        if [ -n "$APPLIES_TO" ]; then
+            for domain in $APPLIES_TO; do
+                if echo "$CLAIM_TEXT" | grep -qi "$domain" 2>/dev/null; then
+                    MATCH=true
+                    break
+                fi
+            done
+        fi
+
+        # If no domain match but rule status is validated/canonical, include anyway.
+        if [ "$MATCH" = false ] && [ "$CARD_STATUS" != "validated" ] && [ "$CARD_STATUS" != "canonical" ]; then
+            continue
+        fi
+    fi
+
+    echo "- **$CARD_ID**: $RULE (status: $CARD_STATUS)"
+done
+
+echo ""
+echo "Apply these rules when generating critique and designing paper patches."
