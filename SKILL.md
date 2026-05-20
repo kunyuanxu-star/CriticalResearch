@@ -38,8 +38,28 @@ If the user has not provided material, ask for it. If target venue, audience, or
 | **Lightweight** | 快速验证、想法初筛、已有明确结论的复核 | ≤3 | 首轮内部知识为主 | 不搜索 | 压缩检查清单（3-5 项） |
 | **Standard** | 常规研究、设计评审、实验计划 | 4-10 | 首轮 1 次搜索 | 需要搜索 | 标准表格 + 简短报告 |
 | **Deep** | 投稿级审稿、完整 rebuttal、架构决策 | >10 或不明确 | 首轮深度搜索 + 并发 Role-Lens | 深度搜索 + 并发 | 完整 Ledger + 详细报告 |
+| **Paper** | 以论文草稿为中心的研究：每轮同时推进论文修改与知识沉淀 | 不限 | 每轮生成 paper patch、experiment obligation、knowledge delta | 深度搜索 + 并发 | 完整 Ledger + Paper Patch + Knowledge Delta + Round Report |
 
 Lightweight 模式在用户要求深入时自动升级为 Standard 或 Deep。
+
+### Paper Mode
+
+Paper mode extends Deep mode with paper-centered workflow constraints. In this mode:
+
+1. Every medium/high/fatal critique must produce a typed **disposition record** (`critique_disposition.schema.json`)
+2. Paper-patch dispositions create tracked **paper patches** with lifecycle state machines
+3. Every paper patch must include a **Knowledge Implication** field
+4. Every round must produce a **knowledge-delta.md** with typed update classification
+5. Thinking rules are stored as **knowledge cards** with maturity tracking (candidate→used→validated→canonical)
+6. **Human judgment gates** block round closure for thesis-level patches
+
+To use paper mode, run: `cr migrate-to-paper-mode <project>` to scaffold directories, then set `workflow_mode: paper` in `round.yaml`.
+
+**Validator pipeline** (9 validators in order): cr-validate-schema, cr-validate-artifacts, cr-validate-ids, cr-validate-references, cr-validate-anchors, cr-validate-paper-patches, cr-validate-knowledge, cr-validate-experiments, cr-validate-human-gates.
+
+**Key invariants**: Every round preserves a complete paper draft. Critique→Disposition→Patch→Knowledge Delta chain is enforced. Round cannot close with pending human decisions or missing knowledge delta.
+
+See `.humanize/IMPROVE.md` for the full design specification.
 
 #### Legacy 11-Phase Mode
 

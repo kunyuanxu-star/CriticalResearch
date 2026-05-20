@@ -5,12 +5,14 @@
 # Usage: cr <command> [args...]
 #
 # Commands:
-#   start <topic>       Create a new research project and first round
-#   continue            Read active project, output next-round task prompt
-#   round <project>     Open a new round for the given project
-#   close-round <proj>  Validate and close the active round
-#   validate <project>  Run all project invariant checks
-#   status              Show workspace and active project status
+#   start <topic>             Create a new research project and first round
+#   continue                  Read active project, output next-round task prompt
+#   round <project>           Open a new round for the given project
+#   close-round <project>     Validate and close the active round
+#   validate <project>        Run all project invariant checks
+#   migrate-to-paper <proj>   Scaffold paper mode directories for a project
+#   promote-knowledge         Check thinking cards for promotion eligibility
+#   status                    Show workspace and active project status
 
 set -euo pipefail
 
@@ -27,9 +29,11 @@ usage() {
     echo "  start <topic>         Create a new research project and first round"
     echo "  continue              Read active project, output next-round task prompt"
     echo "  round <project>       Open a new round for the given project"
-    echo "  close-round <project> Validate and close the active round"
-    echo "  validate <project>    Run all project invariant checks"
-    echo "  status                Show workspace and active project status"
+    echo "  close-round <project>         Validate and close the active round"
+    echo "  validate <project>            Run all project invariant checks"
+    echo "  migrate-to-paper-mode <proj>  Scaffold paper mode directories"
+    echo "  promote-knowledge             Check thinking cards for promotion"
+    echo "  status                        Show workspace and active project status"
     echo ""
     echo "Run 'cr' from within a Research workspace directory."
     exit 2
@@ -277,6 +281,20 @@ MD
                 fi
             fi
         fi
+        ;;
+
+    migrate-to-paper-mode)
+        PROJECT="${1:-}"
+        if [ -z "$PROJECT" ]; then
+            echo "Usage: cr migrate-to-paper-mode <project>" >&2
+            exit 2
+        fi
+        PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
+        exec "$SCRIPT_DIR/cr-migrate-to-paper-mode" "$PROJECT_DIR"
+        ;;
+
+    promote-knowledge)
+        exec "$SCRIPT_DIR/cr-promote-knowledge" "$WORKSPACE_ROOT"
         ;;
 
     status)

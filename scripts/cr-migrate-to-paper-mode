@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# cr-migrate-to-paper-mode — Scaffold paper mode directories and configuration
+# for an existing research project.
+#
+# Usage: cr-migrate-to-paper-mode <project_dir>
+#
+# Creates: patches/, experiments/, dispositions.yaml, human-review-queue.yaml,
+# knowledge/ directories, and updates round.yaml with workflow_mode: paper.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+
+if [ -z "$PROJECT_DIR" ]; then
+    echo "Usage: cr-migrate-to-paper-mode <project_dir>" >&2
+    exit 2
+fi
+
+if [ ! -d "$PROJECT_DIR" ]; then
+    echo "Error: project directory not found: $PROJECT_DIR" >&2
+    exit 1
+fi
+
+PROJECT_NAME=$(basename "$PROJECT_DIR")
+echo "Migrating '$PROJECT_NAME' to paper mode..."
+
+# Create paper-mode directories.
+mkdir -p "$PROJECT_DIR/patches"
+mkdir -p "$PROJECT_DIR/experiments"
+mkdir -p "$PROJECT_DIR/state"
+
+# Initialize dispositions file if absent.
+if [ ! -f "$PROJECT_DIR/state/human-review-queue.yaml" ]; then
+    cat > "$PROJECT_DIR/state/human-review-queue.yaml" << 'YAML'
+# Human Review Queue
+decisions: []
+YAML
+    echo "  Created state/human-review-queue.yaml"
+fi
+
+# Update active round.yaml if present.
+if [ -f "$PROJECT_DIR/state/project-state.json" ]; then
+    ACTIVE_ROUND=$(jq -r '.active_round // 0' "$PROJECT_DIR/state/project-state.json" 2>/dev/null || echo 0)
+    if [ "$ACTIVE_ROUND" != "null" ] && [ "$ACTIVE_ROUND" -gt 0 ]; then
+        ROUND_NUM=$(printf "%03d" "$ACTIVE_ROUND")
+        ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
+        if [ -f "$ROUND_DIR/round.yaml" ]; then
+            # Add workflow_mode if absent.
+            if ! grep -q '^workflow_mode:' "$ROUND_DIR/round.yaml" 2>/dev/null; then
+                echo "workflow_mode: paper" >> "$ROUND_DIR/round.yaml"
+                echo "  Set workflow_mode: paper in round-$ROUND_NUM/round.yaml"
+            fi
+            # Add paper_patch to required_outputs if absent.
+            if ! grep -q 'paper_patch' "$ROUND_DIR/round.yaml" 2>/dev/null; then
+                sed -i '' '/required_outputs:/a\
+  - paper_patch\
+  - experiment_obligation' "$ROUND_DIR/round.yaml" 2>/dev/null || \
+                sed -i '/required_outputs:/a\  - paper_patch\n  - experiment_obligation' "$ROUND_DIR/round.yaml"
+                echo "  Added paper_patch and experiment_obligation to required_outputs"
+            fi
+        fi
+    fi
+fi
+
+# Scaffold workspace-level knowledge directories.
+WORKSPACE_ROOT="$(cr_workspace_root)"
+mkdir -p "$WORKSPACE_ROOT/_cr/knowledge/thinking/cards"
+mkdir -p "$WORKSPACE_ROOT/_cr/knowledge/literature"/{papers,systems,concepts,debates,comparisons}
+mkdir -p "$WORKSPACE_ROOT/_cr/logs"
+
+echo ""
+echo "Migration complete. Project '$PROJECT_NAME' is now in paper mode."
+echo "Created: patches/, experiments/, knowledge/ directories"
+echo "Next: run 'cr round $PROJECT_NAME' to start a paper-mode round."
