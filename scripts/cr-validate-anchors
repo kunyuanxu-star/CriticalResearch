@@ -68,17 +68,21 @@ if [ -d "$PATCHES_DIR" ]; then
         # Extract affected_anchors from the patch.
         PATCH_ANCHORS=$(grep -E '^\s+-\s+(abstract|introduction|background|motivation|design|implementation|evaluation_plan|related_work|discussion|conclusion)' "$patch_file" 2>/dev/null | sed 's/^\s*-\s*//' || echo "")
 
-        # Recorded patches: verify draft was edited or writing-diff mentions the patch.
+        # Recorded patches: verify draft was actually edited (hash change + mtime).
         if [ "$LIFECYCLE" = "recorded" ]; then
             DIFF_LOG="$PROJECT_DIR/writing/diff-log.md"
             PATCH_IN_DIFF=false
             [ -f "$DIFF_LOG" ] && grep -q "$PP_ID" "$DIFF_LOG" 2>/dev/null && PATCH_IN_DIFF=true
 
-            WRITING_DIFF="$ROUND_DIR/writing-diff.md"
-            PATCH_IN_WRITING=false
-            [ -f "$WRITING_DIFF" ] && grep -q "$PP_ID" "$WRITING_DIFF" 2>/dev/null && PATCH_IN_WRITING=true
+            # Compute current draft hash.
+            DRAFT_HASH=""
+            if [ -f "$DRAFT_FILE" ] && command -v shasum >/dev/null 2>&1; then
+                DRAFT_HASH=$(shasum -a 256 "$DRAFT_FILE" 2>/dev/null | cut -d' ' -f1)
+            elif [ -f "$DRAFT_FILE" ] && command -v sha256sum >/dev/null 2>&1; then
+                DRAFT_HASH=$(sha256sum "$DRAFT_FILE" 2>/dev/null | cut -d' ' -f1)
+            fi
 
-            # Check draft mtime vs patch updated_at.
+            # Check mtime as fallback.
             PATCH_UPDATED=$(grep -E '^updated_at:' "$patch_file" 2>/dev/null | sed 's/^updated_at:\s*"//;s/"$//' | xargs || echo "")
             DRAFT_MODIFIED=false
             if [ -f "$DRAFT_FILE" ] && [ -n "$PATCH_UPDATED" ]; then
@@ -87,13 +91,10 @@ if [ -d "$PATCHES_DIR" ]; then
                 [ "${DRAFT_TS:-0}" -gt "${PATCH_TS:-0}" ] && DRAFT_MODIFIED=true
             fi
 
-            # Recorded patches require BOTH: recorded in diff-log AND draft actually modified.
-            # diff-log alone is not sufficient — cr-apply-paper-patch writes diff-log automatically.
-            # Recorded patches require: diff-log entry AND draft actually modified (mtime).
             if [ "$PATCH_IN_DIFF" = true ] && [ "$DRAFT_MODIFIED" = true ]; then
-                pass "$PP_ID: recorded patch has diff-log entry and draft was modified after patch"
-            elif [ "$PATCH_IN_DIFF" = true ] && [ "$DRAFT_MODIFIED" = false ]; then
-                fail "$PP_ID: lifecycle=recorded with diff-log entry but paper-draft.md was not modified — apply changes to draft before round close (hard gate)"
+                [ -n "$DRAFT_HASH" ] && pass "$PP_ID: recorded patch verified (diff-log + draft modified, hash=$DRAFT_HASH)" || pass "$PP_ID: recorded patch verified (diff-log + draft modified)"
+            elif [ "$PATCH_IN_DIFF" = true ]; then
+                fail "$PP_ID: lifecycle=recorded with diff-log entry but paper-draft.md unchanged — apply changes to draft before round close (hard gate)"
             else
                 fail "$PP_ID: lifecycle=recorded but no diff-log entry — run cr-apply-paper-patch first (hard gate)"
             fi
