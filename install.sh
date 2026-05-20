@@ -56,14 +56,15 @@ if [ "${1:-}" != "--skill-only" ]; then
         *) SHELL_RC="$HOME/.profile" ;;
     esac
 
-    EXPORT_LINE="export PATH=\"$SKILL_DIR/scripts:\$PATH\""
-    ALIAS_LINE="alias cr-workspace-init='cr workspace init'"
+    EXPORT_LINE="export CR_SKILL_HOME=\"$SKILL_DIR\""
+    PATH_LINE="export PATH=\"$SKILL_DIR/scripts:\$PATH\""
 
     if [ -f "$SHELL_RC" ]; then
         if ! grep -q "$SKILL_DIR/scripts" "$SHELL_RC" 2>/dev/null; then
             echo "" >> "$SHELL_RC"
-            echo "# CriticalResearch CLI" >> "$SHELL_RC"
+            echo "# CriticalResearch" >> "$SHELL_RC"
             echo "$EXPORT_LINE" >> "$SHELL_RC"
+            echo "$PATH_LINE" >> "$SHELL_RC"
             echo "  Added to $SHELL_RC"
         else
             echo "  PATH already configured in $SHELL_RC"

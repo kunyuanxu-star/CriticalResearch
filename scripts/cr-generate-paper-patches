@@ -34,7 +34,7 @@ if [ -f "$ROUND_DIR/dispositions.yaml" ] && command -v yq >/dev/null 2>&1; then
     echo "### Pending Dispositions"
     echo ""
     yq -o json '.' "$ROUND_DIR/dispositions.yaml" 2>/dev/null | \
-        jq -r '.[] | select(.status == "open" and (.disposition_type == "paper_patch" or .disposition_type == "experiment_obligation")) | "- \(.critique_id): \(.disposition_type) — \(.justification)"' 2>/dev/null || \
+        jq -r '(.dispositions // [])[] | select(.status == "open" and (.disposition_type == "paper_patch" or .disposition_type == "experiment_obligation")) | "- \(.critique_id): \(.disposition_type) — \(.justification)"' 2>/dev/null || \
         echo "(could not parse dispositions — check the file manually)"
 fi
 

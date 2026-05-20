@@ -82,7 +82,7 @@ if [ -f "$CRITIQUE_FILE" ]; then
         # Check if each critique has a disposition.
         if [ "$DISPOSITIONS_JSON" != "[]" ] && command -v jq >/dev/null 2>&1; then
             for cid in $CRITIQUE_IDS; do
-                HAS_DISP=$(printf '%s' "$DISPOSITIONS_JSON" | jq -r --arg cid "$cid" '.[] | select(.critique_id == $cid) | .critique_id' 2>/dev/null)
+                HAS_DISP=$(printf '%s' "$DISPOSITIONS_JSON" | jq -r --arg cid "$cid" '(.dispositions // [])[] | select(.critique_id == $cid) | .critique_id' 2>/dev/null)
                 if [ -z "$HAS_DISP" ]; then
                     fail "Critique $cid has no disposition record"
                 fi
@@ -204,7 +204,7 @@ fi
 if [ -f "$DISPOSITIONS_FILE" ] && [ -d "$PATCHES_DIR" ] && command -v yq >/dev/null 2>&1; then
     # For each disposition with type=paper_patch, verify linked patch exists.
     DISP_JSON=$(yq -o json '.' "$DISPOSITIONS_FILE" 2>/dev/null || echo "[]")
-    PAPER_PATCH_DISPS=$(printf '%s' "$DISP_JSON" | jq -r '.[] | select(.disposition_type == "paper_patch") | "\(.critique_id) -> \(.linked_patch_id)"' 2>/dev/null)
+    PAPER_PATCH_DISPS=$(printf '%s' "$DISP_JSON" | jq -r '(.dispositions // [])[] | select(.disposition_type == "paper_patch") | "\(.critique_id) -> \(.linked_patch_id)"' 2>/dev/null)
     if [ -n "$PAPER_PATCH_DISPS" ]; then
         while IFS= read -r line; do
             [ -z "$line" ] && continue

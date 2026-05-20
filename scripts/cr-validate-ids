@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# cr-validate-ids — ID uniqueness and format validation.
-# Checks that CRT-XXX, PP-XXX, EXP-XXX, CLM-XXX, etc. follow patterns
-# and are unique within their scope.
+# cr-validate-ids — ID definition uniqueness and reference existence validation.
+# Separates definitions (patch_id, critique_id, experiment_id) from references
+# (linked_patch_id, linked_critique, target_claim, experiment_obligations).
+# Only definitions are checked for uniqueness; references are checked for existence.
 #
 # Usage: cr-validate-ids <round_dir> [project_dir]
 #
 # Exit codes:
-#   0 — all IDs valid and unique
+#   0 — all IDs valid
 #   2 — one or more failures
 
 set -euo pipefail
@@ -26,73 +27,120 @@ ROUND_NAME="$(basename "$ROUND_DIR")"
 echo ""
 echo "══ ID Validation: $ROUND_NAME ══"
 
-# Per-project ID patterns (3 digits).
-declare -A PROJECT_SCOPED_PATTERNS
-PROJECT_SCOPED_PATTERNS["CRT"]="^CRT-[0-9]{3}$"
-PROJECT_SCOPED_PATTERNS["PP"]="^PP-[0-9]{3}$"
-PROJECT_SCOPED_PATTERNS["CLM"]="^CLM-[0-9]{3}$"
-PROJECT_SCOPED_PATTERNS["GAP"]="^GAP-[0-9]{3}$"
-PROJECT_SCOPED_PATTERNS["EXP"]="^EXP-[0-9]{3}$"
-PROJECT_SCOPED_PATTERNS["DEC"]="^DEC-[0-9]{3}$"
+# ── Collect definitions (IDs that are declared, not referenced) ────
+# Definitions appear as: patch_id: PP-XXX, critique_id: CRT-XXX, etc.
+# References appear as: linked_patch_id: PP-XXX, linked_critique: CRT-XXX, etc.
 
-# Collect all IDs and check for duplicates within each prefix.
-declare -A SEEN_IDS
+declare -A DEFINED_IDS  # id -> file where defined
+declare -A REFERENCED_IDS  # id -> file(s) where referenced
 ERRORS=0
 
-scan_ids() {
-    local prefix="$1"
-    local file="$2"
-    [ ! -f "$file" ] && return
-    local ids
-    ids=$(grep -oE "${prefix}-[0-9]{3,4}" "$file" 2>/dev/null || echo "")
-    for id in $ids; do
-        local pattern="${PROJECT_SCOPED_PATTERNS[$prefix]:-}"
-        if [ -n "$pattern" ] && ! echo "$id" | grep -qE "$pattern" 2>/dev/null; then
-            # For workspace-scoped IDs (4 digits: RP, WR, RV, AP, EP), different pattern.
-            if ! echo "$id" | grep -qE "^${prefix}-[0-9]{4}$" 2>/dev/null; then
-                fail "Malformed ID: $id in $(basename "$file")"
-                ERRORS=$((ERRORS + 1))
-                continue
-            fi
-        fi
-
-        if [ -n "${SEEN_IDS[$id]:-}" ]; then
-            fail "Duplicate ID: $id (first seen in ${SEEN_IDS[$id]}, also in $(basename "$file"))"
-            ERRORS=$((ERRORS + 1))
-        else
-            SEEN_IDS[$id]="$(basename "$file")"
-        fi
-    done
+register_definition() {
+    local id="$1" file="$2"
+    if [ -n "${DEFINED_IDS[$id]:-}" ]; then
+        fail "Duplicate definition: $id (in ${DEFINED_IDS[$id]} and $file)"
+        ERRORS=$((ERRORS + 1))
+    else
+        DEFINED_IDS[$id]="$file"
+    fi
 }
 
-# Scan critique.md for CRT-IDs.
-scan_ids "CRT" "$ROUND_DIR/critique.md"
+register_reference() {
+    local id="$1" file="$2"
+    REFERENCED_IDS[$id]="${REFERENCED_IDS[$id]:-} $file"
+}
 
-# Scan patches/ for PP-IDs and EXP references.
-if [ -d "$ROUND_DIR/patches" ]; then
-    for pf in "$ROUND_DIR/patches"/PP-*.yaml; do
-        [ -f "$pf" ] && scan_ids "PP" "$pf" && scan_ids "EXP" "$pf" && scan_ids "CRT" "$pf" && scan_ids "CLM" "$pf"
+# ── Scan patches/ for definitions ──────────────────────────────────
+
+PATCHES_DIR="$ROUND_DIR/patches"
+if [ -d "$PATCHES_DIR" ]; then
+    for pf in "$PATCHES_DIR"/PP-*.yaml; do
+        [ ! -f "$pf" ] && continue
+        bf=$(basename "$pf")
+
+        # Definitions: patch_id field.
+        pid=$(grep -E '^patch_id:' "$pf" 2>/dev/null | grep -oE 'PP-[0-9]{3}' || echo "")
+        [ -n "$pid" ] && register_definition "$pid" "$bf"
+
+        # Definitions: fields ending in _id with value prefix-XXX are definitions.
+        # References: linked_* fields are references, not definitions.
+        for prefix in CRT CLM GAP EXP DEC; do
+            # linked_ fields are references.
+            for ref_id in $(grep -oE "linked_.*:.*${prefix}-[0-9]{3}" "$pf" 2>/dev/null | grep -oE "${prefix}-[0-9]{3}" || echo ""); do
+                register_reference "$ref_id" "$bf"
+            done
+            # experiment_obligations list items are references.
+            for ref_id in $(grep -A 10 '^experiment_obligations:' "$pf" 2>/dev/null | grep -oE "${prefix}-[0-9]{3}" || echo ""); do
+                register_reference "$ref_id" "$bf"
+            done
+            # superseded_by is a reference.
+            for ref_id in $(grep -E '^superseded_by:' "$pf" 2>/dev/null | grep -oE "${prefix}-[0-9]{3}" || echo ""); do
+                register_reference "$ref_id" "$bf"
+            done
+        done
     done
 fi
 
-# Scan experiments/ for EXP-IDs.
-if [ -d "$ROUND_DIR/experiments" ]; then
-    for ef in "$ROUND_DIR/experiments"/EXP-*.yaml; do
-        [ -f "$ef" ] && scan_ids "EXP" "$ef" && scan_ids "PP" "$ef" && scan_ids "CLM" "$ef"
+# ── Scan experiments/ for definitions ──────────────────────────────
+
+EXPERIMENTS_DIR="$ROUND_DIR/experiments"
+if [ -d "$EXPERIMENTS_DIR" ]; then
+    for ef in "$EXPERIMENTS_DIR"/EXP-*.yaml; do
+        [ ! -f "$ef" ] && continue
+        bf=$(basename "$ef")
+
+        # Definition: experiment_id field.
+        eid=$(grep -E '^experiment_id:' "$ef" 2>/dev/null | grep -oE 'EXP-[0-9]{3}' || echo "")
+        [ -n "$eid" ] && register_definition "$eid" "$bf"
+
+        # References: linked_patch_id, target_claim.
+        for ref_id in $(grep -oE '(linked_patch_id|target_claim):.*[A-Z]+-[0-9]{3}' "$ef" 2>/dev/null | grep -oE '[A-Z]+-[0-9]{3}' || echo ""); do
+            register_reference "$ref_id" "$bf"
+        done
     done
 fi
 
-# Scan dispositions.yaml for CRT/PP/EXP-IDs.
-if [ -f "$ROUND_DIR/dispositions.yaml" ]; then
-    scan_ids "CRT" "$ROUND_DIR/dispositions.yaml"
-    scan_ids "PP" "$ROUND_DIR/dispositions.yaml"
-    scan_ids "EXP" "$ROUND_DIR/dispositions.yaml"
+# ── Scan critique.md for definitions ───────────────────────────────
+
+CRITIQUE_FILE="$ROUND_DIR/critique.md"
+if [ -f "$CRITIQUE_FILE" ]; then
+    for cid in $(grep -oE 'critique_id:.*CRT-[0-9]{3}' "$CRITIQUE_FILE" 2>/dev/null | grep -oE 'CRT-[0-9]{3}' || echo ""); do
+        register_definition "$cid" "critique.md"
+    done
 fi
 
-if [ "$ERRORS" -eq 0 ] && [ "${#SEEN_IDS[@]}" -gt 0 ]; then
-    pass "All ${#SEEN_IDS[@]} IDs unique and valid"
-elif [ "${#SEEN_IDS[@]}" -eq 0 ]; then
+# ── Scan dispositions.yaml for definitions ─────────────────────────
+
+DISPOSITIONS_FILE="$ROUND_DIR/dispositions.yaml"
+if [ -f "$DISPOSITIONS_FILE" ]; then
+    # Disposition entries don't have their own IDs; they reference critique_ids.
+    for ref_id in $(grep -oE 'critique_id:.*CRT-[0-9]{3}' "$DISPOSITIONS_FILE" 2>/dev/null | grep -oE 'CRT-[0-9]{3}' || echo ""); do
+        register_reference "$ref_id" "dispositions.yaml"
+    done
+fi
+
+# ── Report ─────────────────────────────────────────────────────────
+
+DEF_COUNT=${#DEFINED_IDS[@]}
+REF_COUNT=${#REFERENCED_IDS[@]}
+
+if [ "$DEF_COUNT" -gt 0 ]; then
+    pass "All $DEF_COUNT defined IDs unique"
+elif [ "$REF_COUNT" -gt 0 ]; then
+    pass "No definitions to check, $REF_COUNT references found"
+else
     pass "No IDs found in round artifacts"
+fi
+
+# Check that referenced IDs exist (warn if not).
+for ref_id in "${!REFERENCED_IDS[@]}"; do
+    if [ -z "${DEFINED_IDS[$ref_id]:-}" ]; then
+        warn "Referenced ID not defined in this round: $ref_id (referenced by:${REFERENCED_IDS[$ref_id]})"
+    fi
+done
+
+if [ "$ERRORS" -gt 0 ]; then
+    fail "$ERRORS duplicate definition(s)"
 fi
 
 cr_exit_summary

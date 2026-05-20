@@ -34,7 +34,7 @@ CREATED=0
 # Find dispositions needing paper patches.
 if command -v yq >/dev/null 2>&1; then
     DISP_JSON=$(yq -o json '.' "$DISPOSITIONS_FILE" 2>/dev/null || echo "[]")
-    PENDING=$(printf '%s' "$DISP_JSON" | jq -r '.[] | select(.disposition_type == "paper_patch" and .status == "open") | "\(.critique_id)|\(.linked_patch_id // "")|\(.severity // "high")|\(.justification // "")"' 2>/dev/null)
+    PENDING=$(printf '%s' "$DISP_JSON" | jq -r '(.dispositions // [])[] | select(.disposition_type == "paper_patch" and .status == "open") | "\(.critique_id)|\(.linked_patch_id // "")|\(.severity // "high")|\(.justification // "")"' 2>/dev/null)
 else
     echo "yq not available — cannot parse dispositions. Run: brew install yq" >&2
     exit 1

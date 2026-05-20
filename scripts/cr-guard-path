@@ -64,15 +64,29 @@ is_skill_source_path() {
     return 1
 }
 
-# Check if a path targets a research project directory.
+# Check if a path is inside a research project (any directory with project.yaml).
 is_research_project_path() {
     local path="$1"
-    case "$path" in
-        */research-[0-9]*/*|*/research-[0-9]*)
-            return 0 ;;
-        *)
-            return 1 ;;
-    esac
+    # Normalize: strip trailing filename to get the target directory.
+    local dir
+    if [ -d "$path" ]; then
+        dir="$path"
+    else
+        dir=$(dirname "$path" 2>/dev/null || echo "$path")
+    fi
+
+    # Walk up from the target looking for project.yaml.
+    while [ "$dir" != "/" ] && [ "$dir" != "." ]; do
+        if [ -f "$dir/project.yaml" ]; then
+            return 0
+        fi
+        # Stop at workspace root (has _cr/ directory).
+        if [ -d "$dir/_cr" ]; then
+            break
+        fi
+        dir=$(dirname "$dir")
+    done
+    return 1
 }
 
 PATHS=$(extract_paths "$TOOL_INPUT")

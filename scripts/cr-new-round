@@ -41,8 +41,6 @@ if [ -z "$WORKFLOW_MODE" ]; then
     fi
     # Also check previous round's mode.
     if [ "$WORKFLOW_MODE" = "deep" ] || [ -z "$WORKFLOW_MODE" ]; then
-        # Look at last round's mode.
-        local last_round
         last_round=$(find "$PROJECT_DIR/rounds" -name 'round.yaml' -type f 2>/dev/null | sort -r | head -1)
         if [ -n "$last_round" ]; then
             WORKFLOW_MODE=$(grep -E '^workflow_mode:' "$last_round" 2>/dev/null | sed 's/^workflow_mode:\s*//' | xargs || echo "deep")
@@ -80,40 +78,38 @@ if [ -f "$PROJECT_DIR/project.yaml" ]; then
 fi
 [ -z "$PROJECT_ID" ] && PROJECT_ID="$(basename "$PROJECT_DIR")"
 
-# Define required outputs as YAML list items (not inline JSON).
-# Validators parse with grep '^\s*-\s+', so we emit proper YAML bullet format.
+# Generate required output keys for the given round type.
+# Outputs one key per line (no leading spaces — indentation is in the template).
 gen_required_outputs() {
     case "$1" in
-        setup)        echo "  - report" ;;
-        repair)       echo -e "  - report\n  - knowledge_delta" ;;
-        writing)      echo "  - writing_diff" ;;
-        finalization) echo -e "  - report\n  - writing_diff\n  - knowledge_delta" ;;
-        *)            echo -e "  - report\n  - evidence_update\n  - critique_update\n  - writing_diff\n  - knowledge_delta" ;;
+        setup)        echo "report" ;;
+        repair)       printf 'report\nknowledge_delta\n' ;;
+        writing)      echo "writing_diff" ;;
+        finalization) printf 'report\nwriting_diff\nknowledge_delta\n' ;;
+        *)            printf 'report\nevidence_update\ncritique_update\nwriting_diff\nknowledge_delta\n' ;;
     esac
-    # Paper mode: add extra outputs.
     if [ "$WORKFLOW_MODE" = "paper" ]; then
-        echo "  - paper_patch"
-        echo "  - experiment_obligation"
+        printf 'paper_patch\nexperiment_obligation\n'
     fi
 }
 
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-# Write round.yaml with workflow_mode and proper YAML list format.
-cat > "$ROUND_DIR/round.yaml" << YAML
-round_id: $NEXT_ROUND
-project_id: $PROJECT_ID
-round_type: $ROUND_TYPE
-status: open
-started_at: $NOW
-completed_at: null
-target_gap: null
-workflow_mode: $WORKFLOW_MODE
-required_outputs:
-$(gen_required_outputs "$ROUND_TYPE")
-notes: ""
-schema_version: "1.0.0"
-YAML
+# Write round.yaml with proper YAML list under required_outputs.
+{
+    echo "round_id: $NEXT_ROUND"
+    echo "project_id: $PROJECT_ID"
+    echo "round_type: $ROUND_TYPE"
+    echo "status: open"
+    echo "started_at: $NOW"
+    echo "completed_at: null"
+    echo "target_gap: null"
+    echo "workflow_mode: $WORKFLOW_MODE"
+    echo "required_outputs:"
+    gen_required_outputs "$ROUND_TYPE" | sed 's/^/  - /'
+    echo 'notes: ""'
+    echo 'schema_version: "1.0.0"'
+} > "$ROUND_DIR/round.yaml"
 
 # Paper mode: scaffold paper-mode directories and files.
 if [ "$WORKFLOW_MODE" = "paper" ]; then

@@ -1,5 +1,5 @@
 {
-  "description": "critical-cs-research deterministic enforcement hooks — validates artifacts at each workflow stage",
+  "description": "critical-cs-research deterministic enforcement hooks — validates artifacts at each workflow stage. Uses CR_SKILL_HOME if set, falls back to CLAUDE_PROJECT_DIR.",
   "hooks": {
     "PreToolUse": [
       {
@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR}/scripts/cr-guard-path\" \"${CLAUDE_TOOL_NAME}\" \"${CLAUDE_TOOL_INPUT}\""
+            "command": "SKILL_DIR=\"${CR_SKILL_HOME:-${CLAUDE_PROJECT_DIR}}\" && \"${SKILL_DIR}/scripts/cr-guard-path\" \"${CLAUDE_TOOL_NAME}\" \"${CLAUDE_TOOL_INPUT}\""
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR}/hooks/check-round.sh\""
+            "command": "SKILL_DIR=\"${CR_SKILL_HOME:-${CLAUDE_PROJECT_DIR}}\" && \"${SKILL_DIR}/hooks/check-round.sh\""
           }
         ]
       }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR}/scripts/cr-hook-stop\" \"${CLAUDE_PROJECT_DIR}\""
+            "command": "SKILL_DIR=\"${CR_SKILL_HOME:-${CLAUDE_PROJECT_DIR}}\" && \"${SKILL_DIR}/scripts/cr-hook-stop\" \"${CLAUDE_PROJECT_DIR}\""
           }
         ]
       }
