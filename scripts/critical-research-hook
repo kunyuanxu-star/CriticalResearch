@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# critical-research-hook — Stable hook wrapper for Claude Code settings.
+# Resolves CR_SKILL_HOME from environment or default install path,
+# then dispatches to the appropriate hook script.
+#
+# Usage: critical-research-hook <pre-tool-use|post-tool-use|stop> [args...]
+#
+# This avoids the CLAUDE_PROJECT_DIR ambiguity when the skill is installed
+# to ~/.claude/skills/ but the user opens Claude Code from ~/Research/.
+
+set -euo pipefail
+
+# Resolve skill home: env var > default install path > relative to this script.
+SKILL_HOME="${CR_SKILL_HOME:-}"
+if [ -z "$SKILL_HOME" ]; then
+    if [ -d "$HOME/.claude/skills/critical-cs-research" ]; then
+        SKILL_HOME="$HOME/.claude/skills/critical-cs-research"
+    else
+        SKILL_HOME="$(cd "$(dirname "$0")/.." && pwd)"
+    fi
+fi
+
+HOOK="${1:-}"
+shift 2>/dev/null || true
+
+case "$HOOK" in
+    pre-tool-use)
+        exec "$SKILL_HOME/scripts/cr-guard-path" "$@"
+        ;;
+    post-tool-use)
+        exec "$SKILL_HOME/hooks/check-round.sh" "$@"
+        ;;
+    stop)
+        exec "$SKILL_HOME/scripts/cr-hook-stop" "$@"
+        ;;
+    *)
+        echo "Usage: critical-research-hook <pre-tool-use|post-tool-use|stop> [args...]" >&2
+        exit 2
+        ;;
+esac

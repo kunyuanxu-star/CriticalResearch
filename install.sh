@@ -68,6 +68,13 @@ chmod +x "$SKILL_DIR/install.sh" 2>/dev/null || true
 
 echo "  Skill installed."
 
+# ── Install hook wrapper to PATH ─────────────────────────────────
+HOOK_WRAPPER="$HOME/.local/bin/critical-research-hook"
+mkdir -p "$(dirname "$HOOK_WRAPPER")"
+cp "$SKILL_DIR/scripts/critical-research-hook" "$HOOK_WRAPPER"
+chmod +x "$HOOK_WRAPPER"
+echo "  Hook wrapper installed to $HOOK_WRAPPER"
+
 # ── Install CLI PATH ────────────────────────────────────────────
 
 if [ "${1:-}" != "--skill-only" ]; then

@@ -54,7 +54,8 @@
     },
     "claim_type": {
       "type": "string",
-      "enum": ["performance", "isolation_semantics", "fault_isolation", "expressiveness", "resource_control", "compatibility"]
+      "enum": ["performance", "accuracy", "security", "privacy", "correctness", "usability", "expressiveness", "scalability", "generality", "theoretical", "measurement", "causal", "design"],
+      "description": "Claim type per evaluation-contracts.md taxonomy."
     },
     "workload_plan": { "type": "string" },
     "status": {

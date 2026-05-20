@@ -27,14 +27,30 @@ SKILL_SOURCE_PATTERNS=(
     "/hooks/"
 )
 
-# Allowed directories within a research project.
+# Allowed directories/files within a research project.
+# Writes outside these paths trigger a warning (non-blocking for now).
 ALLOWED_RESEARCH_DIRS=(
     "/literature/"
     "/writing/"
     "/rounds/"
     "/state/"
+    "/patches/"
+    "/experiments/"
+    "/knowledge/"
+    "/exports/"
     "project.yaml"
+    "README.md"
 )
+
+is_allowed_research_path() {
+    local path="$1"
+    for allowed in "${ALLOWED_RESEARCH_DIRS[@]}"; do
+        case "$path" in
+            *"$allowed"*|*"$allowed") return 0 ;;
+        esac
+    done
+    return 1
+}
 
 TOOL_NAME="${1:-}"
 TOOL_INPUT="${2:-}"
@@ -110,6 +126,11 @@ while IFS= read -r file_path; do
     if is_skill_source_path "$file_path"; then
         BLOCKED="$file_path"
         break
+    fi
+
+    # Warn about writes outside allowed research directories.
+    if ! is_allowed_research_path "$file_path"; then
+        echo "[cr-guard-path] WARNING: writing outside allowed research dirs: $file_path" >&2
     fi
 
     # Reject paths with parent directory traversal in research projects.

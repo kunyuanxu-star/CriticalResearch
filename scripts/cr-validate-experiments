@@ -100,16 +100,34 @@ for exp_file in $EXP_FILES; do
         warn "$EXP_ID: no test cases defined"
     fi
 
-    # Check for negative tests if claim type is isolation_semantics.
+    # Per-claim-type field requirements (per evaluation-contracts.md).
     CLAIM_TYPE=$(grep -E '^claim_type:' "$exp_file" 2>/dev/null | sed 's/^claim_type:\s*//' | xargs || echo "")
-    if [ "$CLAIM_TYPE" = "isolation_semantics" ]; then
-        HAS_NEGATIVE=$(grep -cE 'is_negative_test:\s*true' "$exp_file" 2>/dev/null || echo 0)
-        if [ "$HAS_NEGATIVE" -ge 1 ]; then
-            pass "$EXP_ID: has negative tests for isolation semantics claim"
-        else
-            fail "$EXP_ID: isolation_semantics claim requires at least one negative test"
-        fi
-    fi
+
+    case "$CLAIM_TYPE" in
+        security|privacy)
+            HAS_NEGATIVE=$(grep -cE 'is_negative_test:\s*true' "$exp_file" 2>/dev/null || echo 0)
+            if [ "$HAS_NEGATIVE" -ge 1 ]; then
+                pass "$EXP_ID: has negative/attack tests for $CLAIM_TYPE claim"
+            else
+                fail "$EXP_ID: $CLAIM_TYPE claim requires at least one negative test or attack scenario"
+            fi
+            ;;
+        accuracy)
+            HAS_ABLATION=$(grep -cE '(ablation|error_analysis|statistical)' "$exp_file" 2>/dev/null || echo 0)
+            [ "$HAS_ABLATION" -ge 1 ] && pass "$EXP_ID: has ablation/error analysis for accuracy claim" || \
+                warn "$EXP_ID: accuracy claim should include ablation or error analysis"
+            ;;
+        correctness|theoretical)
+            HAS_PROOF=$(grep -cE '(proof|invariant|theorem|formal)' "$exp_file" 2>/dev/null || echo 0)
+            [ "$HAS_PROOF" -ge 1 ] && pass "$EXP_ID: has proof/theorem reference for $CLAIM_TYPE claim" || \
+                warn "$EXP_ID: $CLAIM_TYPE claim should reference proof strategy or invariants"
+            ;;
+        usability|hci)
+            HAS_PARTICIPANTS=$(grep -cE '(participant|user.*group|task.*design)' "$exp_file" 2>/dev/null || echo 0)
+            [ "$HAS_PARTICIPANTS" -ge 1 ] && pass "$EXP_ID: has participant/task info for usability claim" || \
+                warn "$EXP_ID: usability claim should specify participants, tasks, or study design"
+            ;;
+    esac
 done
 
 cr_exit_summary

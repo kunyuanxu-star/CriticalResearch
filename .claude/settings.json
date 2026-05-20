@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "SKILL_DIR=\"${CR_SKILL_HOME:-${CLAUDE_PROJECT_DIR}}\" && \"${SKILL_DIR}/scripts/cr-guard-path\" \"${CLAUDE_TOOL_NAME}\" \"${CLAUDE_TOOL_INPUT}\""
+            "command": "\"${CLAUDE_PROJECT_DIR}/scripts/critical-research-hook\" pre-tool-use \"${CLAUDE_TOOL_NAME}\" \"${CLAUDE_TOOL_INPUT}\""
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "SKILL_DIR=\"${CR_SKILL_HOME:-${CLAUDE_PROJECT_DIR}}\" && \"${SKILL_DIR}/hooks/check-round.sh\""
+            "command": "\"${CLAUDE_PROJECT_DIR}/scripts/critical-research-hook\" post-tool-use"
           }
         ]
       }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "SKILL_DIR=\"${CR_SKILL_HOME:-${CLAUDE_PROJECT_DIR}}\" && \"${SKILL_DIR}/scripts/cr-hook-stop\" \"${CLAUDE_PROJECT_DIR}\""
+            "command": "\"${CLAUDE_PROJECT_DIR}/scripts/critical-research-hook\" stop \"${CLAUDE_PROJECT_DIR}\""
           }
         ]
       }
