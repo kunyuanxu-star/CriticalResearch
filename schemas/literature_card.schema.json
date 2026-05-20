@@ -6,7 +6,7 @@
   "type": "object",
   "required": ["card_id", "card_type", "title", "understanding_level"],
   "properties": {
-    "card_id": { "type": "string", "description": "Unique card identifier (e.g., firecracker-nsdi20, cofferos)." },
+    "card_id": { "type": "string", "description": "Unique card identifier (e.g., transformer-attention, mapreduce)." },
     "card_type": { "type": "string", "enum": ["paper", "system", "concept", "debate", "comparison"] },
     "title": { "type": "string" },
     "area": { "type": "array", "items": { "type": "string" } },

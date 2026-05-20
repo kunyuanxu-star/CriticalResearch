@@ -50,7 +50,6 @@
 
 ### 7. Counterexamples And Reviewer Attacks
 
-- A1: 未与 Firecracker 的轻量级监控对比。
 - A2: 威胁模型未覆盖恶意容器利用 eBPF verifier 绕过的情况。
 
 #### Reviewer Attack Defence Table

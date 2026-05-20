@@ -9,7 +9,6 @@
 | Gap ID | From Critique | Missing Information | Research Question | Priority | Closure Condition |
 |---|---|---|---|---|---|
 | G1 | A1（overclaim） | 未在真实云原生工作负载上测试 | 该机制在 Kubernetes 微服务场景下的 tail-latency 影响是否可忽略？ | high | open | 提供至少一个真实部署的 benchmark，对比基线为默认 Linux CFS |
-| G2 | A3（missing_baseline） | 未与 Firecracker 对比 | 在相同冷启动工作负载下，本方案与 Firecracker 的启动延迟差异是否在 10ms 以内？ | medium | open | 引用 Firecracker 官方 benchmark 或复现实验数据 |
 
 ## Incremental Update Rules
 

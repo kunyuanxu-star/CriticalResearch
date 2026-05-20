@@ -8,7 +8,7 @@
   "properties": {
     "project_id": {
       "type": "string",
-      "description": "Unique project identifier (e.g., 'framevm', 'sysabi'). Must be unique within the workspace.",
+      "description": "Unique project identifier (e.g., 'my-project', 'cache-study'). Must be unique within the workspace.",
       "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$",
       "minLength": 2,
       "maxLength": 64

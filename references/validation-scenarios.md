@@ -81,7 +81,7 @@
 
 **Merge Behavior**:
 - Research Scout 找到 E1-E8（支持证据）。
-- Counterexample Finder 找到 X1-X3（反例：Firecracker 的轻量级 VM、gVisor 的用户态内核）。
+正在寻找反例.
 - Adversarial Reviewer 提出 A1-A5（critique）。
 - Merge 后：E1-E8 归一化；X1-X3 作为 `weakens` / `narrows` 关联到对应 claims；A1-A5 写入 Critique Ledger，其中 A2、A4 为 high severity，转化为 G1、G2。
 - 饱和度计算：7/12 = 58%。

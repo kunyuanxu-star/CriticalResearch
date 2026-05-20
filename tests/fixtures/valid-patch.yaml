@@ -10,26 +10,26 @@ affected_anchors:
   - abstract
   - introduction
 proposed_change:
-  before: "FrameVM provides VM-level isolation."
-  after: "FrameVM provides VM-like guest-boundary semantics over typed OS abstractions."
-  rationale: "The original wording overclaims."
+  before: "Our method achieves state-of-the-art results."
+  after: "Our method improves accuracy by 12% over the strongest published baseline on benchmark B."
+  rationale: "The original wording overclaims without specifying baseline or metric."
 experiment_obligations:
   - EXP-001
 needs_human_decision: true
-human_decision_rationale: "Changes central isolation claim."
+human_decision_rationale: "Changes central contribution claim."
 options:
   - label: "A"
-    description: "Keep VM-level wording with definitions."
+    description: "Keep original wording with added baseline comparison."
   - label: "B"
-    description: "Replace with guest-boundary semantics."
+    description: "Use quantified claim with specific baseline and metric."
 agent_recommendation:
   choice: "B"
-  reason: "Preserves VM comparison without overclaiming."
+  reason: "Specific claims are harder to reject than vague ones."
 knowledge_implication:
   literature_updates:
-    - concepts/guest-boundary-semantics.md
+    - concepts/baseline-selection.md
   thinking_candidates:
-    - rule: "Do not inherit semantic baggage from stronger abstractions."
+    - rule: "Always name the strongest baseline and quantify improvement."
       category: writing_rule
 lifecycle_status: proposed
 lifecycle_history:

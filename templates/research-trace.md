@@ -36,7 +36,6 @@ must_not_assume: [所有内核版本都支持, 所有架构都适用]
 
 | ID | Target Claim | Counterexample / Prior Work / Alternative | Source | Effect On Claim | Follow-up |
 |---|---|---|---|---|---|
-| X1 | C1 | Firecracker 使用更轻量的 VM-based 监控 | Firecracker NSDI'20 | narrows | 明确 eBPF  vs VM-based 的适用边界 |
 
 ### Rebuttal Ledger
 
