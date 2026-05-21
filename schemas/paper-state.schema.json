@@ -1,0 +1,76 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Paper State Schema",
+  "description": "Snapshot of the current paper's claims, baselines, assumptions, risks, and round recommendation.",
+  "type": "object",
+  "required": ["schema_version", "round_id", "paper_snapshot"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "round_id": { "type": "integer", "minimum": 1 },
+    "paper_snapshot": {
+      "type": "object",
+      "required": ["draft_path"],
+      "properties": {
+        "draft_path": { "type": "string" },
+        "draft_sha256": { "type": "string" },
+        "last_modified": { "type": "string" }
+      }
+    },
+    "research_object": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "one_sentence": { "type": "string" }
+      }
+    },
+    "problem_setting": {
+      "type": "object",
+      "properties": {
+        "domain": { "type": "string" }
+      }
+    },
+    "target_properties": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["property_id", "name", "definition"],
+        "properties": {
+          "property_id": { "type": "string" },
+          "name": { "type": "string" },
+          "definition": { "type": "string" }
+        }
+      }
+    },
+    "core_claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["claim_id", "text", "status"],
+        "properties": {
+          "claim_id": { "type": "string" },
+          "text": { "type": "string" },
+          "status": { "type": "string", "enum": ["unstable", "defensible", "stable", "deleted"] }
+        }
+      }
+    },
+    "main_risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["risk_id", "type", "description"],
+        "properties": {
+          "risk_id": { "type": "string" },
+          "type": { "type": "string", "enum": ["strongest_baseline", "missing_evaluation", "overclaim", "assumption_gap", "scope_narrow"] },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "round_recommendation": {
+      "type": "object",
+      "properties": {
+        "priority": { "type": "string" },
+        "reason": { "type": "string" }
+      }
+    }
+  }
+}

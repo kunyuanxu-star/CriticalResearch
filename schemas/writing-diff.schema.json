@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Writing Diff Schema",
+  "description": "Structured record of draft changes applied this round. Each change links a patch and a draft anchor.",
+  "type": "object",
+  "required": ["schema_version", "round_id", "changes"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "round_id": { "type": "integer", "minimum": 1 },
+    "draft_before_sha256": { "type": ["string", "null"] },
+    "draft_after_sha256": { "type": ["string", "null"] },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["change_id", "patch_id"],
+        "properties": {
+          "change_id": { "type": "string", "pattern": "^WD-[0-9]{3}$" },
+          "patch_id": { "type": "string", "pattern": "^PP-[0-9]{3}$" },
+          "anchor_id": { "type": "string" },
+          "section": { "type": "string" },
+          "change_type": { "type": "string", "enum": ["reframe", "add", "delete", "weaken", "strengthen", "narrow", "split", "merge", "reword"] },
+          "before_sha256": { "type": ["string", "null"] },
+          "after_sha256": { "type": ["string", "null"] },
+          "before_summary": { "type": "string" },
+          "after_summary": { "type": "string" }
+        }
+      }
+    }
+  }
+}

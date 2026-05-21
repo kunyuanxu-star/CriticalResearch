@@ -369,19 +369,11 @@ YAML
             ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
             if [ -d "$ROUND_DIR" ]; then
                 echo ""
-                WORKFLOW_MODE=$(grep -E '^workflow_mode:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^workflow_mode:\s*//' | xargs || echo "")
-                "$SCRIPT_DIR/cr-validate-round" "$ROUND_DIR"
-                "$SCRIPT_DIR/cr-validate-artifacts" "$ROUND_DIR"
-                "$SCRIPT_DIR/cr-validate-ids" "$ROUND_DIR" "$PROJECT_DIR"
-                "$SCRIPT_DIR/cr-validate-writing" "$PROJECT_DIR" "$ROUND_DIR"
-                "$SCRIPT_DIR/cr-validate-knowledge" "$ROUND_DIR"
-                if [ "$WORKFLOW_MODE" = "paper" ]; then
-                    "$SCRIPT_DIR/cr-validate-references" "$ROUND_DIR" "$PROJECT_DIR"
-                    "$SCRIPT_DIR/cr-validate-anchors" "$ROUND_DIR" "$PROJECT_DIR"
-                    "$SCRIPT_DIR/cr-validate-paper-patches" "$ROUND_DIR"
-                    "$SCRIPT_DIR/cr-validate-experiments" "$ROUND_DIR"
-                    "$SCRIPT_DIR/cr-validate-human-gates" "$ROUND_DIR" "$PROJECT_DIR"
-                    "$SCRIPT_DIR/cr-validate-paper-completeness" "$PROJECT_DIR"
+                PIPELINE="$SCRIPT_DIR/cr-run-validator-pipeline"
+                if [ -x "$PIPELINE" ]; then
+                    "$PIPELINE" "$PROJECT_DIR" "$ROUND_DIR" || true
+                else
+                    echo "Warning: cr-run-validator-pipeline not found" >&2
                 fi
             fi
         fi

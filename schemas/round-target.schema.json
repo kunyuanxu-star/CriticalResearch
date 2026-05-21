@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Round Target Schema",
+  "description": "Defines what this round aims to accomplish — target gap, claims, baselines, and success criteria.",
+  "type": "object",
+  "required": ["schema_version", "round_id", "target_gap"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "round_id": { "type": "integer", "minimum": 1 },
+    "target_gap": { "type": "string" },
+    "target_claims": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^CLM-[0-9]{3}$" }
+    },
+    "target_baselines": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "success_criteria": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

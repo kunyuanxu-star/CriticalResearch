@@ -63,12 +63,10 @@ while IFS= read -r key; do
     if [ -f "$target" ]; then
         pass "$key: $(basename "$target") exists"
     elif [ -d "$target" ]; then
-        # Directory must be non-empty.
-        if [ -n "$(ls -A "$target" 2>/dev/null)" ]; then
-            pass "$key: $(basename "$target")/ exists and non-empty"
-        else
-            fail "$key: $(basename "$target")/ exists but is empty"
-        fi
+        # Directory presence is sufficient. Non-emptiness is enforced by
+        # phase-specific validators (cr-validate-paper-patches for patches/,
+        # cr-validate-experiments for experiments/).
+        pass "$key: $(basename "$target")/ exists"
     else
         fail "$key: $(basename "$target") not found"
     fi

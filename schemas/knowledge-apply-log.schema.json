@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Knowledge Apply Log Schema",
+  "description": "Proof that knowledge updates were written back to the global bank. Records before/after sha256 for each applied update.",
+  "type": "object",
+  "required": ["schema_version", "round_id", "applied_updates"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "round_id": { "type": "integer", "minimum": 1 },
+    "applied_updates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["update_id", "status", "target_path"],
+        "properties": {
+          "update_id": { "type": "string" },
+          "status": { "type": "string", "enum": ["applied", "skipped", "failed"] },
+          "target_path": { "type": "string" },
+          "before_sha256": { "type": ["string", "null"] },
+          "after_sha256": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "index_updates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["index_path", "status"],
+        "properties": {
+          "index_path": { "type": "string" },
+          "status": { "type": "string", "enum": ["applied", "skipped"] },
+          "before_sha256": { "type": ["string", "null"] },
+          "after_sha256": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}
