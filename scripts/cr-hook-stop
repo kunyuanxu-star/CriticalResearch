@@ -12,7 +12,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/cr-common.sh"
 
-WORKSPACE_ROOT="${1:-$(cr_workspace_root)}"
+# Normalize: the argument may be a workspace root, a project directory, or empty.
+# Always resolve the real workspace root via _cr/workspace.yaml walk.
+ARG="${1:-}"
+if [ -n "$ARG" ] && [ -f "$ARG/_cr/workspace.yaml" ]; then
+    WORKSPACE_ROOT="$ARG"
+elif [ -n "$ARG" ] && [ -f "$ARG/project.yaml" ]; then
+    CR_CWD="$ARG"
+    WORKSPACE_ROOT="$(cr_workspace_root)"
+else
+    WORKSPACE_ROOT="$(cr_workspace_root)"
+fi
 
 # ── Scope audit (runs first — catch violations before anything else) ──
 

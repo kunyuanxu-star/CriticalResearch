@@ -402,7 +402,7 @@ cr_exit_summary() {
 
 # Resolve a stable session identifier for scope files.
 # Uses Claude-provided env vars when available; falls back to
-# cwd hash + PID to avoid cross-session collisions.
+# workspace + cwd hash (stable across hook/command processes).
 cr_session_id() {
     if [ -n "${CLAUDE_SESSION_ID:-}" ]; then
         echo "$CLAUDE_SESSION_ID"
@@ -411,9 +411,10 @@ cr_session_id() {
     elif [ -n "${CR_SESSION_ID:-}" ]; then
         echo "$CR_SESSION_ID"
     else
-        local cwd_hash
-        cwd_hash=$(pwd | shasum -a 256 2>/dev/null | cut -c1-8 || echo "unknown")
-        echo "session-${cwd_hash}-$$"
+        local ws_root cwd_hash
+        ws_root=$(cr_workspace_root 2>/dev/null || pwd)
+        cwd_hash=$(printf '%s' "$ws_root/$(pwd)" | shasum -a 256 2>/dev/null | cut -c1-12 || echo "unknown")
+        echo "session-${cwd_hash}"
     fi
 }
 
