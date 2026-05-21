@@ -18,8 +18,10 @@ WORKSPACE_ROOT="${1:-$(cr_workspace_root)}"
 
 SESSIONS_DIR="$WORKSPACE_ROOT/_cr/sessions"
 if [ -d "$SESSIONS_DIR" ] && [ -n "$(ls -A "$SESSIONS_DIR" 2>/dev/null)" ]; then
-    AUDIT_OUT=$("$SCRIPT_DIR/cr-scope" audit 2>&1) || true
+    set +e
+    AUDIT_OUT=$("$SCRIPT_DIR/cr-scope" audit 2>&1)
     AUDIT_RC=$?
+    set -e
     if [ "${AUDIT_RC:-0}" -ne 0 ]; then
         jq -n --arg audit "$AUDIT_OUT" '{
             decision: "block",
@@ -31,23 +33,47 @@ fi
 
 # ── Resolve project directory ────────────────────────────────────
 
-# Check if we're directly in a project directory.
-if [ -f "$WORKSPACE_ROOT/state/project-state.json" ]; then
-    PROJECT_DIR="$WORKSPACE_ROOT"
-else
-    # Look for active project in workspace.
+# ── Resolve project directory ────────────────────────────────────
+# Priority: session scope > direct project dir > active-project fallback.
+
+PROJECT_DIR=""
+
+# 1. Session scope: read the current session's bound project.
+SESSION_FILE="$SESSIONS_DIR/default.yaml"
+if [ "${CLAUDE_SESSION_ID:-}" != "" ]; then
+    SESSION_FILE="$SESSIONS_DIR/${CLAUDE_SESSION_ID}.yaml"
+elif [ "${CLAUDE_CONVERSATION_ID:-}" != "" ]; then
+    SESSION_FILE="$SESSIONS_DIR/${CLAUDE_CONVERSATION_ID}.yaml"
+fi
+if [ -f "$SESSION_FILE" ]; then
+    SCOPED_PROJECT=$(yq -r '.project_id // ""' "$SESSION_FILE" 2>/dev/null || echo "")
+    SCOPE_TYPE=$(yq -r '.scope_type // ""' "$SESSION_FILE" 2>/dev/null || echo "")
+    if [ -n "$SCOPED_PROJECT" ] && [ "$SCOPE_TYPE" = "single_project_write" ]; then
+        PROJECT_DIR="$WORKSPACE_ROOT/$SCOPED_PROJECT"
+        [ -d "$PROJECT_DIR" ] || PROJECT_DIR=""
+    fi
+fi
+
+# 2. Direct project directory (CLAUDE_PROJECT_DIR points to a project).
+if [ -z "$PROJECT_DIR" ]; then
+    if [ -f "$WORKSPACE_ROOT/state/project-state.json" ]; then
+        PROJECT_DIR="$WORKSPACE_ROOT"
+    fi
+fi
+
+# 3. Fallback: _cr/active-project (legacy, for backward compatibility).
+if [ -z "$PROJECT_DIR" ]; then
     ACTIVE_PROJECT_FILE="$WORKSPACE_ROOT/_cr/active-project"
     if [ -f "$ACTIVE_PROJECT_FILE" ]; then
         ACTIVE_PROJECT=$(cat "$ACTIVE_PROJECT_FILE")
         PROJECT_DIR="$WORKSPACE_ROOT/$ACTIVE_PROJECT"
-        if [ ! -d "$PROJECT_DIR" ]; then
-            echo '{"decision":"allow"}'
-            exit 0
-        fi
-    else
-        echo '{"decision":"allow"}'
-        exit 0
+        [ -d "$PROJECT_DIR" ] || PROJECT_DIR=""
     fi
+fi
+
+if [ -z "$PROJECT_DIR" ]; then
+    echo '{"decision":"allow"}'
+    exit 0
 fi
 
 # ── Delegate to cr-validate-stop (handles phase + round + human gates) ──

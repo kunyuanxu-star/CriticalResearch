@@ -27,8 +27,13 @@ get_session_id() {
         echo "$CLAUDE_SESSION_ID"
     elif [ -n "${CLAUDE_CONVERSATION_ID:-}" ]; then
         echo "$CLAUDE_CONVERSATION_ID"
+    elif [ -n "${CR_SESSION_ID:-}" ]; then
+        echo "$CR_SESSION_ID"
     else
-        echo "default"
+        # Fallback: use cwd hash + PID to avoid cross-session collisions.
+        local cwd_hash
+        cwd_hash=$(pwd | shasum -a 256 2>/dev/null | cut -c1-8 || echo "unknown")
+        echo "session-${cwd_hash}-$$"
     fi
 }
 
@@ -78,10 +83,24 @@ is_workspace_root_artifact() {
 
 is_readonly_command() {
     local cmd="$1"
+
+    # First: reject anything with write redirections or dangerous flags.
     case "$cmd" in
-        pwd|ls\ *|tree\ *|cat\ *|head\ *|tail\ *|less\ *)
+        *">"*|*">>"*|*"| tee "*|*" 2>"*|*" 1>"*|*" &>"*)
+            return 1 ;;
+        *" -delete"*|*" -exec "*|*"| xargs "*|*"| while "*)
+            return 1 ;;
+        *"dd "*|*"cp "*|*"mv "*|*"rm "*|*"touch "*|*"mkdir "*|*"rmdir "*)
+            return 1 ;;
+        *"sed -i"*|*"sed -i"*|*"perl -pi"*|*"python"*"open"*|*"writeFile"*)
+            return 1 ;;
+    esac
+
+    # Then: allow genuinely read-only patterns.
+    case "$cmd" in
+        pwd|ls\ *|tree\ *|head\ *|tail\ *|less\ *)
             return 0 ;;
-        grep\ *|rg\ *|find\ *|which\ *|type\ *|command\ -v\ *)
+        grep\ *|rg\ *|which\ *|type\ *|command\ -v\ *)
             return 0 ;;
         git\ status*|git\ diff*|git\ log*|git\ show\ *|git\ blame\ *)
             return 0 ;;
@@ -91,9 +110,14 @@ is_readonly_command() {
             return 0 ;;
         cr\ step\ *\ validate*|cr\ validate\ *|cr\ status*|cr\ continue*)
             return 0 ;;
-        jq\ *|yq\ *|echo\ *|printf\ *|wc\ *|sort\ *|uniq\ *|tr\ *|cut\ *|awk\ *|sed\ -n\ *|sed\ -n*)
+        jq\ *|yq\ *|wc\ *|sort\ *|uniq\ *|tr\ *|cut\ *|awk\ *)
             return 0 ;;
-        shasum\ *|sha256sum\ *|bash\ -n\ *)
+        shasum\ *|sha256sum\ *|bash\ -n\ *|sed\ -n\ *|sed\ -n*)
+            return 0 ;;
+        # echo, printf, cat, find only allowed WITHOUT redirections (caught above).
+        echo\ [^-]*|printf\ [^-]*)
+            return 0 ;;
+        cat\ [^-]*|find\ [^-]*)
             return 0 ;;
         *)
             return 1 ;;
@@ -252,8 +276,17 @@ do_check() {
                 echo "DENY:project artifact cannot exist at workspace root. Resolve project scope first."
                 return 1
             fi
-            echo "ALLOW"
-            return 0
+            # Only allowlisted files may be written at workspace root.
+            case "$(basename "$path")" in
+                CLAUDE.md|AGENTS.md|README.md|.gitignore|.claudeignore)
+                    echo "ALLOW"
+                    return 0
+                    ;;
+                *)
+                    echo "DENY:workspace root writes restricted to allowlisted files (CLAUDE.md, README.md, AGENTS.md, .gitignore)"
+                    return 1
+                    ;;
+            esac
             ;;
 
         outside)
@@ -290,6 +323,10 @@ case "$SUBCMD" in
 
         if [ ! -d "$WORKSPACE_ROOT/$PROJECT" ]; then
             echo "Error: project '$PROJECT' not found in workspace" >&2
+            exit 1
+        fi
+        if [ ! -f "$WORKSPACE_ROOT/$PROJECT/project.yaml" ]; then
+            echo "Error: '$PROJECT' has no project.yaml — not a valid research project" >&2
             exit 1
         fi
 
@@ -330,15 +367,12 @@ YAML
         echo "Project: $(yq -r '.project_id' "$SESSION_FILE")"
         echo "Opened:  $(yq -r '.opened_at' "$SESSION_FILE")"
 
-        project_id
         project_id=$(yq -r '.project_id' "$SESSION_FILE")
         if [ -n "$project_id" ] && [ -d "$WORKSPACE_ROOT/$project_id" ]; then
-            active_rnd
             active_rnd=$(jq -r '.active_round // "none"' "$WORKSPACE_ROOT/$project_id/state/project-state.json" 2>/dev/null || echo "none")
             echo "Round:   $active_rnd"
 
             if [ "$active_rnd" != "none" ] && [ "$active_rnd" != "null" ]; then
-                rnd_num
                 rnd_num=$(printf "%03d" "$active_rnd")
                 state_file="$WORKSPACE_ROOT/$project_id/rounds/round-$rnd_num/state.yaml"
                 if [ -f "$state_file" ]; then
@@ -374,7 +408,7 @@ YAML
             exit 0
         fi
 
-        local scope_project
+        scope_project
         scope_project=$(yq -r '.project_id // ""' "$SESSION_FILE" 2>/dev/null || echo "")
 
         if [ -z "$scope_project" ]; then
@@ -383,7 +417,8 @@ YAML
 
         # Check for modified files outside the scoped project.
         if command -v git >/dev/null 2>&1 && git rev-parse --show-toplevel >/dev/null 2>&1; then
-            local violations=0
+            violations=0
+            VIOLATION_PATHS=""
             while IFS= read -r modified; do
                 [ -z "$modified" ] && continue
                 # Skip the scoped project.
@@ -392,18 +427,32 @@ YAML
                     _cr/sessions/*) continue ;;
                     .git/*) continue ;;
                 esac
-                # Check if this is a project artifact outside scope.
+                # Check if this is a workspace root artifact.
                 if is_workspace_root_artifact "$modified" || is_protected_state_file "$modified"; then
                     echo "VIOLATION: $modified"
                     violations=$((violations + 1))
-                elif [ -f "$WORKSPACE_ROOT/$modified/project.yaml" ] 2>/dev/null; then
-                    echo "VIOLATION (other project): $modified"
-                    violations=$((violations + 1))
+                    VIOLATION_PATHS="$VIOLATION_PATHS $modified"
+                    continue
                 fi
+                # Walk up from the modified path to find its project owner.
+                check_dir="$WORKSPACE_ROOT/$modified"
+                while [ "$check_dir" != "$WORKSPACE_ROOT" ] && [ "$check_dir" != "/" ]; do
+                    if [ -f "$check_dir/project.yaml" ]; then
+                        owner=$(basename "$check_dir")
+                        if [ "$owner" != "$scope_project" ]; then
+                            echo "VIOLATION (other project '$owner'): $modified"
+                            violations=$((violations + 1))
+                            VIOLATION_PATHS="$VIOLATION_PATHS $modified"
+                        fi
+                        break
+                    fi
+                    check_dir=$(dirname "$check_dir")
+                done
             done <<< "$(git diff --name-only HEAD 2>/dev/null)"
 
             if [ "$violations" -gt 0 ]; then
                 echo "Scope audit: $violations violation(s) detected."
+                echo "$VIOLATION_PATHS" > "/tmp/cr-scope-violations.txt"
                 exit 1
             fi
         fi
@@ -425,7 +474,6 @@ YAML
             exit 0
         fi
 
-        local project_id scope_type
         project_id=$(yq -r '.project_id // ""' "$SESSION_FILE")
         scope_type=$(yq -r '.scope_type // "single_project_write"' "$SESSION_FILE")
 
@@ -437,9 +485,9 @@ YAML
         echo "- Protected state files: cr commands only"
 
         # List known projects.
-        local projects=""
+        projects=""
         for d in "$WORKSPACE_ROOT"/*/; do
-            local name
+            name
             name=$(basename "$d")
             case "$name" in _cr|.*|_*) continue ;; esac
             [ -f "$d/project.yaml" ] || continue
@@ -452,12 +500,10 @@ YAML
         echo "- Known projects: ${projects:-none}"
 
         if [ -d "$WORKSPACE_ROOT/$project_id" ]; then
-            active_rnd
             active_rnd=$(jq -r '.active_round // "none"' "$WORKSPACE_ROOT/$project_id/state/project-state.json" 2>/dev/null || echo "none")
             echo "- Current round: $active_rnd"
 
             if [ "$active_rnd" != "none" ] && [ "$active_rnd" != "null" ]; then
-                rnd_num
                 rnd_num=$(printf "%03d" "$active_rnd")
                 state_file="$WORKSPACE_ROOT/$project_id/rounds/round-$rnd_num/state.yaml"
                 if [ -f "$state_file" ]; then
@@ -471,18 +517,20 @@ YAML
 
     revert-last)
         if command -v git >/dev/null 2>&1 && git rev-parse --show-toplevel >/dev/null 2>&1; then
-            # Revert unstaged changes in files outside the scoped project.
-            if [ -f "$SESSION_FILE" ]; then
-                local scope_project
-                scope_project=$(yq -r '.project_id // ""' "$SESSION_FILE" 2>/dev/null || echo "")
-                if [ -n "$scope_project" ]; then
-                    echo "Reverting out-of-scope changes..."
-                    git checkout -- . 2>/dev/null || true
-                    echo "Done. Scoped project files preserved."
-                fi
+            if [ -f "/tmp/cr-scope-violations.txt" ]; then
+                echo "Reverting out-of-scope changes..."
+                while IFS= read -r vpath; do
+                    [ -z "$vpath" ] && continue
+                    git checkout -- "$vpath" 2>/dev/null || true
+                    echo "  Reverted: $vpath"
+                done < "/tmp/cr-scope-violations.txt"
+                rm -f "/tmp/cr-scope-violations.txt"
+                echo "Done. Scoped project files preserved."
+            else
+                echo "No violation records found. Run 'cr scope audit' first."
             fi
         else
-            echo "Not a git repository — cannot revert."
+            echo "Not a git repository -- cannot revert."
         fi
         ;;
 

@@ -26,9 +26,11 @@ if [ ! -d "$SESSIONS_DIR" ] || [ -z "$(ls -A "$SESSIONS_DIR" 2>/dev/null)" ]; th
     exit 0
 fi
 
-# Run scope audit.
-AUDIT_OUT=$("$SCOPE_CLI" audit 2>&1) || true
+# Run scope audit (use set +e to capture real exit code).
+set +e
+AUDIT_OUT=$("$SCOPE_CLI" audit 2>&1)
 AUDIT_RC=$?
+set -e
 
 if [ "${AUDIT_RC:-0}" -ne 0 ]; then
     # Violations detected — block and require revert.
