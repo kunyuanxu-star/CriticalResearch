@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+# cr-apply-knowledge-delta — Execute knowledge writeback from knowledge-delta.yaml
+# to the global knowledge bank under _cr/knowledge/.
+# Reads updates from knowledge-delta.yaml, creates/updates/deprecates cards,
+# writes knowledge-apply-log.yaml, and updates _cr/knowledge/index.yaml.
+#
+# Usage: cr-apply-knowledge-delta <round_dir>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+ROUND_DIR="${1:-}"
+
+if [ -z "$ROUND_DIR" ]; then
+    echo "Usage: cr-apply-knowledge-delta <round_dir>" >&2
+    exit 2
+fi
+
+WORKSPACE_ROOT="$(cr_workspace_root)"
+DELTA="$ROUND_DIR/knowledge-delta.yaml"
+APPLY_LOG="$ROUND_DIR/knowledge-apply-log.yaml"
+INDEX="$WORKSPACE_ROOT/_cr/knowledge/index.yaml"
+
+if [ ! -f "$DELTA" ]; then
+    echo "Error: knowledge-delta.yaml not found in $ROUND_DIR" >&2
+    exit 2
+fi
+
+UPDATE_COUNT=$(yq -r '.updates | length // 0' "$DELTA" 2>/dev/null || echo "0")
+if [ "${UPDATE_COUNT:-0}" -eq 0 ]; then
+    echo "No knowledge updates to apply."
+    exit 0
+fi
+
+echo "Applying $UPDATE_COUNT knowledge update(s)..."
+
+# Initialize apply log.
+ROUND_ID=$(yq -r '.round_id // "0"' "$DELTA" 2>/dev/null || echo "0")
+cat > "$APPLY_LOG" << YAML
+schema_version: "1.0.0"
+round_id: $ROUND_ID
+applied_updates: []
+index_updates: []
+YAML
+
+# Ensure knowledge directory structure exists.
+mkdir -p "$WORKSPACE_ROOT/_cr/knowledge/thinking/cards"
+mkdir -p "$WORKSPACE_ROOT/_cr/knowledge/literature"/{papers,systems,concepts,debates,comparisons}
+
+sha_or_null() {
+    local f="$1"
+    if [ -f "$f" ]; then
+        shasum -a 256 "$f" 2>/dev/null | awk '{print $1}' || echo "null"
+    else
+        echo "null"
+    fi
+}
+
+APPLIED=0
+for i in $(seq 0 $((UPDATE_COUNT - 1))); do
+    UID_VAL=$(yq -r ".updates[$i].update_id // \"\"" "$DELTA" 2>/dev/null || echo "")
+    UOP=$(yq -r ".updates[$i].operation // \"\"" "$DELTA" 2>/dev/null || echo "")
+    UTYPE=$(yq -r ".updates[$i].update_type // \"\"" "$DELTA" 2>/dev/null || echo "")
+    TARGET=$(yq -r ".updates[$i].target_path // \"\"" "$DELTA" 2>/dev/null || echo "")
+    RULE_TITLE=$(yq -r ".updates[$i].rule.title // \"\"" "$DELTA" 2>/dev/null || echo "")
+    RULE_STMT=$(yq -r ".updates[$i].rule.statement // \"\"" "$DELTA" 2>/dev/null || echo "")
+    SUMMARY=$(yq -r ".updates[$i].content_summary // \"\"" "$DELTA" 2>/dev/null || echo "")
+
+    if [ -z "$TARGET" ] || [ "$TARGET" = "null" ]; then
+        echo "  SKIP $UID_VAL: no target_path — project-local only"
+        continue
+    fi
+
+    TARGET_PATH="$WORKSPACE_ROOT/$TARGET"
+    BEFORE=$(sha_or_null "$TARGET_PATH")
+
+    case "$UOP" in
+        create_card)
+            mkdir -p "$(dirname "$TARGET_PATH")"
+            cat > "$TARGET_PATH" << MD
+---
+card_id: $(basename "$TARGET_PATH" .md)
+card_type: $(echo "$UTYPE" | sed 's/_/ /g')
+title: "$RULE_TITLE"
+status: candidate
+rule: "$RULE_STMT"
+why_this_matters: "$SUMMARY"
+learned_from:
+  - source_type: round
+    source_id: "round-$ROUND_ID"
+    description: "Generated from round $ROUND_ID knowledge delta"
+how_to_apply: []
+created_at: "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+---
+
+# $RULE_TITLE
+
+$RULE_STMT
+
+## Why This Matters
+
+$SUMMARY
+MD
+            echo "  CREATED $UID_VAL: $TARGET"
+            ;;
+
+        append_comparison|update_card)
+            if [ -f "$TARGET_PATH" ]; then
+                echo "" >> "$TARGET_PATH"
+                echo "## Update from Round $ROUND_ID" >> "$TARGET_PATH"
+                echo "" >> "$TARGET_PATH"
+                echo "$SUMMARY" >> "$TARGET_PATH"
+                echo "  UPDATED $UID_VAL: $TARGET"
+            else
+                echo "  WARN $UID_VAL: target not found ($TARGET_PATH) — skipping"
+                continue
+            fi
+            ;;
+
+        deprecate_card)
+            if [ -f "$TARGET_PATH" ]; then
+                sed -i '' "s/^status:.*/status: deprecated/" "$TARGET_PATH" 2>/dev/null || \
+                    sed -i "s/^status:.*/status: deprecated/" "$TARGET_PATH"
+                echo "  DEPRECATED $UID_VAL: $TARGET"
+            fi
+            ;;
+
+        *)
+            echo "  SKIP $UID_VAL: unknown operation '$UOP'"
+            continue
+            ;;
+    esac
+
+    AFTER=$(sha_or_null "$TARGET_PATH")
+
+    # Record in apply log.
+    yq -i ".applied_updates += [{
+        \"update_id\": \"$UID_VAL\",
+        \"status\": \"applied\",
+        \"target_path\": \"$TARGET\",
+        \"before_sha256\": \"$BEFORE\",
+        \"after_sha256\": \"$AFTER\"
+    }]" "$APPLY_LOG" 2>/dev/null || true
+
+    APPLIED=$((APPLIED + 1))
+done
+
+# Update knowledge index.
+if [ -f "$INDEX" ]; then
+    IDX_BEFORE=$(sha_or_null "$INDEX")
+    # Simple index rebuild: list all cards.
+    cat > "$INDEX" << YAML
+schema_version: "1.0.0"
+last_updated: "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+thinking_cards:
+YAML
+    for card in "$WORKSPACE_ROOT/_cr/knowledge/thinking/cards/"*.md; do
+        [ -f "$card" ] || continue
+        card_id=$(basename "$card" .md)
+        title=$(grep '^title:' "$card" 2>/dev/null | head -1 | sed 's/^title:\s*"*//;s/"*$//' | xargs || echo "$card_id")
+        maturity=$(grep '^status:' "$card" 2>/dev/null | head -1 | sed 's/^status:\s*//' | xargs || echo "candidate")
+        echo "  - card_id: $card_id" >> "$INDEX"
+        echo "    title: \"$title\"" >> "$INDEX"
+        echo "    path: _cr/knowledge/thinking/cards/$(basename "$card")" >> "$INDEX"
+        echo "    maturity: $maturity" >> "$INDEX"
+    done
+
+    IDX_AFTER=$(sha_or_null "$INDEX")
+    yq -i ".index_updates += [{
+        \"index_path\": \"_cr/knowledge/index.yaml\",
+        \"status\": \"applied\",
+        \"before_sha256\": \"$IDX_BEFORE\",
+        \"after_sha256\": \"$IDX_AFTER\"
+    }]" "$APPLY_LOG" 2>/dev/null || true
+    echo "  Index updated"
+else
+    # Create initial index.
+    cat > "$INDEX" << YAML
+schema_version: "1.0.0"
+last_updated: "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+thinking_cards: []
+literature_cards: []
+YAML
+    echo "  Index created"
+fi
+
+echo ""
+echo "Knowledge apply complete: $APPLIED update(s) applied."

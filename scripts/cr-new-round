@@ -86,7 +86,7 @@ gen_required_outputs() {
         repair)       printf 'report\nknowledge_delta\n' ;;
         writing)      echo "writing_diff" ;;
         finalization) printf 'report\nwriting_diff\nknowledge_delta\n' ;;
-        *)            printf 'report\nevidence_update\ncritique_update\nwriting_diff\nknowledge_delta\n' ;;
+        *)            printf 'report\nevidence_ledger\ncritique_ledger\nwriting_diff_yaml\nknowledge_delta\nknowledge_apply_log\n' ;;
     esac
     if [ "$WORKFLOW_MODE" = "paper" ]; then
         printf 'paper_patch\nexperiment_obligation\n'

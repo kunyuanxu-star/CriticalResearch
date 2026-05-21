@@ -123,8 +123,10 @@ case "$PHASE" in
         fi
         ;;
     adversarial_critique)
-        if [ ! -f "$ROUND_DIR/critique.yaml" ] && [ ! -f "$ROUND_DIR/critique.md" ]; then
-            fail "Critique output required for adversarial_critique phase"
+        if [ -x "$SCRIPT_DIR/cr-validate-critique" ]; then
+            "$SCRIPT_DIR/cr-validate-critique" "$ROUND_DIR" || ALL_PRESENT=false
+        elif [ ! -f "$ROUND_DIR/critique-ledger.yaml" ]; then
+            fail "critique-ledger.yaml required for adversarial_critique phase"
             ALL_PRESENT=false
         fi
         ;;

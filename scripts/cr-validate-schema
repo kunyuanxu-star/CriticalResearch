@@ -53,7 +53,8 @@ for i in $(seq 0 $((ARTIFACT_COUNT - 1))); do
     SCHEMA_NAME=$(basename "$SCHEMA_REF")
     SCHEMA_FILE=$(cr_schema_path "$SCHEMA_NAME")
     if [ -z "$SCHEMA_FILE" ] || [ ! -f "$SCHEMA_FILE" ]; then
-        warn "Schema file not found: $SCHEMA_NAME (artifact: $KEY)"
+        fail "Schema file not found: $SCHEMA_NAME (artifact: $KEY)"
+        ALL_PASSED=false
         continue
     fi
 

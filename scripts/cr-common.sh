@@ -368,18 +368,18 @@ cr_artifact_registry_path() {
 # Usage: cr_required_outputs <round_yaml> -> space-separated list of output keys
 cr_required_outputs() {
     local round_yaml="${1:-}"
-    [ -z "$round_yaml" ] && { echo "report evidence_update critique_update writing_diff knowledge_delta"; return; }
-    [ ! -f "$round_yaml" ] && { echo "report evidence_update critique_update writing_diff knowledge_delta"; return; }
+    [ -z "$round_yaml" ] && { echo "report evidence_ledger critique_ledger writing_diff_yaml knowledge_delta knowledge_apply_log"; return; }
+    [ ! -f "$round_yaml" ] && { echo "report evidence_ledger critique_ledger writing_diff_yaml knowledge_delta knowledge_apply_log"; return; }
 
     # Extract required_outputs from round.yaml.
     if command -v yq >/dev/null 2>&1; then
         yq -r '.required_outputs // [] | join(" ")' "$round_yaml" 2>/dev/null || \
-            echo "report evidence_update critique_update writing_diff knowledge_delta"
+            echo "report evidence_ledger critique_ledger writing_diff_yaml knowledge_delta knowledge_apply_log"
     else
         # Fallback: parse YAML manually.
         grep -E '^\s*-\s+' "$round_yaml" 2>/dev/null | \
             sed 's/^\s*-\s*//' | tr '\n' ' ' || \
-            echo "report evidence_update critique_update writing_diff knowledge_delta"
+            echo "report evidence_ledger critique_ledger writing_diff_yaml knowledge_delta knowledge_apply_log"
     fi
 }
 

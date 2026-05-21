@@ -149,11 +149,11 @@ map_output_key_to_file() {
     case "$1" in
         report)              echo "report.md" ;;
         evidence_update)     echo "evidence-ledger.yaml" ;;
-        critique_update)     echo "critique.md" ;;
-        writing_diff)        echo "writing-diff.md" ;;
-        knowledge_delta)     echo "knowledge-delta.md" ;;
+        critique_update)     echo "critique-ledger.yaml" ;;
+        writing_diff)        echo "writing-diff.yaml" ;;
+        knowledge_delta)     echo "knowledge-delta.yaml" ;;
         paper_patch)         echo "patches" ;;
-        experiment_obligation) echo "experiments" ;;
+        experiment_obligation) echo "experiment-obligations.yaml" ;;
         *)                   echo "" ;;
     esac
 }

@@ -17,6 +17,7 @@
 #   complete-phase <proj> <p> Validate and mark a phase complete (only path)
 #   run-round <project>      Auto-advance through all phases until close
 #   research <project> <sub> Research plan, run, ingest, normalize
+#   apply-knowledge <round>  Execute knowledge writeback to global bank
 #   scope <subcommand>       Session scope management (open, close, check, status, audit)
 #   workspace init            Initialize Research workspace with _cr/ structure
 #   workspace scan            List all research-* projects in workspace
@@ -45,6 +46,7 @@ usage() {
     echo "  complete-phase <project> <ph>  Validate and mark a phase complete"
     echo "  run-round <project>           Auto-advance through all phases"
     echo "  research <project> <sub>      Research plan, run, ingest, normalize"
+    echo "  apply-knowledge <round-dir>   Execute knowledge writeback to global bank"
     echo "  scope <subcommand>            Session scope (open, close, check, status, audit)"
     echo "  workspace init                Initialize Research workspace"
     echo "  workspace scan                List research projects in workspace"
@@ -312,6 +314,26 @@ MD
             yq -i ".current_phase = \"close_round\" | .status = \"complete\"" "$STATE_FILE" 2>/dev/null || true
         fi
 
+        # Generate closure-report.yaml.
+        CLOSURE="$ROUND_DIR/closure-report.yaml"
+        cat > "$CLOSURE" << YAML
+schema_version: "1.0.0"
+round_id: $ACTIVE_RND
+closed_at: "$NOW"
+phase_closure:
+  pre_close_phases_complete: true
+  close_round_completed: true
+validator_summary:
+  source: cr-run-validator-pipeline
+artifacts_committed:
+  paper_state: paper-state.yaml
+  evidence_ledger: evidence-ledger.yaml
+  critique_ledger: critique-ledger.yaml
+  writing_diff: writing-diff.yaml
+  knowledge_delta: knowledge-delta.yaml
+  knowledge_apply_log: knowledge-apply-log.yaml
+YAML
+
         # Mark round complete.
         if [ -f "$ROUND_DIR/round.yaml" ]; then
             sed -i '' "s/^status:.*/status: complete/" "$ROUND_DIR/round.yaml" 2>/dev/null || \
@@ -420,6 +442,15 @@ MD
             exit 2
         fi
         exec "$SCRIPT_DIR/cr-research" "$PROJECT" "$SUB"
+        ;;
+
+    apply-knowledge)
+        ROUND_DIR="${1:-}"
+        if [ -z "$ROUND_DIR" ]; then
+            echo "Usage: cr apply-knowledge <round_dir>" >&2
+            exit 2
+        fi
+        exec "$SCRIPT_DIR/cr-apply-knowledge-delta" "$ROUND_DIR"
         ;;
 
     scope)
