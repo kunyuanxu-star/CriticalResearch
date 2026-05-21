@@ -16,6 +16,7 @@
 #   step <project> <sub>     Phase state machine (status, current, advance, validate)
 #   run-round <project>      Auto-advance through all phases until close
 #   research <project> <sub> Research plan, run, ingest, normalize
+#   scope <subcommand>       Session scope management (open, close, check, status, audit)
 #   workspace init            Initialize Research workspace with _cr/ structure
 #   workspace scan            List all research-* projects in workspace
 #   status                    Show workspace and active project status
@@ -42,6 +43,7 @@ usage() {
     echo "  step <project> <sub>          Phase state machine (status, current, advance, validate)"
     echo "  run-round <project>           Auto-advance through all phases"
     echo "  research <project> <sub>      Research plan, run, ingest, normalize"
+    echo "  scope <subcommand>            Session scope (open, close, check, status, audit)"
     echo "  workspace init                Initialize Research workspace"
     echo "  workspace scan                List research projects in workspace"
     echo "  status                        Show workspace and active project status"
@@ -410,6 +412,10 @@ MD
             exit 2
         fi
         exec "$SCRIPT_DIR/cr-research" "$PROJECT" "$SUB"
+        ;;
+
+    scope)
+        exec "$SCRIPT_DIR/cr-scope" "$@"
         ;;
 
     workspace)

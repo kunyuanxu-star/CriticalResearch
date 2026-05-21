@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# cr-hook-user-prompt-submit — UserPromptSubmit hook: inject scope context.
+# Runs before each user prompt is processed. Injects the current session scope
+# and project state so the model never forgets which project it's working on.
+#
+# Exit codes:
+#   0 — always (non-blocking, context injection only)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+WORKSPACE_ROOT="$(cr_workspace_root)"
+SCOPE_CLI="$SCRIPT_DIR/cr-scope"
+
+# Quick check: is there a workspace?
+if [ ! -d "$WORKSPACE_ROOT/_cr" ]; then
+    exit 0
+fi
+
+# Resolve scope context.
+SCOPE_CTX=$("$SCOPE_CLI" resolve --for-session 2>/dev/null || echo "")
+
+if [ -z "$SCOPE_CTX" ]; then
+    exit 0
+fi
+
+# Inject scope as additional context.
+jq -n --arg ctx "$SCOPE_CTX" '{
+    hookSpecificOutput: {
+        hookEventName: "UserPromptSubmit",
+        additionalContext: ("\n" + $ctx + "\n\nYou must respect the write boundary above. Before any write, verify the target belongs to the scoped project. Do not edit _cr metadata, protected state files, or other projects directly. Use cr commands for state mutations.\n")
+    }
+}'

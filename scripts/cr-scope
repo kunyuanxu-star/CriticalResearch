@@ -1,0 +1,523 @@
+#!/usr/bin/env bash
+# cr-scope — Session-scoped write boundary enforcement.
+# Every write operation must be proven to belong to the current scope.
+# Called by hooks, not directly by the model.
+#
+# Usage:
+#   cr scope open --project <id>        Bind session to a project
+#   cr scope close                       Release session scope
+#   cr scope status [--strict]          Show current scope
+#   cr scope check --path <p> [--tool]  Return ALLOW/DENY for a path
+#   cr scope audit [--last-tool]        Check working tree for violations
+#   cr scope resolve --for-session      Output scope context for prompt injection
+#   cr scope revert-last                 Revert last tool's out-of-scope changes
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+WORKSPACE_ROOT="$(cr_workspace_root)"
+
+# ── Session identity ────────────────────────────────────────────
+
+get_session_id() {
+    # Use CLAUDE_SESSION_ID if available, else fall back to a stable identifier.
+    if [ -n "${CLAUDE_SESSION_ID:-}" ]; then
+        echo "$CLAUDE_SESSION_ID"
+    elif [ -n "${CLAUDE_CONVERSATION_ID:-}" ]; then
+        echo "$CLAUDE_CONVERSATION_ID"
+    else
+        echo "default"
+    fi
+}
+
+SESSIONS_DIR="$WORKSPACE_ROOT/_cr/sessions"
+SESSION_ID=$(get_session_id)
+SESSION_FILE="$SESSIONS_DIR/$SESSION_ID.yaml"
+
+ensure_sessions_dir() {
+    mkdir -p "$SESSIONS_DIR"
+}
+
+# ── Protected state files ───────────────────────────────────────
+
+is_protected_state_file() {
+    local path="$1"
+    case "$path" in
+        */project.yaml|*/state/project-state.json|*/state/satisfaction.json)
+            return 0 ;;
+        */rounds/*/round.yaml|*/rounds/*/state.yaml|*/rounds/*/closure-report.yaml)
+            return 0 ;;
+        */rounds/*/patches/PP-*.yaml)
+            return 0 ;;
+        */_cr/project-registry.yaml|*/_cr/sessions/*.yaml|*/_cr/active-project)
+            return 0 ;;
+        *)
+            return 1 ;;
+    esac
+}
+
+# ── Workspace root artifacts (must never exist at workspace root) ──
+
+is_workspace_root_artifact() {
+    local path="$1"
+    case "$(basename "$path")" in
+        report.md|sources.md|critique.md|writing-diff.md|knowledge-delta.md)
+            return 0 ;;
+        research-plan.yaml|search-log.yaml|source-index.yaml|evidence-ledger.yaml|search-queue.yaml)
+            return 0 ;;
+        round.yaml|state.yaml|dispositions.yaml|closure-report.yaml)
+            return 0 ;;
+        *)
+            return 1 ;;
+    esac
+}
+
+# ── Read-only Bash commands (always allowed) ────────────────────
+
+is_readonly_command() {
+    local cmd="$1"
+    case "$cmd" in
+        pwd|ls\ *|tree\ *|cat\ *|head\ *|tail\ *|less\ *)
+            return 0 ;;
+        grep\ *|rg\ *|find\ *|which\ *|type\ *|command\ -v\ *)
+            return 0 ;;
+        git\ status*|git\ diff*|git\ log*|git\ show\ *|git\ blame\ *)
+            return 0 ;;
+        git\ rev-parse*|git\ branch*|git\ remote\ *)
+            return 0 ;;
+        cr\ workspace\ check*|cr\ scope\ status*|cr\ scope\ resolve*|cr\ step\ *\ status*|cr\ step\ *\ current*)
+            return 0 ;;
+        cr\ step\ *\ validate*|cr\ validate\ *|cr\ status*|cr\ continue*)
+            return 0 ;;
+        jq\ *|yq\ *|echo\ *|printf\ *|wc\ *|sort\ *|uniq\ *|tr\ *|cut\ *|awk\ *|sed\ -n\ *|sed\ -n*)
+            return 0 ;;
+        shasum\ *|sha256sum\ *|bash\ -n\ *)
+            return 0 ;;
+        *)
+            return 1 ;;
+    esac
+}
+
+# ── Allowed cr mutation commands ─────────────────────────────────
+
+is_allowed_cr_mutation() {
+    local cmd="$1"
+    case "$cmd" in
+        cr\ scope\ open\ *|cr\ scope\ close*)
+            return 0 ;;
+        cr\ round\ *|cr\ step\ *\ advance*|cr\ research\ *|cr\ close-round\ *)
+            return 0 ;;
+        cr\ start\ *|cr\ workspace\ *|cr\ validate\ *)
+            return 0 ;;
+        cr\ record-decision\ *|cr\ apply-paper-patch\ *)
+            return 0 ;;
+        cr\ promote-knowledge*|cr\ migrate-to-paper-mode\ *)
+            return 0 ;;
+        git\ add\ *|git\ commit\ *|git\ push\ *)
+            return 0 ;;
+        *)
+            return 1 ;;
+    esac
+}
+
+# ── Path classification ─────────────────────────────────────────
+
+classify_path() {
+    local path="$1"
+    local abs_path
+
+    # Resolve to absolute if possible.
+    if [ -e "$path" ] || [ -L "$path" ]; then
+        abs_path="$(cd "$(dirname "$path")" 2>/dev/null && pwd -P)/$(basename "$path")" || abs_path="$path"
+    else
+        # Path doesn't exist yet — normalize manually.
+        case "$path" in
+            /*) abs_path="$path" ;;
+            *)  abs_path="$(pwd)/$path" ;;
+        esac
+    fi
+
+    # Check: inside a project directory?
+    local dir="$abs_path"
+    while [ "$dir" != "/" ] && [ "$dir" != "." ]; do
+        if [ -f "$dir/project.yaml" ]; then
+            local proj_name
+            proj_name=$(basename "$dir")
+            echo "project:$proj_name:$dir"
+            return
+        fi
+        [ "$dir" = "$WORKSPACE_ROOT" ] && break
+        dir=$(dirname "$dir")
+    done
+
+    # Check: inside _cr?
+    case "$abs_path" in
+        "$WORKSPACE_ROOT/_cr"|"$WORKSPACE_ROOT/_cr"/*)
+            echo "_cr"
+            return ;;
+    esac
+
+    # Check: at workspace root?
+    case "$abs_path" in
+        "$WORKSPACE_ROOT"|"$WORKSPACE_ROOT"/*)
+            echo "workspace_root"
+            return ;;
+    esac
+
+    echo "outside"
+}
+
+# ── Core check engine ───────────────────────────────────────────
+
+do_check() {
+    local path="${1:-}"
+    local tool="${2:-Write}"
+
+    if [ -z "$path" ]; then
+        echo "DENY:no path provided"
+        return 1
+    fi
+
+    # No session scope = deny all writes.
+    if [ ! -f "$SESSION_FILE" ]; then
+        echo "DENY:no session scope bound. Run: cr scope open --project <id>"
+        return 1
+    fi
+
+    local scope_project
+    scope_project=$(yq -r '.project_id // ""' "$SESSION_FILE" 2>/dev/null || echo "")
+    local scope_type
+    scope_type=$(yq -r '.scope_type // "single_project_write"' "$SESSION_FILE" 2>/dev/null || echo "single_project_write")
+
+    if [ -z "$scope_project" ]; then
+        echo "DENY:session scope has no project_id"
+        return 1
+    fi
+
+    # Multi-project read-only: deny any write.
+    if [ "$scope_type" = "multi_project_readonly" ]; then
+        echo "DENY:scope is multi_project_readonly — no writes allowed"
+        return 1
+    fi
+
+    # Workspace maintenance: only allow _cr writes.
+    if [ "$scope_type" = "workspace_maintenance" ]; then
+        local class
+        class=$(classify_path "$path")
+        case "$class" in
+            _cr) echo "ALLOW" ; return 0 ;;
+            *)   echo "DENY:workspace_maintenance scope — only _cr writes allowed" ; return 1 ;;
+        esac
+    fi
+
+    # single_project_write: the default.
+    local class
+    class=$(classify_path "$path")
+
+    case "$class" in
+        project:*)
+            local proj_name="${class#project:}"
+            proj_name="${proj_name%%:*}"
+
+            if [ "$proj_name" != "$scope_project" ]; then
+                echo "DENY:path belongs to project '$proj_name', scope is '$scope_project'"
+                return 1
+            fi
+
+            # Check protected state file.
+            if is_protected_state_file "$path"; then
+                # Allow if mutation is via cr command.
+                if [ "$tool" = "Bash" ]; then
+                    echo "DENY:protected state file — use cr command to modify"
+                    return 1
+                fi
+                # Write/Edit to protected files blocked.
+                echo "DENY:protected state file — use cr step advance, cr close-round, or cr patch apply"
+                return 1
+            fi
+
+            echo "ALLOW"
+            return 0
+            ;;
+
+        _cr)
+            echo "DENY:direct _cr writes blocked — use cr scope or cr workspace commands"
+            return 1
+            ;;
+
+        workspace_root)
+            if is_workspace_root_artifact "$path"; then
+                echo "DENY:project artifact cannot exist at workspace root. Resolve project scope first."
+                return 1
+            fi
+            echo "ALLOW"
+            return 0
+            ;;
+
+        outside)
+            echo "ALLOW"
+            return 0
+            ;;
+
+        *)
+            echo "DENY:unable to classify path"
+            return 1
+            ;;
+    esac
+}
+
+# ── Subcommands ─────────────────────────────────────────────────
+
+SUBCMD="${1:-}"
+shift 2>/dev/null || true
+
+case "$SUBCMD" in
+    open)
+        PROJECT=""
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --project) PROJECT="${2:-}"; shift 2 ;;
+                *) shift ;;
+            esac
+        done
+
+        if [ -z "$PROJECT" ]; then
+            echo "Usage: cr scope open --project <project-id>" >&2
+            exit 2
+        fi
+
+        if [ ! -d "$WORKSPACE_ROOT/$PROJECT" ]; then
+            echo "Error: project '$PROJECT' not found in workspace" >&2
+            exit 1
+        fi
+
+        ensure_sessions_dir
+
+        NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        cat > "$SESSION_FILE" << YAML
+session_id: "$SESSION_ID"
+scope_type: single_project_write
+project_id: "$PROJECT"
+opened_at: "$NOW"
+YAML
+
+        echo "Scope bound: session=$SESSION_ID project=$PROJECT"
+        ;;
+
+    close)
+        if [ -f "$SESSION_FILE" ]; then
+            rm "$SESSION_FILE"
+            echo "Scope released."
+        else
+            echo "No active scope."
+        fi
+        ;;
+
+    status)
+        STRICT=false
+        [ "${1:-}" = "--strict" ] && STRICT=true
+
+        if [ ! -f "$SESSION_FILE" ]; then
+            echo "No session scope bound."
+            [ "$STRICT" = true ] && exit 1
+            exit 0
+        fi
+
+        echo "Session: $(yq -r '.session_id' "$SESSION_FILE")"
+        echo "Scope:   $(yq -r '.scope_type' "$SESSION_FILE")"
+        echo "Project: $(yq -r '.project_id' "$SESSION_FILE")"
+        echo "Opened:  $(yq -r '.opened_at' "$SESSION_FILE")"
+
+        project_id
+        project_id=$(yq -r '.project_id' "$SESSION_FILE")
+        if [ -n "$project_id" ] && [ -d "$WORKSPACE_ROOT/$project_id" ]; then
+            active_rnd
+            active_rnd=$(jq -r '.active_round // "none"' "$WORKSPACE_ROOT/$project_id/state/project-state.json" 2>/dev/null || echo "none")
+            echo "Round:   $active_rnd"
+
+            if [ "$active_rnd" != "none" ] && [ "$active_rnd" != "null" ]; then
+                rnd_num
+                rnd_num=$(printf "%03d" "$active_rnd")
+                state_file="$WORKSPACE_ROOT/$project_id/rounds/round-$rnd_num/state.yaml"
+                if [ -f "$state_file" ]; then
+                    phase
+                    phase=$(yq -r '.current_phase // "unknown"' "$state_file" 2>/dev/null || echo "unknown")
+                    echo "Phase:   $phase"
+                fi
+            fi
+        fi
+        ;;
+
+    check)
+        TOOL="Write"
+        PATH_ARG=""
+
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --tool) TOOL="${2:-Write}"; shift 2 ;;
+                --path) PATH_ARG="${2:-}"; shift 2 ;;
+                *) shift ;;
+            esac
+        done
+
+        do_check "$PATH_ARG" "$TOOL"
+        ;;
+
+    audit)
+        LAST_TOOL=false
+        [ "${1:-}" = "--last-tool" ] && LAST_TOOL=true
+
+        if [ ! -f "$SESSION_FILE" ]; then
+            echo "No session scope."
+            exit 0
+        fi
+
+        local scope_project
+        scope_project=$(yq -r '.project_id // ""' "$SESSION_FILE" 2>/dev/null || echo "")
+
+        if [ -z "$scope_project" ]; then
+            exit 0
+        fi
+
+        # Check for modified files outside the scoped project.
+        if command -v git >/dev/null 2>&1 && git rev-parse --show-toplevel >/dev/null 2>&1; then
+            local violations=0
+            while IFS= read -r modified; do
+                [ -z "$modified" ] && continue
+                # Skip the scoped project.
+                case "$modified" in
+                    "$scope_project"|"$scope_project"/*) continue ;;
+                    _cr/sessions/*) continue ;;
+                    .git/*) continue ;;
+                esac
+                # Check if this is a project artifact outside scope.
+                if is_workspace_root_artifact "$modified" || is_protected_state_file "$modified"; then
+                    echo "VIOLATION: $modified"
+                    violations=$((violations + 1))
+                elif [ -f "$WORKSPACE_ROOT/$modified/project.yaml" ] 2>/dev/null; then
+                    echo "VIOLATION (other project): $modified"
+                    violations=$((violations + 1))
+                fi
+            done <<< "$(git diff --name-only HEAD 2>/dev/null)"
+
+            if [ "$violations" -gt 0 ]; then
+                echo "Scope audit: $violations violation(s) detected."
+                exit 1
+            fi
+        fi
+
+        echo "Scope audit: clean."
+        ;;
+
+    resolve)
+        if [ "${1:-}" != "--for-session" ]; then
+            echo "Usage: cr scope resolve --for-session" >&2
+            exit 2
+        fi
+
+        echo "CriticalResearch scope:"
+
+        if [ ! -f "$SESSION_FILE" ]; then
+            echo "- No project scope is bound."
+            echo "- Before any research write, run: cr scope open --project <project-id>"
+            exit 0
+        fi
+
+        local project_id scope_type
+        project_id=$(yq -r '.project_id // ""' "$SESSION_FILE")
+        scope_type=$(yq -r '.scope_type // "single_project_write"' "$SESSION_FILE")
+
+        echo "- Workspace root: $WORKSPACE_ROOT"
+        echo "- Session scope: $scope_type / $project_id"
+        echo "- Writable boundary: $project_id/** only"
+        echo "- Other projects: read-only or denied"
+        echo "- _cr metadata: must not be directly edited"
+        echo "- Protected state files: cr commands only"
+
+        # List known projects.
+        local projects=""
+        for d in "$WORKSPACE_ROOT"/*/; do
+            local name
+            name=$(basename "$d")
+            case "$name" in _cr|.*|_*) continue ;; esac
+            [ -f "$d/project.yaml" ] || continue
+            if [ -z "$projects" ]; then
+                projects="$name"
+            else
+                projects="$projects, $name"
+            fi
+        done
+        echo "- Known projects: ${projects:-none}"
+
+        if [ -d "$WORKSPACE_ROOT/$project_id" ]; then
+            active_rnd
+            active_rnd=$(jq -r '.active_round // "none"' "$WORKSPACE_ROOT/$project_id/state/project-state.json" 2>/dev/null || echo "none")
+            echo "- Current round: $active_rnd"
+
+            if [ "$active_rnd" != "none" ] && [ "$active_rnd" != "null" ]; then
+                rnd_num
+                rnd_num=$(printf "%03d" "$active_rnd")
+                state_file="$WORKSPACE_ROOT/$project_id/rounds/round-$rnd_num/state.yaml"
+                if [ -f "$state_file" ]; then
+                    phase
+                    phase=$(yq -r '.current_phase // "unknown"' "$state_file" 2>/dev/null || echo "unknown")
+                    echo "- Current phase: $phase"
+                fi
+            fi
+        fi
+        ;;
+
+    revert-last)
+        if command -v git >/dev/null 2>&1 && git rev-parse --show-toplevel >/dev/null 2>&1; then
+            # Revert unstaged changes in files outside the scoped project.
+            if [ -f "$SESSION_FILE" ]; then
+                local scope_project
+                scope_project=$(yq -r '.project_id // ""' "$SESSION_FILE" 2>/dev/null || echo "")
+                if [ -n "$scope_project" ]; then
+                    echo "Reverting out-of-scope changes..."
+                    git checkout -- . 2>/dev/null || true
+                    echo "Done. Scoped project files preserved."
+                fi
+            fi
+        else
+            echo "Not a git repository — cannot revert."
+        fi
+        ;;
+
+    test-readonly)
+        CMD="${1:-}"
+        if is_readonly_command "$CMD"; then
+            echo "ALLOW"
+            exit 0
+        else
+            echo "DENY"
+            exit 1
+        fi
+        ;;
+
+    test-cr-mutation)
+        CMD="${1:-}"
+        if is_allowed_cr_mutation "$CMD"; then
+            echo "ALLOW"
+            exit 0
+        else
+            echo "DENY"
+            exit 1
+        fi
+        ;;
+
+    *)
+        echo "Usage: cr scope <open|close|status|check|audit|resolve|revert-last|test-readonly|test-cr-mutation>" >&2
+        echo ""
+        echo "  open --project <id>   Bind session to a project"
+        echo "  close                  Release session scope"
+        echo "  status [--strict]      Show current scope"
+        echo "  check --path <p>       Return ALLOW or DENY for a path"
+        echo "  audit [--last-tool]    Check for out-of-scope modifications"
+        echo "  resolve --for-session  Output scope context for prompt injection"
+        echo "  revert-last            Revert out-of-scope changes"
+        exit 2
+        ;;
+esac

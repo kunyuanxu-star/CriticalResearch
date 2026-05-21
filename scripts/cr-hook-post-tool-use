@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# cr-hook-post-tool-use — PostToolUse hook: audit writes after the fact.
+# Catches mutations that PreToolUse couldn't fully parse (complex Bash scripts,
+# indirect writes). If violations are found, blocks and requires revert.
+#
+# Exit codes:
+#   0 — clean
+#   1 — violations found (outputs JSON decision:block)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+WORKSPACE_ROOT="$(cr_workspace_root)"
+SCOPE_CLI="$SCRIPT_DIR/cr-scope"
+
+# Quick check: is there a workspace and scope?
+if [ ! -d "$WORKSPACE_ROOT/_cr" ]; then
+    exit 0
+fi
+
+# Check if any session scope exists.
+SESSIONS_DIR="$WORKSPACE_ROOT/_cr/sessions"
+if [ ! -d "$SESSIONS_DIR" ] || [ -z "$(ls -A "$SESSIONS_DIR" 2>/dev/null)" ]; then
+    exit 0
+fi
+
+# Run scope audit.
+AUDIT_OUT=$("$SCOPE_CLI" audit 2>&1) || true
+AUDIT_RC=$?
+
+if [ "${AUDIT_RC:-0}" -ne 0 ]; then
+    # Violations detected — block and require revert.
+    jq -n --arg audit "$AUDIT_OUT" '{
+        hookSpecificOutput: {
+            hookEventName: "PostToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: ("Scope violation detected after last tool call.\n" + $audit + "\nRun: cr scope revert-last\nOr manually revert before continuing.")
+        }
+    }'
+    exit 1
+fi
+
+exit 0

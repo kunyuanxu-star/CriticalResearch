@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# cr-hook-stop — Stop hook wrapper. Resolves the active project from
-# the workspace root and delegates to cr-validate-stop.
+# cr-hook-stop — Stop hook: validate phase, audit scope, enforce completion.
+# Runs when Claude tries to end the session. Blocks if:
+# - Current phase validator fails
+# - Scope audit finds out-of-scope modifications
+# - Round is incomplete and user hasn't explicitly requested stop
 #
-# Called by .claude/settings.json Stop hook with workspace root as arg.
-# This handles the case where CLAUDE_PROJECT_DIR is the workspace root
-# (e.g., ~/Research) rather than a specific project directory.
+# Called by .claude/settings.json Stop hook.
 
 set -euo pipefail
 
@@ -13,21 +14,42 @@ source "$SCRIPT_DIR/cr-common.sh"
 
 WORKSPACE_ROOT="${1:-$(cr_workspace_root)}"
 
-# Check if we're directly in a project directory.
-if [ -f "$WORKSPACE_ROOT/state/project-state.json" ]; then
-    exec "$SCRIPT_DIR/cr-validate-stop" "$WORKSPACE_ROOT" "${2:-}"
-fi
+# ── Scope audit (runs first — catch violations before anything else) ──
 
-# Otherwise, look for active project in workspace.
-ACTIVE_PROJECT_FILE="$WORKSPACE_ROOT/_cr/active-project"
-if [ -f "$ACTIVE_PROJECT_FILE" ]; then
-    ACTIVE_PROJECT=$(cat "$ACTIVE_PROJECT_FILE")
-    PROJECT_DIR="$WORKSPACE_ROOT/$ACTIVE_PROJECT"
-    if [ -d "$PROJECT_DIR" ]; then
-        exec "$SCRIPT_DIR/cr-validate-stop" "$PROJECT_DIR" "${2:-}"
+SESSIONS_DIR="$WORKSPACE_ROOT/_cr/sessions"
+if [ -d "$SESSIONS_DIR" ] && [ -n "$(ls -A "$SESSIONS_DIR" 2>/dev/null)" ]; then
+    AUDIT_OUT=$("$SCRIPT_DIR/cr-scope" audit 2>&1) || true
+    AUDIT_RC=$?
+    if [ "${AUDIT_RC:-0}" -ne 0 ]; then
+        jq -n --arg audit "$AUDIT_OUT" '{
+            decision: "block",
+            reason: ("Scope violation detected.\n" + $audit + "\nRun: cr scope revert-last\nThen complete the current phase before stopping.")
+        }'
+        exit 1
     fi
 fi
 
-# No project found — allow stop.
-echo '{"decision":"allow"}'
-exit 0
+# ── Resolve project directory ────────────────────────────────────
+
+# Check if we're directly in a project directory.
+if [ -f "$WORKSPACE_ROOT/state/project-state.json" ]; then
+    PROJECT_DIR="$WORKSPACE_ROOT"
+else
+    # Look for active project in workspace.
+    ACTIVE_PROJECT_FILE="$WORKSPACE_ROOT/_cr/active-project"
+    if [ -f "$ACTIVE_PROJECT_FILE" ]; then
+        ACTIVE_PROJECT=$(cat "$ACTIVE_PROJECT_FILE")
+        PROJECT_DIR="$WORKSPACE_ROOT/$ACTIVE_PROJECT"
+        if [ ! -d "$PROJECT_DIR" ]; then
+            echo '{"decision":"allow"}'
+            exit 0
+        fi
+    else
+        echo '{"decision":"allow"}'
+        exit 0
+    fi
+fi
+
+# ── Delegate to cr-validate-stop (handles phase + round + human gates) ──
+
+exec "$SCRIPT_DIR/cr-validate-stop" "$PROJECT_DIR" "${2:-}"

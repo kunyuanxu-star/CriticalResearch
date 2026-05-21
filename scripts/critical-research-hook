@@ -3,7 +3,8 @@
 # Resolves CR_SKILL_HOME from environment or default install path,
 # then dispatches to the appropriate hook script.
 #
-# Usage: critical-research-hook <pre-tool-use|post-tool-use|stop> [args...]
+# Usage: critical-research-hook <event> [args...]
+#   Events: user-prompt-submit, pre-tool-use, post-tool-use, stop
 #
 # This avoids the CLAUDE_PROJECT_DIR ambiguity when the skill is installed
 # to ~/.claude/skills/ but the user opens Claude Code from ~/Research/.
@@ -24,17 +25,20 @@ HOOK="${1:-}"
 shift 2>/dev/null || true
 
 case "$HOOK" in
+    user-prompt-submit)
+        exec "$SKILL_HOME/scripts/cr-hook-user-prompt-submit" "$@"
+        ;;
     pre-tool-use)
-        exec "$SKILL_HOME/scripts/cr-guard-path" "$@"
+        exec "$SKILL_HOME/scripts/cr-hook-pre-tool-use" "$@"
         ;;
     post-tool-use)
-        exec "$SKILL_HOME/hooks/check-round.sh" "$@"
+        exec "$SKILL_HOME/scripts/cr-hook-post-tool-use" "$@"
         ;;
     stop)
         exec "$SKILL_HOME/scripts/cr-hook-stop" "$@"
         ;;
     *)
-        echo "Usage: critical-research-hook <pre-tool-use|post-tool-use|stop> [args...]" >&2
+        echo "Usage: critical-research-hook <user-prompt-submit|pre-tool-use|post-tool-use|stop> [args...]" >&2
         exit 2
         ;;
 esac

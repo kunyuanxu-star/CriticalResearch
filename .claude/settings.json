@@ -1,24 +1,37 @@
 {
   "description": "critical-cs-research deterministic enforcement hooks. Uses global critical-research-hook wrapper installed by install.sh to ~/.local/bin/.",
   "hooks": {
-    "PreToolUse": [
+    "UserPromptSubmit": [
       {
-        "matcher": "Bash|Edit|Write|MultiEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "critical-research-hook pre-tool-use \"${CLAUDE_TOOL_NAME}\" \"${CLAUDE_TOOL_INPUT}\""
+            "command": "critical-research-hook user-prompt-submit",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "critical-research-hook pre-tool-use",
+            "timeout": 30
           }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit",
+        "matcher": "Write|Edit|MultiEdit|Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "critical-research-hook post-tool-use"
+            "command": "critical-research-hook post-tool-use",
+            "timeout": 30
           }
         ]
       }
@@ -28,7 +41,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "critical-research-hook stop \"${CLAUDE_PROJECT_DIR}\""
+            "command": "critical-research-hook stop \"${CLAUDE_PROJECT_DIR}\"",
+            "timeout": 60
           }
         ]
       }

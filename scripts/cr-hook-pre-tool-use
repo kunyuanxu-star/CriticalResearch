@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# cr-hook-pre-tool-use — PreToolUse hook: enforce write boundaries.
+# Called before every Write/Edit/MultiEdit/Bash operation.
+# Every write must be proven to belong to the current session scope.
+#
+# Exit codes:
+#   0 — allowed
+#   1 — blocked (outputs JSON decision:block)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+WORKSPACE_ROOT="$(cr_workspace_root)"
+SCOPE_CLI="$SCRIPT_DIR/cr-scope"
+
+deny() {
+    local reason="$1"
+    jq -n --arg reason "$reason" '{
+        hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: $reason
+        }
+    }'
+    exit 0
+}
+
+allow() {
+    exit 0
+}
+
+INPUT="$(cat)"
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // .tool // empty' 2>/dev/null || echo "")
+
+[ -z "$TOOL_NAME" ] && allow
+
+# ── Extract path / command from JSON input ───────────────────────
+
+extract_file_paths() {
+    echo "$1" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true
+}
+
+extract_command() {
+    echo "$1" | jq -r '.tool_input.command // empty' 2>/dev/null || true
+}
+
+# ── Write / Edit / MultiEdit ────────────────────────────────────
+
+case "$TOOL_NAME" in
+    Write|Edit|MultiEdit)
+        PATHS=$(extract_file_paths "$INPUT")
+        [ -z "$PATHS" ] && allow
+
+        while IFS= read -r file_path; do
+            [ -z "$file_path" ] && continue
+            case "$file_path" in
+                /*) ;;
+                *)  file_path="$(pwd)/$file_path" ;;
+            esac
+
+            RESULT=$("$SCOPE_CLI" check --path "$file_path" --tool "$TOOL_NAME" 2>/dev/null || echo "DENY:scope check failed")
+            case "$RESULT" in
+                ALLOW) ;;
+                *) deny "$RESULT" ;;
+            esac
+        done <<< "$PATHS"
+        allow
+        ;;
+
+    Bash)
+        CMD=$(extract_command "$INPUT")
+        [ -z "$CMD" ] && allow
+
+        # Read-only commands always allowed.
+        if "$SCOPE_CLI" test-readonly "$CMD" 2>/dev/null; then
+            allow
+        fi
+
+        # Allowed cr mutation commands.
+        if "$SCOPE_CLI" test-cr-mutation "$CMD" 2>/dev/null; then
+            allow
+        fi
+
+        # Extract candidate file paths from the command string.
+        # Matches absolute paths, ~/ paths, relative paths with slashes.
+        CMD_PATHS=$(echo "$CMD" | grep -oE '(~?/[A-Za-z0-9._-][A-Za-z0-9._/-]*|[A-Za-z0-9_-]+/[A-Za-z0-9._/-]+)' 2>/dev/null || true)
+
+        if [ -z "$CMD_PATHS" ]; then
+            # No recognizable paths — check for dangerous mutation patterns.
+            case "$CMD" in
+                *">"*|*">>"*|*"tee "*|*"dd "*|*"cp "*|*"mv "*|*"rm "*|*"touch "*|*"mkdir "*|\
+                *"sed -i"*|*"perl -pi"*|*"python"*"open"*|*"node"*"writeFile"*)
+                    deny "Bash mutation command with unparseable paths: '${CMD:0:120}'. Use cr command or Write/Edit with explicit scoped path."
+                    ;;
+                *)
+                    allow
+                    ;;
+            esac
+        fi
+
+        # Check each extracted path against scope.
+        while IFS= read -r file_path; do
+            [ -z "$file_path" ] && continue
+            file_path="${file_path/#\~/$HOME}"
+            case "$file_path" in
+                /*) ;;
+                *)  file_path="$(pwd)/$file_path" ;;
+            esac
+
+            RESULT=$("$SCOPE_CLI" check --path "$file_path" --tool Bash 2>/dev/null || echo "DENY:scope check failed")
+            case "$RESULT" in
+                ALLOW) ;;
+                *) deny "$RESULT" ;;
+            esac
+        done <<< "$CMD_PATHS"
+        allow
+        ;;
+
+    *)
+        allow
+        ;;
+esac
