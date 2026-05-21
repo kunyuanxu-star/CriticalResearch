@@ -73,7 +73,8 @@ for patch_file in $PATCH_FILES; do
                 if grep -qF "$AFTER_SNIPPET" "$DRAFT" 2>/dev/null; then
                     pass "$PATCH_ID ($LIFECYCLE): after_text found in draft"
                 else
-                    warn "$PATCH_ID ($LIFECYCLE): after_text snippet not found in draft — manual verification needed"
+                    ALL_PASSED=false
+                fail "$PATCH_ID ($LIFECYCLE): after_text snippet not found in draft"
                 fi
             fi
 
@@ -83,7 +84,8 @@ for patch_file in $PATCH_FILES; do
                 if grep -q "$PATCH_ID" "$DIFF_YAML" 2>/dev/null; then
                     pass "$PATCH_ID: referenced in writing-diff.yaml"
                 else
-                    warn "$PATCH_ID ($LIFECYCLE): not referenced in writing-diff.yaml"
+                    ALL_PASSED=false
+                fail "$PATCH_ID ($LIFECYCLE): not referenced in writing-diff.yaml"
                 fi
             fi
             ;;
