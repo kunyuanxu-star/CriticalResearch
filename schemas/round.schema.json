@@ -45,7 +45,7 @@
     "workflow_mode": {
       "type": "string",
       "description": "The workflow mode for this round. Paper mode enables critique dispositions, paper patches, experiment obligations, and knowledge cards.",
-      "enum": ["lightweight", "standard", "deep", "paper"],
+      "enum": ["triage", "standard", "deep", "paper"],
       "default": "deep"
     },
     "required_outputs": {

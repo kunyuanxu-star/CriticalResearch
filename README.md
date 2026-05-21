@@ -1,6 +1,6 @@
 # CriticalResearch
 
-A domain-general, computer-science-specific critical research loop as a Claude Code skill. It decomposes claims, grounds evidence, finds counterexamples, generates research gaps, and produces evidence-backed conclusions — looping indefinitely until you are convinced.
+A domain-general, computer-science-specific critical research loop as a Claude Code skill with an **enforced phase state machine**. It decomposes claims, grounds evidence in real external search, finds counterexamples, generates research gaps, produces paper patches with experiment obligations, distills reusable knowledge, and produces evidence-backed conclusions — looping indefinitely until all phases are complete and validators pass.
 
 Covers: OS, networking, security, databases, PL/compilers, architecture, AI infrastructure, distributed systems, software engineering, HCI/CSCW, and technical systems work.
 
@@ -11,6 +11,8 @@ Covers: OS, networking, security, databases, PL/compilers, architecture, AI infr
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (CLI or IDE extension)
 - Git
 - Bash (macOS / Linux)
+- jq (brew/apt install jq)
+- yq (brew/apt install yq) — required for paper mode
 
 ### Quick Install
 
@@ -23,7 +25,6 @@ bash install.sh
 cd ~/Research
 cr workspace init
 cr start my-topic
-cr round my-topic --mode paper
 ```
 
 The installer:
@@ -43,7 +44,7 @@ export PATH="$HOME/.claude/skills/critical-cs-research/scripts:$PATH"
 
 ### Within Claude Code
 
-Start a conversation with Claude Code and the skill activates automatically when you ask about CS research tasks. Examples:
+Start a conversation with Claude Code and the skill activates automatically when you ask about CS research tasks. The Stop hook prevents the session from ending until the current phase's required outputs are complete. Examples:
 
 - "Validate this idea for a new caching algorithm"
 - "Review my system design for a distributed key-value store"
@@ -52,33 +53,54 @@ Start a conversation with Claude Code and the skill activates automatically when
 ### CLI (standalone)
 
 ```bash
+# Project lifecycle
 cr workspace init                # Initialize a Research workspace
-cr start my-topic                 # Create a new research project (use lowercase, hyphens)
-cr continue                      # Output next-round task prompt
-cr round my-topic --mode paper   # Open a new paper-mode round
+cr start my-topic                # Create a new research project
+cr continue                      # Show next-round task prompt
+cr status                        # Show workspace and project status
+
+# Round lifecycle
+cr round my-topic --mode paper   # Open a new paper-mode round (14 phases)
+cr step my-topic status          # Show current phase and missing outputs
+cr step my-topic advance         # Validate current phase and advance to next
+cr step my-topic validate        # Validate current phase without advancing
 cr close-round my-topic          # Validate and close the active round
-cr validate my-topic             # Run project invariant checks
-cr status                        # Show workspace status
+cr validate my-topic             # Run all project invariant checks
+
+# Research (paper mode: external search mandatory)
+cr research my-topic plan        # Review research plan and search queue
+cr research my-topic run         # Validate search coverage and raw sources
+cr research my-topic ingest      # Verify source integrity (sha256 hashes)
+cr research my-topic normalize   # Check evidence-ledger completeness
+
+# Automated phase runner (validates and advances, does not generate artifacts)
+cr run-round my-topic            # Auto-advance through all phases
 ```
 
 ## Workflow Modes
 
-| Mode | Use Case | Depth |
-|---|---|---|
-| **Lightweight** | Quick validation, idea screening (≤3 claims) | Internal knowledge only |
-| **Standard** | Regular research, design review (4-10 claims) | 1 search pass |
-| **Deep** | Journal-grade review, full rebuttal (>10 claims) | Deep search + concurrent role-lenses |
+| Mode | Use Case | Claims | Evidence | Can Close Round? |
+|---|---|---|---|---|
+| **Triage** | Quick screening, idea feasibility | ≤3 | Internal knowledge only | No — triage only |
+| **Standard** | Regular research, design review | 4–10 | 1 search pass required | Yes |
+| **Deep** | Journal-grade review, full rebuttal | >10 | Deep search + concurrent | Yes |
+| **Paper** | Full paper round: 14 phases, external research mandatory | Any | Deep search + raw sources + evidence ledger + weakening evidence | Yes — requires all phases complete |
 
-The only exit condition is user satisfaction — the loop continues until you say you're convinced.
+**Paper mode** is the primary workflow. Each round must complete 14 phases: reconstruct_paper_state → define_round_target → plan_research → run_retrieval → ingest_sources → normalize_evidence → update_literature_knowledge → adversarial_critique → generate_dispositions → generate_paper_patches → generate_experiment_obligations → apply_patches_to_draft → distill_knowledge → close_round.
+
+Paper mode enforces: ≥5 search queries across 5 mandatory query classes, ≥5 raw source snapshots with sha256 hashes, ≥5 normalized evidence items, ≥2 S/A-level evidence, and ≥1 weakening or contradicting evidence item.
+
+`cr run-round` validates and advances phases; it does not generate artifacts. The agent/user must create required outputs for each phase.
 
 ## Project Structure
 
 ```
-├── SKILL.md              # Skill definition (Claude Code entry point)
-├── scripts/              # CLI tools (cr, validators, guards)
-├── hooks/                # Checkpoint hooks for workflow quality enforcement
-├── templates/            # Research artifact templates (ledgers, reports, dossiers)
-├── schemas/              # JSON schemas for project/round state validation
+├── SKILL.md              # Skill definition (Claude Code entry point — thin)
+├── scripts/              # CLI tools (cr, step, research, validators, guards)
+├── hooks/                # Stop/PreToolUse/PostToolUse hooks for enforcement
+├── templates/            # Domain-neutral artifact templates
+├── schemas/              # JSON schemas for all artifacts + artifact registry
 ├── references/           # Domain profiles, evidence standards, role lenses
+├── workflow/             # Universal paper round execution guide
 └── agents/               # Sub-agent instruction sets
 ```

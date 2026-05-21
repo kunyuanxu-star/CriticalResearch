@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# cr-validate-schema — Validate all schema-bearing YAML artifacts in a round
+# against their registered JSON schemas from artifact-registry.json.
+#
+# Usage: cr-validate-schema <round_dir> [project_dir]
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+ROUND_DIR="${1:-}"
+PROJECT_DIR="${2:-}"
+
+if [ -z "$ROUND_DIR" ]; then
+    echo "Usage: cr-validate-schema <round_dir> [project_dir]" >&2
+    exit 2
+fi
+
+REGISTRY_PATH=$(cr_artifact_registry_path)
+if [ -z "$REGISTRY_PATH" ] || [ ! -f "$REGISTRY_PATH" ]; then
+    warn "Artifact registry not found — skipping schema validation"
+    cr_exit_summary
+fi
+
+echo "── Schema Validation ──"
+
+ALL_PASSED=true
+ARTIFACT_COUNT=$(jq -r '.artifacts | keys | length' "$REGISTRY_PATH" 2>/dev/null || echo "0")
+
+for i in $(seq 0 $((ARTIFACT_COUNT - 1))); do
+    KEY=$(jq -r ".artifacts | keys[$i]" "$REGISTRY_PATH" 2>/dev/null)
+    SCHEMA_REF=$(jq -r ".artifacts[\"$KEY\"].schema // empty" "$REGISTRY_PATH" 2>/dev/null)
+
+    [ -z "$SCHEMA_REF" ] || [ "$SCHEMA_REF" = "null" ] && continue
+
+    # Resolve schema file path.
+    SCHEMA_NAME=$(basename "$SCHEMA_REF")
+    SCHEMA_FILE=$(cr_schema_path "$SCHEMA_NAME")
+    if [ -z "$SCHEMA_FILE" ] || [ ! -f "$SCHEMA_FILE" ]; then
+        warn "Schema file not found: $SCHEMA_NAME (artifact: $KEY)"
+        continue
+    fi
+
+    # Find the actual data file(s) for this artifact.
+    # Map artifact key to expected data files.
+    case "$KEY" in
+        round_state)
+            DATA_FILE="$ROUND_DIR/round.yaml"
+            ;;
+        round_phase_state)
+            DATA_FILE="$ROUND_DIR/state.yaml"
+            ;;
+        critique_disposition)
+            DATA_FILE="$ROUND_DIR/dispositions.yaml"
+            ;;
+        research_plan)
+            DATA_FILE="$ROUND_DIR/research-plan.yaml"
+            ;;
+        search_log)
+            DATA_FILE="$ROUND_DIR/search-log.yaml"
+            ;;
+        source_index)
+            DATA_FILE="$ROUND_DIR/source-index.yaml"
+            ;;
+        evidence_ledger)
+            DATA_FILE="$ROUND_DIR/evidence-ledger.yaml"
+            ;;
+        *)
+            continue
+            ;;
+    esac
+
+    if [ ! -f "$DATA_FILE" ]; then
+        continue
+    fi
+
+    # Run schema validation.
+    if cr_validate_schema "$DATA_FILE" "$SCHEMA_FILE" "yaml"; then
+        : # pass already printed by cr_validate_schema
+    else
+        ALL_PASSED=false
+    fi
+done
+
+if [ "$ALL_PASSED" = false ]; then
+    cr_exit_summary
+fi
+
+pass "Schema validation: all artifacts passed"
+cr_exit_summary

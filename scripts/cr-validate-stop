@@ -69,29 +69,10 @@ STATE_FILE="$ROUND_DIR/state.yaml"
 if [ -f "$STATE_FILE" ]; then
     CURRENT_PHASE=$(yq -r '.current_phase // ""' "$STATE_FILE" 2>/dev/null || echo "")
     if [ -n "$CURRENT_PHASE" ] && [ "$CURRENT_PHASE" != "close_round" ]; then
-        PHASE_STATUS=$(yq -r ".phases.$CURRENT_PHASE.status // """ "$STATE_FILE" 2>/dev/null || echo "")
-        if [ "$PHASE_STATUS" != "complete" ]; then
-            REQ=$(yq -r ".phases.$CURRENT_PHASE.required_outputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
-            MISSING_COUNT=0
-            MISSING_LIST=""
-            for output in $REQ; do
-                [ -z "$output" ] && continue
-                case "$output" in
-                    *.yaml|*.md|*.json)
-                        [ -f "$ROUND_DIR/$output" ] && continue
-                        [ -f "$PROJECT_DIR/$output" ] && continue
-                        MISSING_COUNT=$((MISSING_COUNT + 1))
-                        MISSING_LIST="$MISSING_LIST $output"
-                        ;;
-                    raw-sources|patches|experiments)
-                        [ -d "$ROUND_DIR/$output" ] && [ -n "$(ls -A "$ROUND_DIR/$output" 2>/dev/null)" ] && continue
-                        MISSING_COUNT=$((MISSING_COUNT + 1))
-                        MISSING_LIST="$MISSING_LIST $output/"
-                        ;;
-                esac
-            done
-            if [ "$MISSING_COUNT" -gt 0 ]; then
-                REASON="Phase '$CURRENT_PHASE' ($PHASE_STATUS) incomplete.$MISSING_LIST missing. Complete the current phase before stopping. Run 'cr step <project> status' for details."
+        PHASE_VALIDATOR="$SCRIPT_DIR/cr-validate-phase"
+        if [ -x "$PHASE_VALIDATOR" ]; then
+            if ! "$PHASE_VALIDATOR" "$PROJECT_DIR" "$ROUND_DIR" "$CURRENT_PHASE" >/tmp/cr-stop-phase.out 2>&1; then
+                REASON=$(head -c 3000 /tmp/cr-stop-phase.out 2>/dev/null || echo "Phase $CURRENT_PHASE validation failed")
                 echo "{\"decision\":\"block\",\"reason\":\"$REASON\"}"
                 exit 1
             fi

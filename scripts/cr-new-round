@@ -115,6 +115,7 @@ NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 if [ "$WORKFLOW_MODE" = "paper" ]; then
     mkdir -p "$ROUND_DIR/patches"
     mkdir -p "$ROUND_DIR/experiments"
+    mkdir -p "$ROUND_DIR/raw-sources"
 
     # Create dispositions.yaml template.
     cat > "$ROUND_DIR/dispositions.yaml" << 'YAML'

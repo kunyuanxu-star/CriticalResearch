@@ -27,25 +27,19 @@ SKILL_SOURCE_PATTERNS=(
     "/hooks/"
 )
 
-# Patterns for state mutation files that must only be modified via cr CLI commands.
+# Check whether a path targets a state mutation file that must only be
+# modified via cr CLI commands (cr step advance, cr close-round, cr patch apply).
 # Direct writes/edits to these files are blocked.
-STATE_MUTATION_PATTERNS=(
-    "*/round.yaml"
-    "*/state.yaml"
-    "*/project-state.json"
-    "*/patches/PP-"
-    "*/closure-report.yaml"
-    "*/satisfaction.json"
-)
-
 is_state_mutation_path() {
     local path="$1"
-    for pattern in "${STATE_MUTATION_PATTERNS[@]}"; do
-        case "$path" in
-            *"$pattern"*) return 0 ;;
-        esac
-    done
-    return 1
+    case "$path" in
+        */round.yaml|*/state.yaml|*/project-state.json|*/closure-report.yaml|*/satisfaction.json)
+            return 0 ;;
+        */patches/PP-*.yaml)
+            return 0 ;;
+        *)
+            return 1 ;;
+    esac
 }
 
 # Allowed directories/files within a research project.

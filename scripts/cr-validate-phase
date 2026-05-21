@@ -91,9 +91,35 @@ done
 
 # Phase-specific validators.
 case "$PHASE" in
-    run_retrieval|ingest_sources|normalize_evidence)
-        if [ -x "$SCRIPT_DIR/cr-validate-research" ]; then
-            "$SCRIPT_DIR/cr-validate-research" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+    run_retrieval)
+        # Only require search-log.yaml and raw-sources/ at this phase.
+        if [ -f "$ROUND_DIR/search-log.yaml" ]; then
+            Q_COUNT=$(yq -r '.searches | length // 0' "$ROUND_DIR/search-log.yaml" 2>/dev/null || echo "0")
+            if [ "${Q_COUNT:-0}" -ge 5 ]; then
+                pass "search-log.yaml: $Q_COUNT queries"
+            else
+                fail "search-log.yaml: $Q_COUNT queries (min 5 required)"
+                ALL_PRESENT=false
+            fi
+        fi
+        if [ -d "$ROUND_DIR/raw-sources" ]; then
+            SRC_COUNT=$(find "$ROUND_DIR/raw-sources" -type f 2>/dev/null | wc -l | tr -d ' ')
+            if [ "${SRC_COUNT:-0}" -ge 5 ]; then
+                pass "raw-sources/: $SRC_COUNT files"
+            else
+                fail "raw-sources/: $SRC_COUNT files (min 5 required)"
+                ALL_PRESENT=false
+            fi
+        fi
+        ;;
+    ingest_sources)
+        if [ -x "$SCRIPT_DIR/cr-validate-source-integrity" ]; then
+            "$SCRIPT_DIR/cr-validate-source-integrity" "$ROUND_DIR" || ALL_PRESENT=false
+        fi
+        ;;
+    normalize_evidence)
+        if [ -x "$SCRIPT_DIR/cr-validate-evidence-claim-links" ]; then
+            "$SCRIPT_DIR/cr-validate-evidence-claim-links" "$ROUND_DIR" "$PROJECT_DIR" || ALL_PRESENT=false
         fi
         ;;
     adversarial_critique)

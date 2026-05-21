@@ -75,7 +75,9 @@ for i in $(seq 0 $((EVID_COUNT - 1))); do
             if echo "$KNOWN_CLM" | grep -qw "$clm"; then
                 pass "  $clm: valid claim link"
             else
-                warn "  $clm: claim not found in claim-graph.md (may be defined in report)"
+                fail "  $clm: claim not found in claim-graph.md"
+                ALL_PASSED=false
+                DANGLING_CLM=$((DANGLING_CLM + 1))
             fi
         else
             pass "  $clm: claim link present"
