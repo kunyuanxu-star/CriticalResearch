@@ -62,6 +62,7 @@ if [ -f "$DELTA_FILE" ]; then
             TARGET=$(yq -r ".updates[$i].target_path // \"\"" "$DELTA_FILE" 2>/dev/null || echo "")
             HAS_PATCHES=$(yq -r ".updates[$i].generated_from.patches // [] | length" "$DELTA_FILE" 2>/dev/null || echo "0")
             HAS_CRITS=$(yq -r ".updates[$i].generated_from.critiques // [] | length" "$DELTA_FILE" 2>/dev/null || echo "0")
+            HAS_EVIDENCE=$(yq -r ".updates[$i].generated_from.evidence // [] | length" "$DELTA_FILE" 2>/dev/null || echo "0")
 
             if [ -z "$UTYPE" ] || [ "$UTYPE" = "null" ]; then
                 fail "  $UID_VAL: missing update_type"
@@ -82,8 +83,14 @@ if [ -f "$DELTA_FILE" ]; then
 
             # Each non-project-local update must be traceable to a patch, critique, or evidence.
             if [ "$USCOPE" != "project_local" ]; then
-                if [ "${HAS_PATCHES:-0}" -eq 0 ] && [ "${HAS_CRITS:-0}" -eq 0 ]; then
+                if [ "${HAS_PATCHES:-0}" -eq 0 ] && [ "${HAS_CRITS:-0}" -eq 0 ] && [ "${HAS_EVIDENCE:-0}" -eq 0 ]; then
                     fail "  $UID_VAL (scope=$USCOPE): not linked to any patch, critique, or evidence"
+                    ALL_PASSED=false
+                fi
+                # Must be covered by apply-log.
+                HIT=$(yq -r "[.applied_updates[]? | select(.update_id == "$UID_VAL")] | length" "$APPLY_FILE" 2>/dev/null || echo "0")
+                if [ "${HIT:-0}" -eq 0 ]; then
+                    fail "  $UID_VAL (scope=$USCOPE): missing from knowledge-apply-log.yaml"
                     ALL_PASSED=false
                 fi
             fi
@@ -92,13 +99,8 @@ if [ -f "$DELTA_FILE" ]; then
         done
     fi
 else
-    # Fallback: check knowledge-delta.md exists (L2).
-    if [ -f "$ROUND_DIR/knowledge-delta.md" ]; then
-        warn "knowledge-delta.yaml not found; knowledge-delta.md present (L2). Consider migrating to YAML."
-    else
-        fail "knowledge-delta.yaml not found — knowledge delta required"
-        ALL_PASSED=false
-    fi
+    fail "knowledge-delta.yaml not found — L1 knowledge transaction required"
+    ALL_PASSED=false
 fi
 
 # ── knowledge-apply-log.yaml (L1 authoritative) ──────────────────

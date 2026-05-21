@@ -119,8 +119,8 @@
     },
     "writing_diff_yaml": {
       "path_template": "rounds/round-{round_num}/writing-diff.yaml",
-      "schema": null,
-      "validator": null,
+      "schema": "schemas/writing-diff.schema.json",
+      "validator": "cr-validate-patch-application",
       "gate": "hard",
       "tier": "L1",
       "description": "Structured YAML record of draft changes — authoritative. writing-diff.md is a report.",

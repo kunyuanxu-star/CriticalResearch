@@ -283,7 +283,9 @@ YAML
 cat > "$ROUND/patches/PP-001.yaml" << YAML
 schema_version: "1.0.0"
 patch_id: PP-001
-linked_critique: CRT-001
+created_from:
+  critique_id: CRT-001
+  disposition_id: DSP-001
 linked_round: $ACTIVE
 severity: medium
 patch_type: [narrow_claim]
@@ -292,7 +294,7 @@ proposed_change:
   before: "The system provides complete isolation."
   after: "The system provides isolation under the tested conditions."
   rationale: "Narrow claim to match evidence scope."
-lifecycle_status: proposed
+lifecycle_status: recorded
 knowledge_implication:
   literature_updates: []
   thinking_candidates: []
@@ -313,6 +315,17 @@ $(
   done
 )
 YAML
+
+# Update paper-draft.md with anchor and after_text for patch application.
+cat > "$PROJ/writing/paper-draft.md" << 'MD'
+# Title
+
+<!-- CR-ANCHOR: INTRO-P1 -->
+The system provides isolation under the tested conditions.
+
+<!-- anchor: related_work -->
+## Related Work
+MD
 
 # Phase 12: apply_patches_to_draft
 cat > "$ROUND/writing-diff.yaml" << YAML

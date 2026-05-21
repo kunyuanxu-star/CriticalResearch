@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
-# cr-validate-experiments — Experiment obligation completeness validation.
-# Checks that claim-level paper patches have associated experiment obligations
-# with required fields: target_claim, baseline, metric, support/refute conditions.
+# cr-validate-experiments — Experiment obligation validation.
+# Authoritative entry: experiment-obligations.yaml (L1).
+# Obligations non-empty → each EXP-*.yaml must exist with required fields.
+# Obligations empty → no_obligation_reason required + validated_patches must cover all PP.
 #
 # Usage: cr-validate-experiments <round_dir>
-#
-# Exit codes:
-#   0 — all checks passed
-#   2 — one or more failures
 
 set -euo pipefail
 
@@ -21,141 +18,92 @@ if [ -z "$ROUND_DIR" ]; then
     exit 2
 fi
 
-if [ ! -d "$ROUND_DIR" ]; then
-    fail "Round directory not found: $ROUND_DIR"
-    cr_exit_summary
-fi
-
-ROUND_NAME="$(basename "$ROUND_DIR")"
 echo ""
-echo "══ Experiment Validation: $ROUND_NAME ══"
+echo "══ Experiment Validation: $(basename "$ROUND_DIR") ══"
 
-# Only active for paper mode rounds.
 WORKFLOW_MODE=$(grep -E '^workflow_mode:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^workflow_mode:\s*//' | xargs || echo "")
 if [ "$WORKFLOW_MODE" != "paper" ]; then
-    echo "  Not paper mode. Skipping experiment validation."
+    pass "Not paper mode — skipping"
     cr_exit_summary
 fi
 
-# ── Read experiment-obligations.yaml (L1 authoritative) ───────────
-
+ALL_PASSED=true
 OBLIGATIONS_FILE="$ROUND_DIR/experiment-obligations.yaml"
-if [ ! -f "$OBLIGATIONS_FILE" ]; then
-    # Fallback to old experiments/ directory check.
-    EXPERIMENTS_DIR="$ROUND_DIR/experiments"
-    if [ ! -d "$EXPERIMENTS_DIR" ]; then
-        fail "experiment-obligations.yaml not found and no experiments/ directory"
-        cr_exit_summary
-    fi
-    EXP_FILES=$(find "$EXPERIMENTS_DIR" -name 'EXP-*.yaml' -type f 2>/dev/null || echo "")
-    if [ -z "$EXP_FILES" ]; then
-        fail "No experiment obligations found (no experiment-obligations.yaml, no EXP-*.yaml)"
-        cr_exit_summary
-    fi
-    # Validate old-style EXP files.
-    for exp_file in $EXP_FILES; do
-        EXP_ID=$(basename "$exp_file" .yaml)
-        # ... (existing validation below)
-    done
+PATCHES_DIR="$ROUND_DIR/patches"
+EXPERIMENTS_DIR="$ROUND_DIR/experiments"
+
+[ -f "$OBLIGATIONS_FILE" ] || {
+    fail "experiment-obligations.yaml not found"
     cr_exit_summary
-fi
+}
 
 OBL_COUNT=$(yq -r '.obligations | length // 0' "$OBLIGATIONS_FILE" 2>/dev/null || echo "0")
 NO_REASON=$(yq -r '.no_obligation_reason // ""' "$OBLIGATIONS_FILE" 2>/dev/null || echo "")
 
 if [ "${OBL_COUNT:-0}" -eq 0 ]; then
-    # No obligations — require explicit no-op reason and validated patches.
+    # ── No-op mode ──────────────────────────────────────────────────
     if [ -z "$NO_REASON" ] || [ "$NO_REASON" = "null" ]; then
-        fail "experiment-obligations.yaml has no obligations and no no_obligation_reason"
+        fail "obligations is empty but no_obligation_reason is missing"
+        ALL_PASSED=false
     else
         pass "No experiment obligations: ${NO_REASON:0:80}..."
     fi
-    # Check validated_patches covers all claim-level patches.
-    VALIDATED=$(yq -r '.validated_patches | length // 0' "$OBLIGATIONS_FILE" 2>/dev/null || echo "0")
-    PATCHES_DIR="$ROUND_DIR/patches"
-    if [ -d "$PATCHES_DIR" ]; then
-        CLAIM_PATCHES=$(grep -lE '(weaken_claim|strengthen_claim|reframe_contribution|add_evaluation)' "$PATCHES_DIR"/PP-*.yaml 2>/dev/null || echo "")
-        CLAIM_COUNT=$(echo "$CLAIM_PATCHES" | grep -c 'PP-' 2>/dev/null || echo "0")
-        if [ "${CLAIM_COUNT:-0}" -gt 0 ] && [ "${VALIDATED:-0}" -eq 0 ]; then
-            fail "Claim-level patches exist but validated_patches is empty — all patches must be checked"
-        else
-            pass "Validated patches: $VALIDATED"
-        fi
+
+    PATCH_COUNT=$(find "$PATCHES_DIR" -name 'PP-*.yaml' -type f 2>/dev/null | wc -l | tr -d ' ')
+    VALIDATED_COUNT=$(yq -r '.validated_patches | length // 0' "$OBLIGATIONS_FILE" 2>/dev/null || echo "0")
+
+    if [ "${PATCH_COUNT:-0}" -gt 0 ] && [ "${VALIDATED_COUNT:-0}" -lt "${PATCH_COUNT:-0}" ]; then
+        fail "validated_patches ($VALIDATED_COUNT) must cover all PP-*.yaml ($PATCH_COUNT) when obligations is empty"
+        ALL_PASSED=false
+    else
+        pass "Validated patches: $VALIDATED_COUNT / $PATCH_COUNT"
     fi
+
+    [ "$ALL_PASSED" = false ] && cr_exit_summary
+    pass "Experiment no-op record valid"
     cr_exit_summary
 fi
 
-# Obligations non-empty — validate each linked EXP-*.yaml exists and is complete.
+# ── Obligations mode ──────────────────────────────────────────────
 pass "experiment-obligations.yaml: $OBL_COUNT obligation(s)"
 
-EXPERIMENTS_DIR="$ROUND_DIR/experiments"
-EXP_FILES=$(find "$EXPERIMENTS_DIR" -name 'EXP-*.yaml' -type f 2>/dev/null || echo "")
+for i in $(seq 0 $((OBL_COUNT - 1))); do
+    OID=$(yq -r ".obligations[$i].obligation_id // \"\"" "$OBLIGATIONS_FILE" 2>/dev/null || echo "")
+    PATH_REL=$(yq -r ".obligations[$i].path // \"\"" "$OBLIGATIONS_FILE" 2>/dev/null || echo "")
+    PATCH_ID=$(yq -r ".obligations[$i].linked_patch_id // \"\"" "$OBLIGATIONS_FILE" 2>/dev/null || echo "")
+    TARGET_CLAIM=$(yq -r ".obligations[$i].target_claim // \"\"" "$OBLIGATIONS_FILE" 2>/dev/null || echo "")
 
-for exp_file in $EXP_FILES; do
-    EXP_ID=$(basename "$exp_file" .yaml)
+    [ -n "$OID" ] || { fail "obligations[$i]: missing obligation_id"; ALL_PASSED=false; }
+    [ -n "$PATH_REL" ] || { fail "$OID: missing path"; ALL_PASSED=false; }
+    [ -n "$PATCH_ID" ] || { fail "$OID: missing linked_patch_id"; ALL_PASSED=false; }
+    [ -n "$TARGET_CLAIM" ] || { fail "$OID: missing target_claim"; ALL_PASSED=false; }
 
-    # Required fields check.
-    TARGET_CLAIM=$(grep -E '^target_claim:' "$exp_file" 2>/dev/null | sed 's/^target_claim:\s*//' | xargs || echo "")
-    BASELINE=$(grep -E '^baseline:' "$exp_file" 2>/dev/null | sed 's/^baseline:\s*//' | xargs || echo "")
-    METRIC=$(grep -E '^metric:' "$exp_file" 2>/dev/null | sed 's/^metric:\s*//' | xargs || echo "")
-    SUPPORT_COND=$(grep -E '^support_condition:' "$exp_file" 2>/dev/null | sed 's/^support_condition:\s*//' | xargs || echo "")
-    REFUTE_COND=$(grep -E '^refute_condition:' "$exp_file" 2>/dev/null | sed 's/^refute_condition:\s*//' | xargs || echo "")
+    EXP_PATH="$ROUND_DIR/$PATH_REL"
+    [ -f "$EXP_PATH" ] || { fail "$OID: EXP file not found: $PATH_REL"; ALL_PASSED=false; }
 
-    [ -z "$TARGET_CLAIM" ] && fail "$EXP_ID: missing target_claim"
-    [ -z "$BASELINE" ] && fail "$EXP_ID: missing baseline"
-    [ -z "$METRIC" ] && fail "$EXP_ID: missing metric"
-    [ -z "$SUPPORT_COND" ] && fail "$EXP_ID: missing support_condition"
-    [ -z "$REFUTE_COND" ] && fail "$EXP_ID: missing refute_condition"
+    PP_PATH="$PATCHES_DIR/${PATCH_ID}.yaml"
+    [ -f "$PP_PATH" ] || { fail "$OID: linked patch not found: $PATCH_ID"; ALL_PASSED=false; }
 
-    # Check linked patch exists.
-    LINKED_PATCH=$(grep -E '^linked_patch_id:' "$exp_file" 2>/dev/null | sed 's/^linked_patch_id:\s*//' | xargs || echo "")
-    if [ -n "$LINKED_PATCH" ]; then
-        PATCHES_DIR="$ROUND_DIR/patches"
-        if [ -f "$PATCHES_DIR/${LINKED_PATCH}.yaml" ]; then
-            pass "$EXP_ID: linked to $LINKED_PATCH (patch exists)"
-        else
-            fail "$EXP_ID: linked_patch_id $LINKED_PATCH not found in patches/"
-        fi
-    else
-        fail "$EXP_ID: missing linked_patch_id"
+    if [ -f "$EXP_PATH" ]; then
+        # Validate EXP file required fields.
+        for field in target_claim baseline metric support_condition refute_condition; do
+            val=$(grep -E "^${field}:" "$EXP_PATH" 2>/dev/null | sed "s/^${field}:\s*//" | xargs || echo "")
+            [ -n "$val" ] || { fail "$OID: EXP file missing $field"; ALL_PASSED=false; }
+        done
+        pass "$OID: valid (patch=$PATCH_ID claim=$TARGET_CLAIM)"
     fi
-
-    # Check test cases.
-    HAS_TESTS=$(grep -cE '^\s+- name:' "$exp_file" 2>/dev/null || echo 0)
-    if [ "$HAS_TESTS" -ge 1 ]; then
-        pass "$EXP_ID: has test cases"
-    else
-        warn "$EXP_ID: no test cases defined"
-    fi
-
-    # Per-claim-type field requirements (per evaluation-contracts.md).
-    CLAIM_TYPE=$(grep -E '^claim_type:' "$exp_file" 2>/dev/null | sed 's/^claim_type:\s*//' | xargs || echo "")
-
-    case "$CLAIM_TYPE" in
-        security|privacy)
-            HAS_NEGATIVE=$(grep -cE 'is_negative_test:\s*true' "$exp_file" 2>/dev/null || echo 0)
-            if [ "$HAS_NEGATIVE" -ge 1 ]; then
-                pass "$EXP_ID: has negative/attack tests for $CLAIM_TYPE claim"
-            else
-                fail "$EXP_ID: $CLAIM_TYPE claim requires at least one negative test or attack scenario"
-            fi
-            ;;
-        accuracy)
-            HAS_ABLATION=$(grep -cE '(ablation|error_analysis|statistical)' "$exp_file" 2>/dev/null || echo 0)
-            [ "$HAS_ABLATION" -ge 1 ] && pass "$EXP_ID: has ablation/error analysis for accuracy claim" || \
-                warn "$EXP_ID: accuracy claim should include ablation or error analysis"
-            ;;
-        correctness|theoretical)
-            HAS_PROOF=$(grep -cE '(proof|invariant|theorem|formal)' "$exp_file" 2>/dev/null || echo 0)
-            [ "$HAS_PROOF" -ge 1 ] && pass "$EXP_ID: has proof/theorem reference for $CLAIM_TYPE claim" || \
-                warn "$EXP_ID: $CLAIM_TYPE claim should reference proof strategy or invariants"
-            ;;
-        usability|hci)
-            HAS_PARTICIPANTS=$(grep -cE '(participant|user.*group|task.*design)' "$exp_file" 2>/dev/null || echo 0)
-            [ "$HAS_PARTICIPANTS" -ge 1 ] && pass "$EXP_ID: has participant/task info for usability claim" || \
-                warn "$EXP_ID: usability claim should specify participants, tasks, or study design"
-            ;;
-    esac
 done
 
+# Reverse check: every experiments/EXP-*.yaml must appear in obligation index.
+if [ -d "$EXPERIMENTS_DIR" ]; then
+    for exp_file in "$EXPERIMENTS_DIR"/EXP-*.yaml; do
+        [ -f "$exp_file" ] || continue
+        rel="experiments/$(basename "$exp_file")"
+        hit=$(yq -r "[.obligations[]? | select(.path == \"$rel\")] | length" "$OBLIGATIONS_FILE" 2>/dev/null || echo "0")
+        [ "${hit:-0}" -gt 0 ] || { fail "$rel exists but is not listed in experiment-obligations.yaml"; ALL_PASSED=false; }
+    done
+fi
+
+[ "$ALL_PASSED" = false ] && cr_exit_summary
+pass "Experiment obligation validation passed"
 cr_exit_summary

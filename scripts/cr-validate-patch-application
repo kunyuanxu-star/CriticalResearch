@@ -54,11 +54,15 @@ for patch_file in $PATCH_FILES; do
             ANCHOR_FOUND=false
             for anchor in $ANCHORS; do
                 [ -z "$anchor" ] && continue
-                if grep -q "<!-- anchor: $anchor -->" "$DRAFT" 2>/dev/null; then
+                if grep -qF "<!-- CR-ANCHOR: $anchor -->" "$DRAFT" 2>/dev/null; then
                     ANCHOR_FOUND=true
                     pass "$PATCH_ID: anchor '$anchor' found in draft"
+                elif grep -qF "<!-- anchor: $anchor -->" "$DRAFT" 2>/dev/null; then
+                    ANCHOR_FOUND=true
+                    pass "$PATCH_ID: anchor '$anchor' found in draft (legacy format)"
                 else
-                    warn "$PATCH_ID: anchor '$anchor' not found in draft"
+                    fail "$PATCH_ID: anchor '$anchor' not found in draft"
+                    ALL_PASSED=false
                 fi
             done
 

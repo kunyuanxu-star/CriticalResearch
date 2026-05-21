@@ -371,7 +371,7 @@ YAML
                 echo ""
                 PIPELINE="$SCRIPT_DIR/cr-run-validator-pipeline"
                 if [ -x "$PIPELINE" ]; then
-                    "$PIPELINE" "$PROJECT_DIR" "$ROUND_DIR" || true
+                    "$PIPELINE" "$PROJECT_DIR" "$ROUND_DIR"
                 else
                     echo "Warning: cr-run-validator-pipeline not found" >&2
                 fi

@@ -68,18 +68,18 @@ for output in $REQ; do
             fi
             ;;
         patches)
-            if [ -d "$ROUND_DIR/patches" ] && [ -n "$(ls -A "$ROUND_DIR/patches" 2>/dev/null)" ]; then
-                pass "Output 'patches/' exists and is non-empty"
+            if [ -d "$ROUND_DIR/patches" ]; then
+                pass "Output 'patches/' exists"
             else
-                fail "Output 'patches/' is missing or empty"
+                fail "Output 'patches/' is missing"
                 ALL_PRESENT=false
             fi
             ;;
         experiments)
-            if [ -d "$ROUND_DIR/experiments" ] && [ -n "$(ls -A "$ROUND_DIR/experiments" 2>/dev/null)" ]; then
-                pass "Output 'experiments/' exists and is non-empty"
+            if [ -d "$ROUND_DIR/experiments" ]; then
+                pass "Output 'experiments/' exists"
             else
-                fail "Output 'experiments/' is missing or empty"
+                fail "Output 'experiments/' is missing"
                 ALL_PRESENT=false
             fi
             ;;
@@ -155,20 +155,20 @@ case "$PHASE" in
     apply_patches_to_draft)
         if [ -f "$ROUND_DIR/writing-diff.yaml" ]; then
             DIFF_COUNT=$(yq -r '.changes | length // 0' "$ROUND_DIR/writing-diff.yaml" 2>/dev/null || echo "0")
-            if [ "${DIFF_COUNT:-0}" -gt 0 ]; then
+            APPLIED_COUNT=0
+            if [ -d "$ROUND_DIR/patches" ]; then
+                APPLIED_COUNT=$(find "$ROUND_DIR/patches" -name 'PP-*.yaml' -type f                     -exec grep -lE '^lifecycle_status:\s*(applied|recorded|validated)' {} \; 2>/dev/null | wc -l | tr -d ' ')
+            fi
+            if [ "${APPLIED_COUNT:-0}" -gt 0 ] && [ "${DIFF_COUNT:-0}" -eq 0 ]; then
+                fail "applied/recorded/validated patches exist but writing-diff.yaml has no changes"
+                ALL_PRESENT=false
+            elif [ "${DIFF_COUNT:-0}" -gt 0 ]; then
                 pass "Writing changes recorded in writing-diff.yaml: $DIFF_COUNT"
             else
-                warn "writing-diff.yaml has no changes entries"
-            fi
-        elif [ -f "$ROUND_DIR/writing-diff.md" ]; then
-            if grep -qE '(Added|Deleted|Weakened|Reframed)' "$ROUND_DIR/writing-diff.md" 2>/dev/null; then
-                pass "writing-diff.md has content"
-            else
-                fail "writing-diff.md is empty"
-                ALL_PRESENT=false
+                pass "No writing changes — no applied patches to record"
             fi
         else
-            fail "No writing-diff found"
+            fail "writing-diff.yaml not found"
             ALL_PRESENT=false
         fi
         ;;
