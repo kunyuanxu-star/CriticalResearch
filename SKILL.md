@@ -54,12 +54,12 @@ Select execution mode based on complexity, claim count, and depth:
 
 | Mode | Use Case | Claims | Depth | Evidence | Output |
 |------|----------|--------|-------|----------|--------|
-| **Lightweight** | Quick validation, idea screening | ≤3 | Internal knowledge | No search | Compact checklist |
+| **Triage** | Quick screening, idea feasibility check | ≤3 | Internal knowledge only | No external search | Compact checklist — cannot close a formal round |
 | **Standard** | Regular research, design review | 4–10 | 1 search pass | Required | Standard table + short report |
 | **Deep** | Journal-grade review, full rebuttal | >10 | Deep search + concurrent role-lenses | Deep search | Full ledgers + detailed report |
-| **Paper** | Paper-centered: every round advances draft + distills knowledge | Any | Paper patch, experiment obligation, knowledge delta per round | Deep search + concurrent | Full ledgers + paper patch + knowledge delta + round report |
+| **Paper** | Paper-centered: every round advances draft + distills knowledge | Any | Paper patch, experiment obligation, knowledge delta per round | Deep search + concurrent — **external research mandatory** | Full ledgers + paper patch + knowledge delta + round report |
 
-Lightweight upgrades to Standard or Deep when the user requests depth.
+Triage mode may use internal knowledge for initial screening but cannot close a formal round. To close a round, use Standard, Deep, or Paper mode. Paper mode requires external research: every round must produce search-log.yaml, raw-sources/, source-index.yaml, and evidence-ledger.yaml with at least one weakening or contradicting evidence item.
 
 ### Paper Mode
 

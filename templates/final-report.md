@@ -4,94 +4,87 @@
 
 在 **Pass 3: Convergence** 的 User Satisfaction Gate 通过后填写。这是整个研究循环的最终输出文件，必须由 Synthesis Writer 基于所有已验证的主张、证据和批判撰写。
 
-## Example
+## Example (illustrative — replace with your domain)
 
 ### 1. One-Sentence Thesis
 
-**问题句**：在容器安全监控场景中，现有方法无法同时满足低开销（<5% CPU）和内核兼容性（不修改内核、不维护内核模块），因为它们依赖内核态插桩（ptrace 的高上下文切换开销）或内核模块（维护成本高且稳定性风险大），而这两个假设在云原生快速部署场景中均失效。
+**问题句**：在 <domain> 场景中，现有方法无法同时满足 <property-P1> 和 <property-P2>，因为它们依赖 <assumption-A1> 或 <assumption-A2>，而这两个假设在 <realistic-setting> 中均失效。
 
-**洞见句**：我们观察到，虽然完整追踪所有系统调用需要高开销，但在容器边界处（namespace/cgroup 切换），只需要追踪跨越安全边界的系统调用事件，就足以覆盖 95% 的安全监控需求，同时将必须插桩的路径缩短一个数量级。
+**洞见句**：我们观察到，虽然 <naive-approach> 需要 <full-cost>，但在 <key-boundary-or-structure> 处，只需要 <reduced-scope>，就足以覆盖 <coverage-fraction> 的需求，同时将 <cost-dimension> 缩短一个数量级。
 
-**系统句**：基于这一观察，我们设计 eBPF-based 边界感知监控器，将原本需要全量系统调用追踪的问题转化为仅在安全边界处触发的事件拦截，从而在标准微服务负载下将 CPU 开销从 ptrace 的 35% 降低至 5% 以内。
+**系统句**：基于这一观察，我们设计 <method-name>，将原本需要 <full-problem> 的问题转化为仅在 <restricted-condition> 处触发的 <core-mechanism>，从而在 <standard-workload> 下将 <metric> 从 <baseline-value> 降低至 <target-value> 以内。
 
 ### 2. Problem Framing (Basic System Definition)
 
-- **Scene & Setting**：Kubernetes 集群中的多租户容器环境，每秒数百个容器启动/销毁，安全策略随部署动态变化。
-- **Core Object**：系统调用事件——容器内进程与内核的交互点，是安全监控的基本粒度。
-- **Key Constraint**：不能修改内核（无主线内核模块），不能引入 >5% CPU 开销（否则影响核心业务），必须兼容现有 seccomp-bpf 策略。
-- **Necessary Assumptions**：攻击者无法绕过 eBPF verifier；内核版本 ≥5.8；工作负载为典型微服务（非 HPC）。
-- **Goal & Required Properties**：同时满足 P1（CPU 开销 <5%）和 P2（无需内核修改、兼容 seccomp-bpf）。两者天然冲突：低开销通常意味着少检查，而内核兼容性限制了插桩点的选择。
+- **Scene & Setting**：<concrete environment — cluster, compiler pipeline, training loop, query engine, UI framework, etc.>
+- **Core Object**：<the thing being studied — events, IR nodes, gradients, query plans, interaction traces, etc.>
+- **Key Constraint**：<inviolable constraint — cannot modify X, must stay under Y ms, must preserve Z invariant>
+- **Necessary Assumptions**：<named assumptions A1, A2, ... — each falsifiable>
+- **Goal & Required Properties**：<P1, P2 with concrete thresholds or guarantees>
 
 ### 3. Strong Claims (含 Strawman Analysis)
 
-- SC1: 在标准微服务工作负载下，eBPF 监控的 CPU 开销 <5%（vs ptrace 的 30-40%）。
-  - **Strawman S1 (全量追踪)**：追踪所有系统调用 → 满足 P2（兼容 seccomp-bpf）但违反 P1（开销 >30%）。失败模式：上下文切换频率与容器数量线性增长。
-  - **Strawman S2 (采样追踪)**：仅追踪 1% 调用 → 满足 P1 但违反 P2（漏检率高，不满足安全需求）。失败模式：攻击者可利用未被采样的系统调用绕过检测。
-  - **Root cause**：两个 strawman 都假设"追踪粒度 = 系统调用级别"。在容器场景中，安全相关事件仅占总系统调用的 <5%，所以全量追踪浪费开销，采样追踪丢失关键事件。
-- SC2: 无需修改现有 seccomp-bpf 策略即可并行部署。
-  - **Strawman S1 (内核模块)**：可并行但需要内核修改 → 违反 P2。失败模式：主线内核不接受、升级需重新编译。
-  - **Strawman S2 (用户态拦截)**：不修改内核但开销极高 → 违反 P1。失败模式：每次系统调用需两次上下文切换（用户态↔内核态）。
-  - **Root cause**：两者都假设监控逻辑必须在内核态或用户态二选一。eBPF 提供了第三条路——在内核态安全执行监控逻辑，但不需要修改内核源码。
+- SC1: <claim text with concrete metric and baseline comparison>.
+  - **Strawman S1 (<most-obvious-approach>)**：<description> → satisfies <P> because ___ but violates <P'> because ___.
+  - **Strawman S2 (<opposite-direction-approach>)**：<description> → satisfies <P'> because ___ but violates <P> because ___.
+  - **Root cause**：Both strawmans assume <shared-assumption>. In <real-setting>, <why-that-assumption-fails>.
 
 ### 4. Weakened Claims
 
-- WC1: 在极端高并发（>100k events/sec）场景下，eBPF 开销可能上升至 8-12%。原 claim 中的 "<5%" 仅适用于正常负载。
+- WC1: Under <edge-condition>, <metric> may degrade to <worse-value>. The original claim "<original>" applies only under <normal-condition>.
 
 ### 5. Deleted Claims
 
-- DC1: "完全替代 ptrace" — 删除。ptrace 在调试和异常注入场景仍有不可替代性。
+- DC1: "<deleted-claim-text>" — deleted because <concrete-reason>.
 
 ### 6. Evidence Map
 
 | Claim | Evidence | Status | Allowed Wording | Remaining Risk |
 |---|---|---|---|---|
-| SC1 | E1 (OSDI'23 FooSystem), E2 (self benchmark) | supported | 在标准微服务负载下，eBPF 方案将 CPU 开销降低至 5% 以内 | 未在 ARM64 上验证 |
-| SC2 | E3 (Linux kernel docs) | supported | 可与现有 seccomp-bpf 策略并行部署 | 需内核 ≥5.8 |
+| SC1 | E1 (<venue> <system>), E2 (self benchmark) | supported | <calibrated claim text matching evidence strength> | <unverified condition> |
+| SC2 | E3 (<source>) | supported | <calibrated claim text> | <constraint> |
 
 ### 7. Counterexamples And Reviewer Attacks
-
-- A2: 威胁模型未覆盖恶意容器利用 eBPF verifier 绕过的情况。
 
 #### Reviewer Attack Defence Table
 
 | # | Attack | Defence |
 |---|---|---|
-| 1 | 这个问题真实存在吗？ | Falco 在生产环境中因 ptrace 开销导致 15% 的请求延迟上升（引用 Datadog 2023 报告） |
-| 2 | 为什么现有方法不能直接解决？ | ptrace 和内核模块共享假设"监控逻辑必须在用户态或内核模块中"，eBPF 绕开了这个假设 |
-| 3 | 场景是否人为构造？ | 使用 Azure 公开 trace，覆盖 1M+ 容器生命周期事件 |
-| 4 | 假设是否太强？ | 内核 ≥5.8 已在主流云厂商普及（AKS 1.21+, GKE 1.20+） |
-| 5 | threat model 是否回避最难的问题？ | 明确 non-goal：eBPF verifier 绕过（硬件漏洞级别），不在本文 scope |
-| 6 | 设计是否只是工程组合？ | 核心贡献不是"用 eBPF"，而是"边界感知的追踪粒度选择"——边界处的语义信息使追踪量减少 95% |
-| 7 | insight 是否只是换了个说法？ | 不是"我们做了 eBPF 监控"，而是"将全量追踪问题转化为边界处事件拦截问题" |
-| 8 | 实验是否只选了有利 case？ | 包含 adversarial workload：高频短生命周期容器 + 密集系统调用 |
-| 9 | baseline 是否公平？ | ptrace baseline 使用最优配置（seccomp filter + BPF_PROG_TYPE），非稻草人 |
-| 10 | 指标是否证明了 claim？ | Primary metric = CPU overhead p99；底线性质 = seccomp 策略兼容性（policy conflict count = 0） |
-| 11 | 机制是否引入了新问题？ | eBPF verifier 复杂性是已知风险（见 Remaining Risks），但 eBPF 主线化已降低此风险 |
-| 12 | 贡献是否可以推广？ | Design lesson：当监控粒度与安全边界对齐时，追踪开销可以从 O(n) 降为 O(boundary_crossings) |
+| 1 | 这个问题真实存在吗？ | <cite production data, failure report, or practitioner survey> |
+| 2 | 为什么现有方法不能直接解决？ | <state the shared assumption that existing methods rely on, and why it fails> |
+| 3 | 场景是否人为构造？ | <cite real traces, benchmarks, or datasets> |
+| 4 | 假设是否太强？ | <justify each assumption with deployment data or standard practice> |
+| 5 | threat model 是否回避最难的问题？ | <explicit non-goal statement with justification> |
+| 6 | 设计是否只是工程组合？ | <state the non-obvious design principle or insight, not the implementation choice> |
+| 7 | insight 是否只是换了个说法？ | <explain the problem reformulation, not the tool used> |
+| 8 | 实验是否只选了有利 case？ | <describe adversarial or stress workloads included> |
+| 9 | baseline 是否公平？ | <describe baseline configuration; confirm it is the strongest reasonable version> |
+| 10 | 指标是否证明了 claim？ | <state primary metric and explain why it captures the claimed property> |
+| 11 | 机制是否引入了新问题？ | <list known downsides and why they are acceptable or out of scope> |
+| 12 | 贡献是否可以推广？ | <state the design lesson or principle that transfers beyond this system> |
 
 ### 8. Remaining Risks
 
-- ARM64 架构验证缺失。
-- 高并发场景下开销上升。
-- eBPF verifier 复杂性带来的潜在绕过。
+- <unverified platform, edge condition, or assumption>
+- <known limitation of the mechanism itself>
 
 ### 9. Evaluation Obligations
 
-**Primary Metric**：CPU overhead p99（证明核心 claim SC1）
-**Cost Metric**：额外内存占用（eBPF map 大小）、eBPF 程序加载时间
-**Robustness Metric**：高并发（>100 containers/s）、长稳运行（72h）、ARM64 等价性
+**Primary Metric**：<M1 — the one metric that proves/disproves the core claim>
+**Cost Metric**：<M2 — what the approach costs (latency, memory, annotation effort, etc.)>
+**Robustness Metric**：<M3 — stress, longevity, adversarial, cross-platform, or ablation>
 
 | Claim | Required Evaluation | Baseline | Workload | Metric | Falsification |
 |---|---|---|---|---|---|
-| SC1 | benchmark | ptrace-based monitoring | Kubernetes microservices | CPU overhead p99 | >10% |
-| SC2 | compatibility test | seccomp-bpf alone | Standard container workloads | Policy conflict count | >0 |
+| SC1 | <benchmark / proof / user-study / ablation> | <strongest baseline> | <representative workload> | <M1> | <threshold that would refute> |
+| SC2 | <compatibility / correctness / generalization test> | <baseline> | <workload> | <M2> | <refute threshold> |
 
 ### 10. Story Closure Table
 
 | Challenge | Insight Part | Design Component | Invariant | Experiment | Metric | Status |
 |---|---|---|---|---|---|---|
-| C1: CPU 开销与兼容性不可兼得 | I1: 边界处追踪替代全量追踪 | D1: Boundary-aware eBPF hook | 仅安全边界处触发监控 | Exp1: benchmark | M1: CPU overhead p99 | closed |
-| C2: 内核兼容性与可部署性不可兼得 | I2: eBPF 提供第三条路 | D2: eBPF 运行时在内核态安全执行 | seccomp-bpf 策略不冲突 | Exp2: compatibility test | M2: Policy conflict count = 0 | closed |
+| C1: <tradeoff description> | I1: <key observation> | D1: <mechanism> | <invariant maintained> | Exp1 | M1 | closed |
+| C2: <second tradeoff> | I2: <second observation> | D2: <mechanism> | <invariant> | Exp2 | M2 | closed |
 
 ### 11. Paper-ready Or Proposal-ready Text
 
