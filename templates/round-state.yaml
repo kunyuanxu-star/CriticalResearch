@@ -134,7 +134,7 @@ phases:
     depends_on:
       - generate_paper_patches
     required_outputs:
-      - experiments
+      - experiment-obligations.yaml
 
     required_inputs:
       - patches

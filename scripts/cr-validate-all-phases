@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# cr-validate-all-phases — Hard gate: require all 14 paper workflow phases
+# complete before round close. A round cannot close unless every phase is
+# individually complete with a timestamp.
+#
+# Usage: cr-validate-all-phases <project_dir> <round_dir>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+ROUND_DIR="${2:-}"
+
+if [ -z "$PROJECT_DIR" ] || [ -z "$ROUND_DIR" ]; then
+    echo "Usage: cr-validate-all-phases <project_dir> <round_dir>" >&2
+    exit 2
+fi
+
+STATE_FILE="$ROUND_DIR/state.yaml"
+
+if [ ! -f "$STATE_FILE" ]; then
+    fail "state.yaml not found in $ROUND_DIR"
+    cr_exit_summary
+fi
+
+echo "── Phase Completeness Check ──"
+
+EXPECTED_PHASES=(
+    reconstruct_paper_state
+    define_round_target
+    plan_research
+    run_retrieval
+    ingest_sources
+    normalize_evidence
+    update_literature_knowledge
+    adversarial_critique
+    generate_dispositions
+    generate_paper_patches
+    generate_experiment_obligations
+    apply_patches_to_draft
+    distill_knowledge
+    close_round
+)
+
+FAIL=0
+COMPLETED=0
+
+for phase in "${EXPECTED_PHASES[@]}"; do
+    status=$(yq -r ".phases.$phase.status // \"missing\"" "$STATE_FILE" 2>/dev/null || echo "missing")
+    completed_at=$(yq -r ".phases.$phase.completed_at // \"null\"" "$STATE_FILE" 2>/dev/null || echo "null")
+
+    if [ "$status" != "complete" ]; then
+        fail "Phase '$phase': status=$status (expected complete)"
+        FAIL=1
+        continue
+    fi
+
+    if [ "$completed_at" = "null" ] || [ -z "$completed_at" ]; then
+        fail "Phase '$phase': complete but no completed_at timestamp"
+        FAIL=1
+        continue
+    fi
+
+    COMPLETED=$((COMPLETED + 1))
+    pass "Phase '$phase': complete at $completed_at"
+done
+
+# Verify phase count matches expected.
+ACTUAL_COUNT=$(yq -r '.phases | keys | length' "$STATE_FILE" 2>/dev/null || echo "0")
+EXPECTED_COUNT=${#EXPECTED_PHASES[@]}
+
+if [ "$ACTUAL_COUNT" -ne "$EXPECTED_COUNT" ]; then
+    fail "Phase count mismatch: expected $EXPECTED_COUNT, found $ACTUAL_COUNT in state.yaml"
+    FAIL=1
+fi
+
+# Check closure_policy.require_all_phases_complete is true.
+POLICY=$(yq -r '.closure_policy.require_all_phases_complete // false' "$STATE_FILE" 2>/dev/null || echo "false")
+if [ "$POLICY" != "true" ]; then
+    warn "closure_policy.require_all_phases_complete is not true"
+fi
+
+echo ""
+echo "Phases complete: $COMPLETED / $EXPECTED_COUNT"
+
+if [ "$FAIL" -ne 0 ]; then
+    cr_exit_summary
+fi
+
+pass "All $EXPECTED_COUNT phases complete"
+cr_exit_summary

@@ -181,68 +181,14 @@ case "$SUBCMD" in
         CURRENT=$(get_current_phase)
         echo "Current phase: $CURRENT"
 
-        # Run phase validator.
-        if [ -x "$SCRIPT_DIR/cr-validate-phase" ]; then
-            echo "Validating phase '$CURRENT'..."
-            if ! "$SCRIPT_DIR/cr-validate-phase" "$PROJECT_DIR" "$ROUND_DIR" "$CURRENT"; then
-                echo ""
-                echo "Phase '$CURRENT' validation failed. Complete required outputs before advancing."
-                exit 2
-            fi
-        else
-            echo "Warning: cr-validate-phase not found — checking outputs directly."
-            # Basic check: any missing required outputs?
-            REQ=$(yq -r ".phases.$CURRENT.required_outputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
-            for output in $REQ; do
-                [ -z "$output" ] && continue
-                case "$output" in
-                    *.yaml|*.md|*.json)
-                        if [ ! -f "$ROUND_DIR/$output" ] && [ ! -f "$PROJECT_DIR/$output" ]; then
-                            echo "Missing: $output"
-                            exit 2
-                        fi
-                        ;;
-                    raw-sources|patches|experiments)
-                        if [ ! -d "$ROUND_DIR/$output" ] || [ -z "$(ls -A "$ROUND_DIR/$output" 2>/dev/null)" ]; then
-                            echo "Missing or empty: $output/"
-                            exit 2
-                        fi
-                        ;;
-                esac
-            done
+        # Delegate to cr-complete-phase: validates, marks complete, unblocks next.
+        if [ -x "$SCRIPT_DIR/cr-complete-phase" ]; then
+            exec "$SCRIPT_DIR/cr-complete-phase" "$PROJECT_DIR" "$ROUND_DIR" "$CURRENT"
         fi
 
-        # Mark current phase complete.
-        NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-        yq -i ".phases.$CURRENT.status = \"complete\" | .phases.$CURRENT.completed_at = \"$NOW\"" "$STATE_FILE" 2>/dev/null || true
-
-        # Find and unblock next phase.
-        NEXT=$(get_next_phase "$CURRENT")
-        if [ -z "$NEXT" ]; then
-            echo "All phases complete."
-            # Mark round status in round.yaml as well.
-            if [ -f "$ROUND_DIR/round.yaml" ]; then
-                sed -i '' "s/^status:.*/status: complete/" "$ROUND_DIR/round.yaml" 2>/dev/null || \
-                    sed -i "s/^status:.*/status: complete/" "$ROUND_DIR/round.yaml"
-            fi
-            yq -i '.status = "complete"' "$STATE_FILE" 2>/dev/null || true
-            echo "Round complete. Run 'cr close-round $PROJECT'."
-            exit 0
-        fi
-
-        # Unblock next phase if all deps are complete.
-        yq -i ".phases.$NEXT.status = \"open\"" "$STATE_FILE" 2>/dev/null || true
-        yq -i ".current_phase = \"$NEXT\"" "$STATE_FILE" 2>/dev/null || true
-
-        echo "Advanced to phase: $NEXT"
-        echo ""
-        # Show what's needed for the new phase.
-        REQ_NEXT=$(yq -r ".phases.$NEXT.required_outputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
-        echo "Required outputs:"
-        for output in $REQ_NEXT; do
-            [ -z "$output" ] && continue
-            echo "  - $output"
-        done
+        # Fallback if cr-complete-phase not available.
+        echo "Error: cr-complete-phase not found." >&2
+        exit 2
         ;;
 
     validate)

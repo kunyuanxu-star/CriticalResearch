@@ -153,6 +153,17 @@ MD
 
 MD
 
+    cat > "$ROUND_DIR/experiment-obligations.yaml" << YAML
+# Experiment Obligations
+# Records experiment obligations for this round. May be empty with explicit reason.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+phase: generate_experiment_obligations
+obligations: []
+no_obligation_reason: ""
+validated_patches: []
+YAML
+
     # ── L1 authoritative YAML templates (paper mode) ──────────────
 
     # Create search-queue.yaml template.

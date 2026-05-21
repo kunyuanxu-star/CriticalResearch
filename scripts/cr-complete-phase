@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# cr-complete-phase — The ONLY way to mark a phase complete.
+# Validates the phase via cr-validate-phase, then updates state.yaml.
+# Manual edits to phase status in state.yaml are blocked by cr-guard-path.
+#
+# Usage: cr-complete-phase <project_dir> <round_dir> <phase>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+ROUND_DIR="${2:-}"
+PHASE="${3:-}"
+
+if [ -z "$PROJECT_DIR" ] || [ -z "$ROUND_DIR" ] || [ -z "$PHASE" ]; then
+    echo "Usage: cr-complete-phase <project_dir> <round_dir> <phase>" >&2
+    exit 2
+fi
+
+STATE_FILE="$ROUND_DIR/state.yaml"
+
+if [ ! -f "$STATE_FILE" ]; then
+    echo "Error: state.yaml not found in $ROUND_DIR" >&2
+    exit 2
+fi
+
+# Check phase exists.
+PHASE_STATUS=$(yq -r ".phases.$PHASE.status // \"unknown\"" "$STATE_FILE" 2>/dev/null || echo "unknown")
+if [ "$PHASE_STATUS" = "unknown" ]; then
+    echo "Error: phase '$PHASE' not found in state.yaml" >&2
+    exit 2
+fi
+
+if [ "$PHASE_STATUS" = "complete" ]; then
+    echo "Phase '$PHASE' is already complete."
+    exit 0
+fi
+
+if [ "$PHASE_STATUS" = "blocked" ]; then
+    echo "Error: phase '$PHASE' is blocked. Complete its dependencies first:"
+    yq -r ".phases.$PHASE.depends_on[]" "$STATE_FILE" 2>/dev/null | while read -r dep; do
+        dep_status=$(yq -r ".phases.$dep.status // \"unknown\"" "$STATE_FILE" 2>/dev/null)
+        echo "  - $dep: $dep_status"
+    done
+    exit 2
+fi
+
+# Run phase validator. Must pass before marking complete.
+echo "Validating phase '$PHASE'..."
+PHASE_VALIDATOR="$SCRIPT_DIR/cr-validate-phase"
+if [ -x "$PHASE_VALIDATOR" ]; then
+    if ! "$PHASE_VALIDATOR" "$PROJECT_DIR" "$ROUND_DIR" "$PHASE"; then
+        echo ""
+        echo "Phase '$PHASE' validation FAILED. Fix issues before completing this phase."
+        exit 2
+    fi
+else
+    echo "Warning: cr-validate-phase not found — checking required outputs only."
+    REQ=$(yq -r ".phases.$PHASE.required_outputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
+    for output in $REQ; do
+        [ -z "$output" ] && continue
+        case "$output" in
+            *.yaml|*.md|*.json)
+                if [ ! -f "$ROUND_DIR/$output" ] && [ ! -f "$PROJECT_DIR/$output" ]; then
+                    echo "Error: required output '$output' is missing" >&2
+                    exit 2
+                fi
+                ;;
+            raw-sources|patches|experiments)
+                if [ ! -d "$ROUND_DIR/$output" ] || [ -z "$(ls -A "$ROUND_DIR/$output" 2>/dev/null)" ]; then
+                    echo "Error: required output '$output/' is missing or empty" >&2
+                    exit 2
+                fi
+                ;;
+        esac
+    done
+fi
+
+# ── All checks passed — mark phase complete ──────────────────────
+
+NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+yq -i ".phases.$PHASE.status = \"complete\" | .phases.$PHASE.completed_at = \"$NOW\"" "$STATE_FILE" 2>/dev/null || {
+    echo "Error: failed to update state.yaml" >&2
+    exit 2
+}
+
+echo "Phase '$PHASE' marked complete at $NOW"
+
+# ── Auto-unblock next phases whose dependencies are now satisfied ──
+
+ALL_PHASES=$(yq -r '.phases | keys | .[]' "$STATE_FILE" 2>/dev/null)
+for p in $ALL_PHASES; do
+    [ -z "$p" ] && continue
+    p_status=$(yq -r ".phases.$p.status // \"\"" "$STATE_FILE" 2>/dev/null)
+    [ "$p_status" != "blocked" ] && continue
+
+    all_deps_met=true
+    deps=$(yq -r ".phases.$p.depends_on // [] | .[]" "$STATE_FILE" 2>/dev/null)
+    for dep in $deps; do
+        [ -z "$dep" ] && continue
+        dep_status=$(yq -r ".phases.$dep.status // \"\"" "$STATE_FILE" 2>/dev/null)
+        if [ "$dep_status" != "complete" ]; then
+            all_deps_met=false
+            break
+        fi
+    done
+
+    if [ "$all_deps_met" = true ]; then
+        yq -i ".phases.$p.status = \"open\"" "$STATE_FILE" 2>/dev/null
+        echo "  Unblocked: $p"
+    fi
+done
+
+# Set current_phase to the first open phase.
+for p in $ALL_PHASES; do
+    [ -z "$p" ] && continue
+    p_status=$(yq -r ".phases.$p.status // \"\"" "$STATE_FILE" 2>/dev/null)
+    if [ "$p_status" = "open" ]; then
+        yq -i ".current_phase = \"$p\"" "$STATE_FILE" 2>/dev/null
+        echo "Current phase: $p"
+        break
+    fi
+done

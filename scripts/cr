@@ -14,6 +14,7 @@
 #   promote-knowledge         Check thinking cards for promotion eligibility
 #   ask-next <round> <proj>   Show next pending human judgment question
 #   step <project> <sub>     Phase state machine (status, current, advance, validate)
+#   complete-phase <proj> <p> Validate and mark a phase complete (only path)
 #   run-round <project>      Auto-advance through all phases until close
 #   research <project> <sub> Research plan, run, ingest, normalize
 #   scope <subcommand>       Session scope management (open, close, check, status, audit)
@@ -41,6 +42,7 @@ usage() {
     echo "  migrate-to-paper-mode <proj>  Scaffold paper mode directories"
     echo "  promote-knowledge             Check thinking cards for promotion"
     echo "  step <project> <sub>          Phase state machine (status, current, advance, validate)"
+    echo "  complete-phase <project> <ph>  Validate and mark a phase complete"
     echo "  run-round <project>           Auto-advance through all phases"
     echo "  research <project> <sub>      Research plan, run, ingest, normalize"
     echo "  scope <subcommand>            Session scope (open, close, check, status, audit)"
@@ -393,6 +395,20 @@ MD
             exit 2
         fi
         exec "$SCRIPT_DIR/cr-step" "$PROJECT" "$SUB" "${3:-}" "${4:-}"
+        ;;
+
+    complete-phase)
+        PROJECT="${1:-}"
+        PHASE="${2:-}"
+        if [ -z "$PROJECT" ] || [ -z "$PHASE" ]; then
+            echo "Usage: cr complete-phase <project> <phase>" >&2
+            exit 2
+        fi
+        PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
+        ACTIVE_RND=$(jq -r '.active_round // 0' "$PROJECT_DIR/state/project-state.json" 2>/dev/null || echo "0")
+        ROUND_NUM=$(printf "%03d" "$ACTIVE_RND")
+        ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
+        exec "$SCRIPT_DIR/cr-complete-phase" "$PROJECT_DIR" "$ROUND_DIR" "$PHASE"
         ;;
 
     run-round)
