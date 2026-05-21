@@ -411,8 +411,14 @@ cr_session_id() {
     elif [ -n "${CR_SESSION_ID:-}" ]; then
         echo "$CR_SESSION_ID"
     else
-        local ws_root cwd_hash
+        # Try the current-session pointer (set by cr scope open).
+        local ws_root
         ws_root=$(cr_workspace_root 2>/dev/null || pwd)
+        if [ -L "$ws_root/_cr/sessions/current" ]; then
+            basename "$(readlink "$ws_root/_cr/sessions/current" 2>/dev/null)" .yaml 2>/dev/null && return
+        fi
+        # Fallback: stable hash of workspace root + cwd.
+        local cwd_hash
         cwd_hash=$(printf '%s' "$ws_root/$(pwd)" | shasum -a 256 2>/dev/null | cut -c1-12 || echo "unknown")
         echo "session-${cwd_hash}"
     fi

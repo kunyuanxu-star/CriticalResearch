@@ -83,6 +83,15 @@ case "$TOOL_NAME" in
             allow
         fi
 
+        # Git mutation commands: block unless run through scoped cr command.
+        # These can commit, reset, or clean away out-of-scope changes before
+        # PostToolUse audit can catch them.
+        case "$CMD" in
+            git\ add*|git\ commit*|git\ push*|git\ reset*|git\ clean*|git\ stash*|git\ checkout*|git\ restore*)
+                deny "Git mutation command blocked: '${CMD:0:120}'. Use cr commands for state changes. Run 'cr scope audit' before any git commit."
+                ;;
+        esac
+
         # Extract candidate file paths from the command string.
         # Matches absolute paths, ~/ paths, relative paths with slashes.
         CMD_PATHS=$(echo "$CMD" | grep -oE '(~?/[A-Za-z0-9._-][A-Za-z0-9._/-]*|[A-Za-z0-9_-]+/[A-Za-z0-9._/-]+)' 2>/dev/null || true)

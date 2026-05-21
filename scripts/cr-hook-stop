@@ -29,7 +29,7 @@ fi
 SESSIONS_DIR="$WORKSPACE_ROOT/_cr/sessions"
 if [ -d "$SESSIONS_DIR" ] && [ -n "$(ls -A "$SESSIONS_DIR" 2>/dev/null)" ]; then
     set +e
-    AUDIT_OUT=$("$SCRIPT_DIR/cr-scope" audit 2>&1)
+    AUDIT_OUT=$(CR_WORKSPACE_ROOT="$WORKSPACE_ROOT" "$SCRIPT_DIR/cr-scope" audit 2>&1)
     AUDIT_RC=$?
     set -e
     if [ "${AUDIT_RC:-0}" -ne 0 ]; then
