@@ -398,6 +398,25 @@ cr_exit_summary() {
     fi
 }
 
+# ── Session identity ─────────────────────────────────────────────
+
+# Resolve a stable session identifier for scope files.
+# Uses Claude-provided env vars when available; falls back to
+# cwd hash + PID to avoid cross-session collisions.
+cr_session_id() {
+    if [ -n "${CLAUDE_SESSION_ID:-}" ]; then
+        echo "$CLAUDE_SESSION_ID"
+    elif [ -n "${CLAUDE_CONVERSATION_ID:-}" ]; then
+        echo "$CLAUDE_CONVERSATION_ID"
+    elif [ -n "${CR_SESSION_ID:-}" ]; then
+        echo "$CR_SESSION_ID"
+    else
+        local cwd_hash
+        cwd_hash=$(pwd | shasum -a 256 2>/dev/null | cut -c1-8 || echo "unknown")
+        echo "session-${cwd_hash}-$$"
+    fi
+}
+
 # ── Schema path resolver ─────────────────────────────────────────
 
 # Get the path to a schema file by name.

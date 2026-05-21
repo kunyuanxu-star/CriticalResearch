@@ -19,26 +19,9 @@ source "$SCRIPT_DIR/cr-common.sh"
 
 WORKSPACE_ROOT="$(cr_workspace_root)"
 
-# ── Session identity ────────────────────────────────────────────
-
-get_session_id() {
-    # Use CLAUDE_SESSION_ID if available, else fall back to a stable identifier.
-    if [ -n "${CLAUDE_SESSION_ID:-}" ]; then
-        echo "$CLAUDE_SESSION_ID"
-    elif [ -n "${CLAUDE_CONVERSATION_ID:-}" ]; then
-        echo "$CLAUDE_CONVERSATION_ID"
-    elif [ -n "${CR_SESSION_ID:-}" ]; then
-        echo "$CR_SESSION_ID"
-    else
-        # Fallback: use cwd hash + PID to avoid cross-session collisions.
-        local cwd_hash
-        cwd_hash=$(pwd | shasum -a 256 2>/dev/null | cut -c1-8 || echo "unknown")
-        echo "session-${cwd_hash}-$$"
-    fi
-}
-
+# Session identity: use cr_session_id from cr-common.sh for consistency.
 SESSIONS_DIR="$WORKSPACE_ROOT/_cr/sessions"
-SESSION_ID=$(get_session_id)
+SESSION_ID=$(cr_session_id)
 SESSION_FILE="$SESSIONS_DIR/$SESSION_ID.yaml"
 
 ensure_sessions_dir() {
@@ -138,8 +121,6 @@ is_allowed_cr_mutation() {
         cr\ record-decision\ *|cr\ apply-paper-patch\ *)
             return 0 ;;
         cr\ promote-knowledge*|cr\ migrate-to-paper-mode\ *)
-            return 0 ;;
-        git\ add\ *|git\ commit\ *|git\ push\ *)
             return 0 ;;
         *)
             return 1 ;;
@@ -376,7 +357,6 @@ YAML
                 rnd_num=$(printf "%03d" "$active_rnd")
                 state_file="$WORKSPACE_ROOT/$project_id/rounds/round-$rnd_num/state.yaml"
                 if [ -f "$state_file" ]; then
-                    phase
                     phase=$(yq -r '.current_phase // "unknown"' "$state_file" 2>/dev/null || echo "unknown")
                     echo "Phase:   $phase"
                 fi
@@ -408,7 +388,6 @@ YAML
             exit 0
         fi
 
-        scope_project
         scope_project=$(yq -r '.project_id // ""' "$SESSION_FILE" 2>/dev/null || echo "")
 
         if [ -z "$scope_project" ]; then
@@ -418,7 +397,7 @@ YAML
         # Check for modified files outside the scoped project.
         if command -v git >/dev/null 2>&1 && git rev-parse --show-toplevel >/dev/null 2>&1; then
             violations=0
-            VIOLATION_PATHS=""
+            : > /tmp/cr-scope-violations.txt
             while IFS= read -r modified; do
                 [ -z "$modified" ] && continue
                 # Skip the scoped project.
@@ -431,7 +410,7 @@ YAML
                 if is_workspace_root_artifact "$modified" || is_protected_state_file "$modified"; then
                     echo "VIOLATION: $modified"
                     violations=$((violations + 1))
-                    VIOLATION_PATHS="$VIOLATION_PATHS $modified"
+                    printf '%s\n' "$modified" >> /tmp/cr-scope-violations.txt
                     continue
                 fi
                 # Walk up from the modified path to find its project owner.
@@ -442,7 +421,7 @@ YAML
                         if [ "$owner" != "$scope_project" ]; then
                             echo "VIOLATION (other project '$owner'): $modified"
                             violations=$((violations + 1))
-                            VIOLATION_PATHS="$VIOLATION_PATHS $modified"
+                            printf '%s\n' "$modified" >> /tmp/cr-scope-violations.txt
                         fi
                         break
                     fi
@@ -452,7 +431,6 @@ YAML
 
             if [ "$violations" -gt 0 ]; then
                 echo "Scope audit: $violations violation(s) detected."
-                echo "$VIOLATION_PATHS" > "/tmp/cr-scope-violations.txt"
                 exit 1
             fi
         fi
@@ -487,7 +465,6 @@ YAML
         # List known projects.
         projects=""
         for d in "$WORKSPACE_ROOT"/*/; do
-            name
             name=$(basename "$d")
             case "$name" in _cr|.*|_*) continue ;; esac
             [ -f "$d/project.yaml" ] || continue
@@ -507,7 +484,6 @@ YAML
                 rnd_num=$(printf "%03d" "$active_rnd")
                 state_file="$WORKSPACE_ROOT/$project_id/rounds/round-$rnd_num/state.yaml"
                 if [ -f "$state_file" ]; then
-                    phase
                     phase=$(yq -r '.current_phase // "unknown"' "$state_file" 2>/dev/null || echo "unknown")
                     echo "- Current phase: $phase"
                 fi

@@ -39,13 +39,8 @@ fi
 PROJECT_DIR=""
 
 # 1. Session scope: read the current session's bound project.
-SESSION_FILE="$SESSIONS_DIR/default.yaml"
-if [ "${CLAUDE_SESSION_ID:-}" != "" ]; then
-    SESSION_FILE="$SESSIONS_DIR/${CLAUDE_SESSION_ID}.yaml"
-elif [ "${CLAUDE_CONVERSATION_ID:-}" != "" ]; then
-    SESSION_FILE="$SESSIONS_DIR/${CLAUDE_CONVERSATION_ID}.yaml"
-fi
-if [ -f "$SESSION_FILE" ]; then
+    SESSION_FILE="$SESSIONS_DIR/$(cr_session_id).yaml"
+    if [ -f "$SESSION_FILE" ]; then
     SCOPED_PROJECT=$(yq -r '.project_id // ""' "$SESSION_FILE" 2>/dev/null || echo "")
     SCOPE_TYPE=$(yq -r '.scope_type // ""' "$SESSION_FILE" 2>/dev/null || echo "")
     if [ -n "$SCOPED_PROJECT" ] && [ "$SCOPE_TYPE" = "single_project_write" ]; then
