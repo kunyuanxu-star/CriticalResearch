@@ -33,8 +33,11 @@ ALL_PP_IDS=""
 ALL_EXP_IDS=""
 ALL_CLM_IDS=""
 
-# From critique.md
-if [ -f "$ROUND_DIR/critique.md" ]; then
+# From critique-ledger.yaml (L1 authoritative), fall back to critique.md (L2).
+if [ -f "$ROUND_DIR/critique-ledger.yaml" ]; then
+    ALL_CRT_IDS=$(yq -r '.critiques[].critique_id // ""' "$ROUND_DIR/critique-ledger.yaml" 2>/dev/null | sort -u || echo "")
+fi
+if [ -z "$ALL_CRT_IDS" ] && [ -f "$ROUND_DIR/critique.md" ]; then
     ALL_CRT_IDS=$(grep -oE 'CRT-[0-9]{3}' "$ROUND_DIR/critique.md" 2>/dev/null | sort -u || echo "")
 fi
 

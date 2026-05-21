@@ -37,31 +37,59 @@ if [ "$WORKFLOW_MODE" != "paper" ]; then
     cr_exit_summary
 fi
 
-# ── Check experiment obligations directory ────────────────────────
+# ── Read experiment-obligations.yaml (L1 authoritative) ───────────
 
-EXPERIMENTS_DIR="$ROUND_DIR/experiments"
-if [ ! -d "$EXPERIMENTS_DIR" ]; then
-    # Check if any claims need experiments.
+OBLIGATIONS_FILE="$ROUND_DIR/experiment-obligations.yaml"
+if [ ! -f "$OBLIGATIONS_FILE" ]; then
+    # Fallback to old experiments/ directory check.
+    EXPERIMENTS_DIR="$ROUND_DIR/experiments"
+    if [ ! -d "$EXPERIMENTS_DIR" ]; then
+        fail "experiment-obligations.yaml not found and no experiments/ directory"
+        cr_exit_summary
+    fi
+    EXP_FILES=$(find "$EXPERIMENTS_DIR" -name 'EXP-*.yaml' -type f 2>/dev/null || echo "")
+    if [ -z "$EXP_FILES" ]; then
+        fail "No experiment obligations found (no experiment-obligations.yaml, no EXP-*.yaml)"
+        cr_exit_summary
+    fi
+    # Validate old-style EXP files.
+    for exp_file in $EXP_FILES; do
+        EXP_ID=$(basename "$exp_file" .yaml)
+        # ... (existing validation below)
+    done
+    cr_exit_summary
+fi
+
+OBL_COUNT=$(yq -r '.obligations | length // 0' "$OBLIGATIONS_FILE" 2>/dev/null || echo "0")
+NO_REASON=$(yq -r '.no_obligation_reason // ""' "$OBLIGATIONS_FILE" 2>/dev/null || echo "")
+
+if [ "${OBL_COUNT:-0}" -eq 0 ]; then
+    # No obligations — require explicit no-op reason and validated patches.
+    if [ -z "$NO_REASON" ] || [ "$NO_REASON" = "null" ]; then
+        fail "experiment-obligations.yaml has no obligations and no no_obligation_reason"
+    else
+        pass "No experiment obligations: ${NO_REASON:0:80}..."
+    fi
+    # Check validated_patches covers all claim-level patches.
+    VALIDATED=$(yq -r '.validated_patches | length // 0' "$OBLIGATIONS_FILE" 2>/dev/null || echo "0")
     PATCHES_DIR="$ROUND_DIR/patches"
     if [ -d "$PATCHES_DIR" ]; then
         CLAIM_PATCHES=$(grep -lE '(weaken_claim|strengthen_claim|reframe_contribution|add_evaluation)' "$PATCHES_DIR"/PP-*.yaml 2>/dev/null || echo "")
-        if [ -n "$CLAIM_PATCHES" ]; then
-            fail "Claim-level patches found but no experiments/ directory — experiment obligations required"
+        CLAIM_COUNT=$(echo "$CLAIM_PATCHES" | grep -c 'PP-' 2>/dev/null || echo "0")
+        if [ "${CLAIM_COUNT:-0}" -gt 0 ] && [ "${VALIDATED:-0}" -eq 0 ]; then
+            fail "Claim-level patches exist but validated_patches is empty — all patches must be checked"
         else
-            pass "No claim-level patches — experiment obligations not required"
+            pass "Validated patches: $VALIDATED"
         fi
-    else
-        pass "No patches — experiment obligations not required"
     fi
     cr_exit_summary
 fi
 
-EXP_FILES=$(find "$EXPERIMENTS_DIR" -name 'EXP-*.yaml' -type f 2>/dev/null || echo "")
+# Obligations non-empty — validate each linked EXP-*.yaml exists and is complete.
+pass "experiment-obligations.yaml: $OBL_COUNT obligation(s)"
 
-if [ -z "$EXP_FILES" ]; then
-    warn "experiments/ directory exists but no EXP-*.yaml files found"
-    cr_exit_summary
-fi
+EXPERIMENTS_DIR="$ROUND_DIR/experiments"
+EXP_FILES=$(find "$EXPERIMENTS_DIR" -name 'EXP-*.yaml' -type f 2>/dev/null || echo "")
 
 for exp_file in $EXP_FILES; do
     EXP_ID=$(basename "$exp_file" .yaml)

@@ -249,10 +249,11 @@
       {"order": 8, "name": "cr-validate-references", "gate": "hard", "checks": "Bidirectional links: critique->disposition->patch->anchor->experiment"},
       {"order": 9, "name": "cr-validate-anchors", "gate": "hard", "checks": "Patch targets resolve to draft sections"},
       {"order": 10, "name": "cr-validate-paper-patches", "gate": "hard", "checks": "Dispositions present, lifecycle transitions valid, Knowledge Implication fields present"},
-      {"order": 11, "name": "cr-validate-experiments", "gate": "hard", "checks": "Experiment obligation completeness"},
-      {"order": 12, "name": "cr-validate-knowledge", "gate": "hard", "checks": "knowledge-delta.yaml content quality"},
-      {"order": 13, "name": "cr-validate-human-gates", "gate": "hard", "checks": "No pending thesis-level decisions in human-review-queue.yaml"},
-      {"order": 14, "name": "cr-validate-paper-completeness", "gate": "hard", "checks": "Paper draft contains all required sections and anchors"}
+      {"order": 11, "name": "cr-validate-experiments", "gate": "hard", "checks": "Experiment obligation completeness or explicit no-op record"},
+      {"order": 12, "name": "cr-validate-patch-application", "gate": "hard", "checks": "Applied/recorded patches have after_text in draft and writing-diff references"},
+      {"order": 13, "name": "cr-validate-knowledge", "gate": "hard", "checks": "knowledge-delta.yaml content quality and apply-log writeback"},
+      {"order": 14, "name": "cr-validate-human-gates", "gate": "hard", "checks": "No pending thesis-level decisions in human-review-queue.yaml"},
+      {"order": 15, "name": "cr-validate-paper-completeness", "gate": "hard", "checks": "Paper draft contains all required sections and anchors"}
     ]
   }
 }

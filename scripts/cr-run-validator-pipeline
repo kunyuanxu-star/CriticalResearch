@@ -93,6 +93,9 @@ for i in $(seq 0 $((VALIDATOR_COUNT - 1))); do
         cr-validate-evidence-claim-links|cr-validate-anchors|cr-validate-human-gates)
             "$VALIDATOR_SCRIPT" "$ROUND_DIR" "$PROJECT_DIR" || gate_fail
             ;;
+        cr-validate-patch-application)
+            "$VALIDATOR_SCRIPT" "$PROJECT_DIR" "$ROUND_DIR" || gate_fail
+            ;;
         cr-validate-paper-completeness)
             "$VALIDATOR_SCRIPT" "$PROJECT_DIR" || gate_fail
             ;;

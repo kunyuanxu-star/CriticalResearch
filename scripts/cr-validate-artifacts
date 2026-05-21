@@ -48,7 +48,7 @@ check_artifact() {
         writing_diff)        echo "$ROUND_DIR/writing-diff.md" ;;
         knowledge_delta)     echo "$ROUND_DIR/knowledge-delta.md" ;;
         paper_patch)         echo "$ROUND_DIR/patches" ;;
-        experiment_obligation) echo "$ROUND_DIR/experiments" ;;
+        experiment_obligation) echo "$ROUND_DIR/experiment-obligations.yaml" ;;
         *)                   echo "" ;;
     esac
 }
