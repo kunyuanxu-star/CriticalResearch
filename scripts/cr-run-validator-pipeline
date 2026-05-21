@@ -64,24 +64,35 @@ for i in $(seq 0 $((VALIDATOR_COUNT - 1))); do
 
     echo "── [$((i + 1))/$VALIDATOR_COUNT] $NAME ($GATE) ──"
 
-    # Run validator. Arguments vary by validator type.
+    # Helper: increment the right counter on validator failure.
+    gate_fail() {
+        if [ "$GATE" = "hard" ]; then
+            HARD_FAILURES=$((HARD_FAILURES + 1))
+        else
+            SOFT_WARNINGS=$((SOFT_WARNINGS + 1))
+        fi
+    }
+
+    # Run validator. Arguments match each validator's documented signature.
     case "$NAME" in
-        cr-validate-schema|cr-validate-artifacts|cr-validate-ids|cr-validate-references|cr-validate-paper-patches|cr-validate-experiments|cr-validate-knowledge|cr-validate-research)
-            "$VALIDATOR_SCRIPT" "$PROJECT_DIR" "$ROUND_DIR" || {
-                if [ "$GATE" = "hard" ]; then HARD_FAILURES=$((HARD_FAILURES + 1)); else SOFT_WARNINGS=$((SOFT_WARNINGS + 1)); fi
-            } ;;
+        cr-validate-schema|cr-validate-ids)
+            "$VALIDATOR_SCRIPT" "$ROUND_DIR" "$PROJECT_DIR" || gate_fail
+            ;;
+        cr-validate-artifacts|cr-validate-references|cr-validate-paper-patches|cr-validate-experiments|cr-validate-knowledge)
+            "$VALIDATOR_SCRIPT" "$ROUND_DIR" || gate_fail
+            ;;
+        cr-validate-research)
+            "$VALIDATOR_SCRIPT" "$PROJECT_DIR" "$ROUND_DIR" || gate_fail
+            ;;
         cr-validate-source-integrity)
-            "$VALIDATOR_SCRIPT" "$ROUND_DIR" || {
-                if [ "$GATE" = "hard" ]; then HARD_FAILURES=$((HARD_FAILURES + 1)); else SOFT_WARNINGS=$((SOFT_WARNINGS + 1)); fi
-            } ;;
+            "$VALIDATOR_SCRIPT" "$ROUND_DIR" || gate_fail
+            ;;
         cr-validate-evidence-claim-links|cr-validate-anchors|cr-validate-human-gates)
-            "$VALIDATOR_SCRIPT" "$ROUND_DIR" "$PROJECT_DIR" || {
-                if [ "$GATE" = "hard" ]; then HARD_FAILURES=$((HARD_FAILURES + 1)); else SOFT_WARNINGS=$((SOFT_WARNINGS + 1)); fi
-            } ;;
+            "$VALIDATOR_SCRIPT" "$ROUND_DIR" "$PROJECT_DIR" || gate_fail
+            ;;
         cr-validate-paper-completeness)
-            "$VALIDATOR_SCRIPT" "$PROJECT_DIR" || {
-                if [ "$GATE" = "hard" ]; then HARD_FAILURES=$((HARD_FAILURES + 1)); else SOFT_WARNINGS=$((SOFT_WARNINGS + 1)); fi
-            } ;;
+            "$VALIDATOR_SCRIPT" "$PROJECT_DIR" || gate_fail
+            ;;
         *)
             if [ "$GATE" = "hard" ]; then
                 fail "Unknown hard validator: $NAME"

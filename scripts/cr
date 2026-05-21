@@ -230,7 +230,7 @@ MD
             MODE_FLAG="--mode ${3:-}"
         fi
         if [ -z "$PROJECT" ]; then
-            echo "Usage: cr round <project> [--mode paper|deep|standard|lightweight]" >&2
+            echo "Usage: cr round <project> [--mode paper|deep|standard|triage]" >&2
             exit 2
         fi
 

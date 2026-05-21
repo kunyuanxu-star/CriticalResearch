@@ -2,7 +2,7 @@
 # cr-new-round — Create a new research round (Inv2).
 # Creates the round directory with all required file templates.
 #
-# Usage: cr-new-round <project_dir> [round_type] [--mode paper|lightweight|standard|deep]
+# Usage: cr-new-round <project_dir> [round_type] [--mode paper|triage|standard|deep]
 #   round_type: discovery (default), validation, re_search, rebuttal, writing, repair, finalization
 
 set -euo pipefail
@@ -24,7 +24,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$PROJECT_DIR" ]; then
-    echo "Usage: cr-new-round <project_dir> [round_type] [--mode paper|lightweight|standard|deep]" >&2
+    echo "Usage: cr-new-round <project_dir> [round_type] [--mode paper|triage|standard|deep]" >&2
     echo "  round_type: discovery, validation, re_search, rebuttal, writing, repair, finalization, setup" >&2
     exit 2
 fi
