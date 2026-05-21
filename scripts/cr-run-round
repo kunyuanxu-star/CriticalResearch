@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# cr-run-round — Auto-advance executor for paper rounds.
+# Validates and advances through all phases until close_round is reached.
+# Usage: cr run-round <project> [--mode paper]
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+WORKSPACE_ROOT="$(cr_workspace_root)"
+
+PROJECT="${1:-}"
+MODE_FLAG=""
+
+if [ -z "$PROJECT" ]; then
+    echo "Usage: cr run-round <project> [--mode paper]" >&2
+    exit 2
+fi
+
+PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
+if [ ! -d "$PROJECT_DIR" ]; then
+    echo "Project directory not found: $PROJECT_DIR" >&2
+    exit 1
+fi
+
+ACTIVE_RND=$(jq -r '.active_round // 0' "$PROJECT_DIR/state/project-state.json" 2>/dev/null || echo "0")
+if [ "$ACTIVE_RND" = "null" ] || [ "$ACTIVE_RND" -eq 0 ]; then
+    echo "No active round. Run 'cr round $PROJECT' first." >&2
+    exit 1
+fi
+
+ROUND_NUM=$(printf "%03d" "$ACTIVE_RND")
+ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
+STATE_FILE="$ROUND_DIR/state.yaml"
+
+if [ ! -f "$STATE_FILE" ]; then
+    echo "No state.yaml found. This command requires a paper-mode round with phase state tracking." >&2
+    exit 1
+fi
+
+echo "Running round $ROUND_NUM for project '$PROJECT'..."
+echo ""
+
+MAX_ITER=20
+ITER=0
+
+while [ "$ITER" -lt "$MAX_ITER" ]; do
+    ITER=$((ITER + 1))
+
+    CURRENT=$(yq -r '.current_phase // "close_round"' "$STATE_FILE" 2>/dev/null || echo "close_round")
+
+    if [ "$CURRENT" = "close_round" ]; then
+        echo "All phases complete. Running close-round..."
+        exec "$SCRIPT_DIR/cr" close-round "$PROJECT"
+    fi
+
+    PHASE_STATUS=$(yq -r ".phases.$CURRENT.status // \"unknown\"" "$STATE_FILE" 2>/dev/null || echo "unknown")
+    echo "── Phase $ITER: $CURRENT ($PHASE_STATUS) ──"
+
+    # Try to advance.
+    if "$SCRIPT_DIR/cr-step" "$PROJECT" advance 2>&1; then
+        echo ""
+        continue
+    else
+        echo ""
+        echo "Cannot advance past phase '$CURRENT'. Fix missing outputs and re-run."
+        echo "Run 'cr step $PROJECT status' to see what's needed."
+        exit 2
+    fi
+done
+
+echo "Max iterations ($MAX_ITER) reached. Check for circular dependencies or stuck phases." >&2
+exit 2

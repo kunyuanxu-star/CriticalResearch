@@ -13,6 +13,9 @@
 #   migrate-to-paper <proj>   Scaffold paper mode directories for a project
 #   promote-knowledge         Check thinking cards for promotion eligibility
 #   ask-next <round> <proj>   Show next pending human judgment question
+#   step <project> <sub>     Phase state machine (status, current, advance, validate)
+#   run-round <project>      Auto-advance through all phases until close
+#   research <project> <sub> Research plan, run, ingest, normalize
 #   workspace init            Initialize Research workspace with _cr/ structure
 #   workspace scan            List all research-* projects in workspace
 #   status                    Show workspace and active project status
@@ -36,6 +39,9 @@ usage() {
     echo "  validate <project>            Run all project invariant checks"
     echo "  migrate-to-paper-mode <proj>  Scaffold paper mode directories"
     echo "  promote-knowledge             Check thinking cards for promotion"
+    echo "  step <project> <sub>          Phase state machine (status, current, advance, validate)"
+    echo "  run-round <project>           Auto-advance through all phases"
+    echo "  research <project> <sub>      Research plan, run, ingest, normalize"
     echo "  workspace init                Initialize Research workspace"
     echo "  workspace scan                List research projects in workspace"
     echo "  status                        Show workspace and active project status"
@@ -375,6 +381,35 @@ MD
 
     promote-knowledge)
         exec "$SCRIPT_DIR/cr-promote-knowledge" "$WORKSPACE_ROOT"
+        ;;
+
+    step)
+        PROJECT="${1:-}"
+        SUB="${2:-}"
+        if [ -z "$PROJECT" ] || [ -z "$SUB" ]; then
+            echo "Usage: cr step <project> <status|current|advance|validate>" >&2
+            exit 2
+        fi
+        exec "$SCRIPT_DIR/cr-step" "$PROJECT" "$SUB" "${3:-}" "${4:-}"
+        ;;
+
+    run-round)
+        PROJECT="${1:-}"
+        if [ -z "$PROJECT" ]; then
+            echo "Usage: cr run-round <project>" >&2
+            exit 2
+        fi
+        exec "$SCRIPT_DIR/cr-run-round" "$PROJECT" "${2:-}" "${3:-}"
+        ;;
+
+    research)
+        PROJECT="${1:-}"
+        SUB="${2:-}"
+        if [ -z "$PROJECT" ] || [ -z "$SUB" ]; then
+            echo "Usage: cr research <project> <plan|run|ingest|normalize>" >&2
+            exit 2
+        fi
+        exec "$SCRIPT_DIR/cr-research" "$PROJECT" "$SUB"
         ;;
 
     workspace)

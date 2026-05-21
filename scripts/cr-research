@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# cr-research — Research planning, execution, and ingestion CLI.
+# Usage: cr research <project> <subcommand> [args...]
+#
+# Subcommands:
+#   plan <project>       Generate research-plan.yaml from state and gap
+#   run <project>        Validate search-log and source coverage
+#   ingest <project> <S> Ingest a specific source snapshot into the index
+#   normalize <project>  Validate evidence-ledger completeness
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+WORKSPACE_ROOT="$(cr_workspace_root)"
+
+usage() {
+    echo "Usage: cr research <project> <subcommand> [args...]"
+    echo ""
+    echo "Subcommands:"
+    echo "  plan       Validate research-plan.yaml setup"
+    echo "  run        Check search-log.yaml and source coverage"
+    echo "  ingest     Verify raw-sources/ and source-index.yaml integrity"
+    echo "  normalize  Check evidence-ledger.yaml completeness"
+    exit 2
+}
+
+PROJECT="${1:-}"
+SUBCMD="${2:-}"
+
+if [ -z "$PROJECT" ] || [ -z "$SUBCMD" ]; then
+    usage
+fi
+
+PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
+if [ ! -d "$PROJECT_DIR" ]; then
+    echo "Project directory not found: $PROJECT_DIR" >&2
+    exit 1
+fi
+
+ACTIVE_RND=$(jq -r '.active_round // 0' "$PROJECT_DIR/state/project-state.json" 2>/dev/null || echo "0")
+if [ "$ACTIVE_RND" = "null" ] || [ "$ACTIVE_RND" -eq 0 ]; then
+    echo "No active round." >&2
+    exit 1
+fi
+
+ROUND_NUM=$(printf "%03d" "$ACTIVE_RND")
+ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
+
+case "$SUBCMD" in
+    plan)
+        echo "Research plan for $PROJECT, round $ROUND_NUM"
+        if [ -f "$ROUND_DIR/research-plan.yaml" ]; then
+            echo "  research-plan.yaml: present"
+            RQ_COUNT=$(yq -r '.research_questions | length // 0' "$ROUND_DIR/research-plan.yaml" 2>/dev/null || echo "0")
+            echo "  Research questions: $RQ_COUNT"
+            yq -r '.research_questions[] | "    - \(.id): \(.question)"' "$ROUND_DIR/research-plan.yaml" 2>/dev/null || true
+        else
+            echo "  research-plan.yaml: not found — create it before advancing plan_research phase"
+        fi
+        if [ -f "$ROUND_DIR/search-queue.yaml" ]; then
+            Q_COUNT=$(yq -r '.queries | length // 0' "$ROUND_DIR/search-queue.yaml" 2>/dev/null || echo "0")
+            echo "  search-queue.yaml: $Q_COUNT queued queries"
+        else
+            echo "  search-queue.yaml: not found"
+        fi
+        ;;
+
+    run)
+        echo "Research execution check for $PROJECT, round $ROUND_NUM"
+        if [ -x "$SCRIPT_DIR/cr-validate-research" ]; then
+            exec "$SCRIPT_DIR/cr-validate-research" "$PROJECT_DIR" "$ROUND_DIR"
+        fi
+        echo "  (cr-validate-research not found)"
+        ;;
+
+    ingest)
+        echo "Source ingestion check for $PROJECT, round $ROUND_NUM"
+        if [ -x "$SCRIPT_DIR/cr-validate-source-integrity" ]; then
+            exec "$SCRIPT_DIR/cr-validate-source-integrity" "$ROUND_DIR"
+        fi
+        echo "  (cr-validate-source-integrity not found)"
+        ;;
+
+    normalize)
+        echo "Evidence normalization check for $PROJECT, round $ROUND_NUM"
+        if [ -x "$SCRIPT_DIR/cr-validate-evidence-claim-links" ]; then
+            exec "$SCRIPT_DIR/cr-validate-evidence-claim-links" "$ROUND_DIR" "$PROJECT_DIR"
+        fi
+        echo "  (cr-validate-evidence-claim-links not found)"
+        ;;
+
+    *)
+        usage
+        ;;
+esac

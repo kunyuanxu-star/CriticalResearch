@@ -62,6 +62,43 @@ if [ ! -d "$ROUND_DIR" ]; then
     exit 0
 fi
 
+# ── Phase state check (paper mode) ──────────────────────────────
+
+# If state.yaml exists, run the current phase validator.
+STATE_FILE="$ROUND_DIR/state.yaml"
+if [ -f "$STATE_FILE" ]; then
+    CURRENT_PHASE=$(yq -r '.current_phase // ""' "$STATE_FILE" 2>/dev/null || echo "")
+    if [ -n "$CURRENT_PHASE" ] && [ "$CURRENT_PHASE" != "close_round" ]; then
+        PHASE_STATUS=$(yq -r ".phases.$CURRENT_PHASE.status // """ "$STATE_FILE" 2>/dev/null || echo "")
+        if [ "$PHASE_STATUS" != "complete" ]; then
+            REQ=$(yq -r ".phases.$CURRENT_PHASE.required_outputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
+            MISSING_COUNT=0
+            MISSING_LIST=""
+            for output in $REQ; do
+                [ -z "$output" ] && continue
+                case "$output" in
+                    *.yaml|*.md|*.json)
+                        [ -f "$ROUND_DIR/$output" ] && continue
+                        [ -f "$PROJECT_DIR/$output" ] && continue
+                        MISSING_COUNT=$((MISSING_COUNT + 1))
+                        MISSING_LIST="$MISSING_LIST $output"
+                        ;;
+                    raw-sources|patches|experiments)
+                        [ -d "$ROUND_DIR/$output" ] && [ -n "$(ls -A "$ROUND_DIR/$output" 2>/dev/null)" ] && continue
+                        MISSING_COUNT=$((MISSING_COUNT + 1))
+                        MISSING_LIST="$MISSING_LIST $output/"
+                        ;;
+                esac
+            done
+            if [ "$MISSING_COUNT" -gt 0 ]; then
+                REASON="Phase '$CURRENT_PHASE' ($PHASE_STATUS) incomplete.$MISSING_LIST missing. Complete the current phase before stopping. Run 'cr step <project> status' for details."
+                echo "{\"decision\":\"block\",\"reason\":\"$REASON\"}"
+                exit 1
+            fi
+        fi
+    fi
+fi
+
 # ── Check round status ──────────────────────────────────────────
 
 ROUND_STATUS=""
@@ -69,8 +106,19 @@ if [ -f "$ROUND_DIR/round.yaml" ]; then
     ROUND_STATUS=$(grep -E '^status:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^status:\s*//' | xargs || echo "")
 fi
 
-# Round already complete → allow stop.
+# Round claims complete → run validator pipeline for confirmation.
 if [ "$ROUND_STATUS" = "complete" ]; then
+    PIPELINE="$SCRIPT_DIR/cr-run-validator-pipeline"
+    if [ -x "$PIPELINE" ]; then
+        if "$PIPELINE" "$PROJECT_DIR" "$ROUND_DIR" 2>/dev/null; then
+            echo '{"decision":"allow"}'
+            exit 0
+        else
+            REASON="Round marked complete but validator pipeline failed. Run 'cr validate' to see failures."
+            echo "{\"decision\":\"block\",\"reason\":\"$REASON\"}"
+            exit 1
+        fi
+    fi
     echo '{"decision":"allow"}'
     exit 0
 fi
@@ -119,13 +167,12 @@ fi
 map_output_key_to_file() {
     case "$1" in
         report)              echo "report.md" ;;
-        evidence_update)     echo "sources.md" ;;
+        evidence_update)     echo "evidence-ledger.yaml" ;;
         critique_update)     echo "critique.md" ;;
         writing_diff)        echo "writing-diff.md" ;;
         knowledge_delta)     echo "knowledge-delta.md" ;;
         paper_patch)         echo "patches" ;;
         experiment_obligation) echo "experiments" ;;
-        experiment_obligation) echo "experiment-patches.md" ;;
         *)                   echo "" ;;
     esac
 }

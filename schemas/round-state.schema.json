@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Round State Schema",
+  "description": "Per-round phase state machine definition. Tracks which phases are complete, which are blocked, and what outputs each phase requires.",
+  "type": "object",
+  "required": ["schema_version", "project_id", "round_id", "workflow_mode", "status", "current_phase", "phases"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "project_id": { "type": "string" },
+    "round_id": { "type": "integer", "minimum": 1 },
+    "workflow_mode": { "type": "string", "enum": ["lightweight", "standard", "deep", "paper"] },
+    "status": { "type": "string", "enum": ["open", "in_progress", "complete"] },
+    "current_phase": { "type": "string" },
+    "required_research": { "type": "boolean" },
+    "required_min_sources": { "type": "integer", "minimum": 0 },
+    "required_source_levels": {
+      "type": "object",
+      "properties": {
+        "min_s_or_a": { "type": "integer", "minimum": 0 },
+        "allow_b": { "type": "boolean" },
+        "allow_c_only_as_lead": { "type": "boolean" }
+      }
+    },
+    "phases": {
+      "type": "object",
+      "properties": {
+        "reconstruct_paper_state": { "$ref": "#/$defs/phase" },
+        "define_round_target": { "$ref": "#/$defs/phase" },
+        "plan_research": { "$ref": "#/$defs/phase" },
+        "run_retrieval": { "$ref": "#/$defs/phase" },
+        "ingest_sources": { "$ref": "#/$defs/phase" },
+        "normalize_evidence": { "$ref": "#/$defs/phase" },
+        "update_literature_knowledge": { "$ref": "#/$defs/phase" },
+        "adversarial_critique": { "$ref": "#/$defs/phase" },
+        "generate_dispositions": { "$ref": "#/$defs/phase" },
+        "generate_paper_patches": { "$ref": "#/$defs/phase" },
+        "generate_experiment_obligations": { "$ref": "#/$defs/phase" },
+        "apply_patches_to_draft": { "$ref": "#/$defs/phase" },
+        "distill_knowledge": { "$ref": "#/$defs/phase" },
+        "close_round": { "$ref": "#/$defs/phase" }
+      }
+    },
+    "closure_policy": {
+      "type": "object",
+      "properties": {
+        "require_all_phases_complete": { "type": "boolean" },
+        "require_external_research": { "type": "boolean" },
+        "require_evidence_for_each_core_claim": { "type": "boolean" },
+        "require_patch_for_medium_plus_critique": { "type": "boolean" },
+        "require_experiment_for_claim_patch": { "type": "boolean" },
+        "require_draft_diff_for_applied_patch": { "type": "boolean" },
+        "require_no_pending_human_decisions": { "type": "boolean" }
+      }
+    }
+  },
+  "$defs": {
+    "phase": {
+      "type": "object",
+      "required": ["status", "depends_on", "required_outputs"],
+      "properties": {
+        "status": { "type": "string", "enum": ["open", "in_progress", "blocked", "complete"] },
+        "started_at": { "type": ["string", "null"] },
+        "completed_at": { "type": ["string", "null"] },
+        "depends_on": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "required_outputs": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

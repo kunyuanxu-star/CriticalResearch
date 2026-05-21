@@ -152,7 +152,30 @@ MD
 
 MD
 
-    echo "  Paper mode: patches/, experiments/, dispositions.yaml, questions.md"
+    # Create search-queue.yaml template.
+    cat > "$ROUND_DIR/search-queue.yaml" << YAML
+# Research Search Queue
+# Queries to execute during the run_retrieval phase.
+queries: []
+YAML
+
+    # Generate state.yaml from template.
+    STATE_TEMPLATE="$(cr_skill_home)/templates/round-state.yaml"
+    if [ -f "$STATE_TEMPLATE" ]; then
+        cp "$STATE_TEMPLATE" "$ROUND_DIR/state.yaml"
+        if command -v yq >/dev/null 2>&1; then
+            yq -i '.project_id = "'"$PROJECT_ID"'" | .round_id = '"$NEXT_ROUND" "$ROUND_DIR/state.yaml"
+        else
+            sed -i '' "s/^project_id:.*/project_id: $PROJECT_ID/" "$ROUND_DIR/state.yaml" 2>/dev/null || \
+                sed -i "s/^project_id:.*/project_id: $PROJECT_ID/" "$ROUND_DIR/state.yaml"
+            sed -i '' "s/^round_id:.*/round_id: $NEXT_ROUND/" "$ROUND_DIR/state.yaml" 2>/dev/null || \
+                sed -i "s/^round_id:.*/round_id: $NEXT_ROUND/" "$ROUND_DIR/state.yaml"
+        fi
+    else
+        echo "  Warning: round-state.yaml template not found -- skipping state.yaml"
+    fi
+
+    echo "  Paper mode: patches/, experiments/, raw-sources/, state.yaml, dispositions.yaml, questions.md"
 fi
 
 # Write empty report template.

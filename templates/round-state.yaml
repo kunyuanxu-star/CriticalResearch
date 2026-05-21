@@ -1,0 +1,151 @@
+schema_version: "2.0.0"
+project_id: ""
+round_id: 0
+workflow_mode: paper
+status: open
+current_phase: reconstruct_paper_state
+
+required_research: true
+required_min_sources: 5
+required_source_levels:
+  min_s_or_a: 2
+  allow_b: true
+  allow_c_only_as_lead: true
+
+phases:
+  reconstruct_paper_state:
+    status: open
+    started_at: null
+    completed_at: null
+    depends_on: []
+    required_outputs:
+      - paper-state.yaml
+
+  define_round_target:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - reconstruct_paper_state
+    required_outputs:
+      - round-target.yaml
+
+  plan_research:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - define_round_target
+    required_outputs:
+      - research-plan.yaml
+      - search-queue.yaml
+
+  run_retrieval:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - plan_research
+    required_outputs:
+      - search-log.yaml
+      - raw-sources
+
+  ingest_sources:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - run_retrieval
+    required_outputs:
+      - source-index.yaml
+
+  normalize_evidence:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - ingest_sources
+    required_outputs:
+      - evidence-ledger.yaml
+
+  update_literature_knowledge:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - normalize_evidence
+    required_outputs:
+      - literature-delta.yaml
+
+  adversarial_critique:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - normalize_evidence
+    required_outputs:
+      - critique.yaml
+
+  generate_dispositions:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - adversarial_critique
+    required_outputs:
+      - dispositions.yaml
+
+  generate_paper_patches:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - generate_dispositions
+    required_outputs:
+      - patches
+
+  generate_experiment_obligations:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - generate_paper_patches
+    required_outputs:
+      - experiments
+
+  apply_patches_to_draft:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - generate_paper_patches
+    required_outputs:
+      - writing-diff.yaml
+
+  distill_knowledge:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - apply_patches_to_draft
+      - generate_experiment_obligations
+    required_outputs:
+      - knowledge-delta.yaml
+
+  close_round:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - distill_knowledge
+    required_outputs:
+      - closure-report.yaml
+
+closure_policy:
+  require_all_phases_complete: true
+  require_external_research: true
+  require_evidence_for_each_core_claim: true
+  require_patch_for_medium_plus_critique: true
+  require_experiment_for_claim_patch: true
+  require_draft_diff_for_applied_patch: true
+  require_no_pending_human_decisions: true

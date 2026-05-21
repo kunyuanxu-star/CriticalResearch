@@ -1,0 +1,20 @@
+# Search Queue
+# Queries to execute during the run_retrieval phase.
+# Each query must have a class and the actual search string.
+
+queries:
+  - query_id: Q001
+    query_class: core_problem
+    query: ""
+  - query_id: Q002
+    query_class: strongest_baseline
+    query: ""
+  - query_id: Q003
+    query_class: recent_top_conference
+    query: ""
+  - query_id: Q004
+    query_class: production_or_real_world_case
+    query: ""
+  - query_id: Q005
+    query_class: counterexample_or_failure
+    query: ""

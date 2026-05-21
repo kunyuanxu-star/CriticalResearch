@@ -1,0 +1,22 @@
+# Research Plan
+
+round_id: 0
+target_gap: ""
+
+research_questions:
+  - id: RQ1
+    question: ""
+    affected_claims: []
+
+required_query_classes:
+  - core_problem
+  - strongest_baseline
+  - recent_top_conference
+  - production_or_real_world_case
+  - counterexample_or_failure
+
+success_criteria:
+  min_queries: 5
+  min_sources: 5
+  min_s_or_a_sources: 2
+  must_find_or_record_failure_for_each_query_class: true

@@ -27,6 +27,27 @@ SKILL_SOURCE_PATTERNS=(
     "/hooks/"
 )
 
+# Patterns for state mutation files that must only be modified via cr CLI commands.
+# Direct writes/edits to these files are blocked.
+STATE_MUTATION_PATTERNS=(
+    "*/round.yaml"
+    "*/state.yaml"
+    "*/project-state.json"
+    "*/patches/PP-"
+    "*/closure-report.yaml"
+    "*/satisfaction.json"
+)
+
+is_state_mutation_path() {
+    local path="$1"
+    for pattern in "${STATE_MUTATION_PATTERNS[@]}"; do
+        case "$path" in
+            *"$pattern"*) return 0 ;;
+        esac
+    done
+    return 1
+}
+
 # Allowed directories/files within a research project.
 # Writes outside these paths trigger a warning (non-blocking for now).
 ALLOWED_RESEARCH_DIRS=(
@@ -124,6 +145,13 @@ while IFS= read -r file_path; do
 
     # Block skill source files in research projects.
     if is_skill_source_path "$file_path"; then
+        BLOCKED="$file_path"
+        break
+    fi
+
+    # Block direct edits to state mutation files.
+    # These must only be modified via cr step advance, cr close-round, or cr patch apply.
+    if is_state_mutation_path "$file_path"; then
         BLOCKED="$file_path"
         break
     fi

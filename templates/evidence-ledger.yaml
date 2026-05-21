@@ -1,0 +1,7 @@
+# Evidence Ledger
+# Authoritative structured evidence for paper rounds.
+# Each evidence item must link to a source_id and at least one claim_id.
+# At least one item must weaken or contradict a core claim.
+
+round_id: 0
+evidence: []
