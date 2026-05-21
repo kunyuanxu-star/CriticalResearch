@@ -321,6 +321,14 @@ project_id: "$PROJECT"
 opened_at: "$NOW"
 YAML
 
+        # Warn if no stable session ID is available (multi-session parallel safety).
+        if [ -z "${CLAUDE_SESSION_ID:-}" ] && [ -z "${CLAUDE_CONVERSATION_ID:-}" ] && [ -z "${CR_SESSION_ID:-}" ]; then
+            echo "Warning: no stable session ID (CLAUDE_SESSION_ID / CR_SESSION_ID) detected."
+            echo "  For multi-session parallel work, set CR_SESSION_ID to a unique value:"
+            echo "    export CR_SESSION_ID=my-session-1"
+            echo "  Falling back to: $SESSION_ID"
+        fi
+
         # Update current-session pointer for hooks that can't resolve via env vars.
         ln -sf "$SESSION_FILE" "$SESSIONS_DIR/current"
 

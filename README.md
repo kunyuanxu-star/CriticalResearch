@@ -104,3 +104,25 @@ Paper mode enforces: ≥5 search queries across 5 mandatory query classes, ≥5 
 ├── workflow/             # Universal paper round execution guide
 └── agents/               # Sub-agent instruction sets
 ```
+
+## Multi-Project Parallelism
+
+CriticalResearch supports multiple research projects in one workspace. Each session is bound to a single project via session scope, enforced by hooks:
+
+```
+cr scope open --project my-topic     # Bind this session to my-topic
+cr scope status                      # Show current scope
+cr scope close                       # Release scope
+```
+
+Hooks prevent writes to other projects, workspace root artifacts, `_cr` metadata, and protected state files. Git mutation commands (commit, reset, clean, stash, push) are blocked unless run through scoped cr commands.
+
+**For multi-session parallel work**, each terminal/Claude session needs a stable session ID. Claude Code provides `CLAUDE_SESSION_ID` automatically. If running outside Claude Code or in a bare terminal:
+
+```bash
+export CR_SESSION_ID=session-1
+cr scope open --project project-a
+```
+
+Without a stable session ID, different terminals will share the `_cr/sessions/current` pointer and may resolve to the wrong scope.
+```
