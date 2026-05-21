@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# cr-validate-schema — Validate all schema-bearing YAML artifacts in a round
-# against their registered JSON schemas from artifact-registry.json.
+# cr-validate-schema — Validate all schema-bearing artifacts against their
+# registered JSON schemas from artifact-registry.json. Registry-driven:
+# iterates every artifact with a schema, resolves its path template, and
+# validates each existing file.
 #
 # Usage: cr-validate-schema <round_dir> [project_dir]
 
@@ -23,6 +25,17 @@ if [ -z "$REGISTRY_PATH" ] || [ ! -f "$REGISTRY_PATH" ]; then
     cr_exit_summary
 fi
 
+# Extract round number from path for template substitution.
+ROUND_NAME=$(basename "$ROUND_DIR")
+ROUND_NUM="${ROUND_NAME#round-}"
+
+# Resolve project dir from round dir if not provided.
+if [ -z "$PROJECT_DIR" ]; then
+    PROJECT_DIR="$(dirname "$(dirname "$ROUND_DIR")")"
+fi
+
+WORKSPACE_ROOT="$(cr_workspace_root)"
+
 echo "── Schema Validation ──"
 
 ALL_PASSED=true
@@ -31,10 +44,12 @@ ARTIFACT_COUNT=$(jq -r '.artifacts | keys | length' "$REGISTRY_PATH" 2>/dev/null
 for i in $(seq 0 $((ARTIFACT_COUNT - 1))); do
     KEY=$(jq -r ".artifacts | keys[$i]" "$REGISTRY_PATH" 2>/dev/null)
     SCHEMA_REF=$(jq -r ".artifacts[\"$KEY\"].schema // empty" "$REGISTRY_PATH" 2>/dev/null)
+    PATH_TMPL=$(jq -r ".artifacts[\"$KEY\"].path_template // empty" "$REGISTRY_PATH" 2>/dev/null)
 
     [ -z "$SCHEMA_REF" ] || [ "$SCHEMA_REF" = "null" ] && continue
+    [ -z "$PATH_TMPL" ] || [ "$PATH_TMPL" = "null" ] && continue
 
-    # Resolve schema file path.
+    # Resolve schema file.
     SCHEMA_NAME=$(basename "$SCHEMA_REF")
     SCHEMA_FILE=$(cr_schema_path "$SCHEMA_NAME")
     if [ -z "$SCHEMA_FILE" ] || [ ! -f "$SCHEMA_FILE" ]; then
@@ -42,45 +57,95 @@ for i in $(seq 0 $((ARTIFACT_COUNT - 1))); do
         continue
     fi
 
-    # Find the actual data file(s) for this artifact.
-    # Map artifact key to expected data files.
-    case "$KEY" in
-        round_state)
-            DATA_FILE="$ROUND_DIR/round.yaml"
+    # Resolve path template to actual file paths.
+    # Substitute {round_num}.
+    RESOLVED="${PATH_TMPL//\{round_num\}/$ROUND_NUM}"
+
+    case "$RESOLVED" in
+        rounds/*)
+            # Round-scoped: resolve relative to project dir.
+            BASE="$PROJECT_DIR"
             ;;
-        round_phase_state)
-            DATA_FILE="$ROUND_DIR/state.yaml"
+        writing/*|state/*)
+            # Project-scoped.
+            BASE="$PROJECT_DIR"
             ;;
-        critique_disposition)
-            DATA_FILE="$ROUND_DIR/dispositions.yaml"
-            ;;
-        research_plan)
-            DATA_FILE="$ROUND_DIR/research-plan.yaml"
-            ;;
-        search_log)
-            DATA_FILE="$ROUND_DIR/search-log.yaml"
-            ;;
-        source_index)
-            DATA_FILE="$ROUND_DIR/source-index.yaml"
-            ;;
-        evidence_ledger)
-            DATA_FILE="$ROUND_DIR/evidence-ledger.yaml"
+        _cr/*)
+            # Workspace-scoped.
+            BASE="$WORKSPACE_ROOT"
             ;;
         *)
-            continue
+            BASE="$PROJECT_DIR"
             ;;
     esac
 
-    if [ ! -f "$DATA_FILE" ]; then
-        continue
-    fi
+    FULL_PATH="$BASE/$RESOLVED"
 
-    # Run schema validation.
-    if cr_validate_schema "$DATA_FILE" "$SCHEMA_FILE" "yaml"; then
-        : # pass already printed by cr_validate_schema
-    else
-        ALL_PASSED=false
-    fi
+    # Handle glob patterns (patches/PP-*.yaml, experiments/EXP-*.yaml).
+    case "$FULL_PATH" in
+        *\{patch_num\}*|*\{exp_num\}*|*\{card_id\}*|*\{card_type\}*)
+            # Expand glob: replace {var} with *
+            GLOB="${FULL_PATH//\{patch_num\}/*}"
+            GLOB="${GLOB//\{exp_num\}/*}"
+            GLOB="${GLOB//\{card_id\}/*}"
+            GLOB="${GLOB//\{card_type\}/*}"
+
+            FOUND_ANY=false
+            for f in $GLOB; do
+                [ -f "$f" ] || continue
+                FOUND_ANY=true
+                if cr_validate_schema "$f" "$SCHEMA_FILE" "yaml" 2>/dev/null; then
+                    : # pass already printed
+                else
+                    ALL_PASSED=false
+                fi
+            done
+            if [ "$FOUND_ANY" = false ]; then
+                # No files matching glob — not a failure (optional artifact).
+                :
+            fi
+            ;;
+
+        *)
+            # Simple single-file artifact.
+            if [ -f "$FULL_PATH" ]; then
+                # Determine format from extension.
+                case "$FULL_PATH" in
+                    *.yaml|*.yml)
+                        if cr_validate_schema "$FULL_PATH" "$SCHEMA_FILE" "yaml" 2>/dev/null; then
+                            : # pass already printed
+                        else
+                            ALL_PASSED=false
+                        fi
+                        ;;
+                    *.json)
+                        if cr_validate_schema "$FULL_PATH" "$SCHEMA_FILE" "json" 2>/dev/null; then
+                            : # pass already printed
+                        else
+                            ALL_PASSED=false
+                        fi
+                        ;;
+                    *.md)
+                        # Markdown with YAML frontmatter — extract and validate.
+                        if grep -q '^---$' "$FULL_PATH" 2>/dev/null; then
+                            FRONTMATTER=$(sed -n '/^---$/,/^---$/p' "$FULL_PATH" | sed '1d;$d' 2>/dev/null || echo "")
+                            if [ -n "$FRONTMATTER" ]; then
+                                DATA_JSON=$(echo "$FRONTMATTER" | yq -o json '.' 2>/dev/null || echo "")
+                                if [ -n "$DATA_JSON" ] && [ "$DATA_JSON" != "null" ]; then
+                                    SCHEMA_JSON=$(cat "$SCHEMA_FILE")
+                                    if cr_validate_json_schema "$DATA_JSON" "$SCHEMA_JSON" 2>/dev/null; then
+                                        pass "$(basename "$FULL_PATH"): schema valid (frontmatter)"
+                                    else
+                                        ALL_PASSED=false
+                                    fi
+                                fi
+                            fi
+                        fi
+                        ;;
+                esac
+            fi
+            ;;
+    esac
 done
 
 if [ "$ALL_PASSED" = false ]; then

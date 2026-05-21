@@ -158,6 +158,7 @@ phases:
       - generate_experiment_obligations
     required_outputs:
       - knowledge-delta.yaml
+      - knowledge-apply-log.yaml
 
     required_inputs:
       - patches

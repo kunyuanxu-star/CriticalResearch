@@ -27,6 +27,7 @@ fi
 
 echo "── Phase Completeness Check ──"
 
+# Pre-close phases (1-13). close_round (14th) is marked complete by cr close-round itself.
 EXPECTED_PHASES=(
     reconstruct_paper_state
     define_round_target
@@ -41,7 +42,6 @@ EXPECTED_PHASES=(
     generate_experiment_obligations
     apply_patches_to_draft
     distill_knowledge
-    close_round
 )
 
 FAIL=0
@@ -67,12 +67,12 @@ for phase in "${EXPECTED_PHASES[@]}"; do
     pass "Phase '$phase': complete at $completed_at"
 done
 
-# Verify phase count matches expected.
+# Verify all 13 pre-close phases are present (close_round is the 14th).
 ACTUAL_COUNT=$(yq -r '.phases | keys | length' "$STATE_FILE" 2>/dev/null || echo "0")
 EXPECTED_COUNT=${#EXPECTED_PHASES[@]}
 
-if [ "$ACTUAL_COUNT" -ne "$EXPECTED_COUNT" ]; then
-    fail "Phase count mismatch: expected $EXPECTED_COUNT, found $ACTUAL_COUNT in state.yaml"
+if [ "$ACTUAL_COUNT" -lt "$EXPECTED_COUNT" ]; then
+    fail "Phase count too low: expected at least $EXPECTED_COUNT pre-close phases, found $ACTUAL_COUNT in state.yaml"
     FAIL=1
 fi
 

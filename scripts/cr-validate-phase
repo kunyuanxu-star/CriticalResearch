@@ -152,11 +152,11 @@ case "$PHASE" in
         ;;
     apply_patches_to_draft)
         if [ -f "$ROUND_DIR/writing-diff.yaml" ]; then
-            DIFF_COUNT=$(yq -r '.applied_patches | length // 0' "$ROUND_DIR/writing-diff.yaml" 2>/dev/null || echo "0")
+            DIFF_COUNT=$(yq -r '.changes | length // 0' "$ROUND_DIR/writing-diff.yaml" 2>/dev/null || echo "0")
             if [ "${DIFF_COUNT:-0}" -gt 0 ]; then
-                pass "Applied patches recorded in writing-diff.yaml: $DIFF_COUNT"
+                pass "Writing changes recorded in writing-diff.yaml: $DIFF_COUNT"
             else
-                warn "writing-diff.yaml has no applied_patches entries"
+                warn "writing-diff.yaml has no changes entries"
             fi
         elif [ -f "$ROUND_DIR/writing-diff.md" ]; then
             if grep -qE '(Added|Deleted|Weakened|Reframed)' "$ROUND_DIR/writing-diff.md" 2>/dev/null; then

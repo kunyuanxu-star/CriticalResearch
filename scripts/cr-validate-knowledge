@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# cr-validate-knowledge — Knowledge distillation validation (Inv6).
-# Checks that every round records what was learned.
+# cr-validate-knowledge — Knowledge distillation validation.
+# Authoritative source: knowledge-delta.yaml + knowledge-apply-log.yaml.
+# knowledge-delta.md is a human-readable report (L2, not validated).
 #
 # Usage: cr-validate-knowledge <round_dir>
-#
-# Exit codes:
-#   0 — all checks passed
-#   2 — one or more failures
 
 set -euo pipefail
 
@@ -24,90 +21,127 @@ ROUND_NAME="$(basename "$ROUND_DIR")"
 echo ""
 echo "══ Knowledge Validation: $ROUND_NAME ══"
 
-# ── knowledge-delta.md existence ────────────────────────────────
+ALL_PASSED=true
 
-if [ ! -f "$ROUND_DIR/knowledge-delta.md" ]; then
-    fail "knowledge-delta.md not found — knowledge delta required (Inv6)"
-    cr_exit_summary
-fi
+# ── knowledge-delta.yaml (L1 authoritative) ──────────────────────
 
-pass "knowledge-delta.md exists"
+DELTA_FILE="$ROUND_DIR/knowledge-delta.yaml"
+if [ -f "$DELTA_FILE" ]; then
+    pass "knowledge-delta.yaml exists"
 
-# ── Required content checks ─────────────────────────────────────
+    # Schema validation.
+    SCHEMA_FILE=$(cr_schema_path "knowledge-delta.schema.json")
+    if [ -n "$SCHEMA_FILE" ] && [ -f "$SCHEMA_FILE" ]; then
+        if cr_validate_schema "$DELTA_FILE" "$SCHEMA_FILE" "yaml" 2>/dev/null; then
+            pass "  Schema valid"
+        else
+            fail "  Schema validation failed"
+            ALL_PASSED=false
+        fi
+    fi
 
-HAS_LITERATURE=$(grep -cE '## Literature Knowledge Updated' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
-HAS_THINKING=$(grep -cE '## Thinking Knowledge Updated' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
-HAS_CANDIDATE=$(grep -cE '## Candidate Rules Generated' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
-HAS_LOCAL=$(grep -cE '## Project-Local Insights Only' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
-HAS_NO_UPDATE=$(grep -cE '## If No Updates' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
+    UPDATE_COUNT=$(yq -r '.updates | length // 0' "$DELTA_FILE" 2>/dev/null || echo "0")
+    NO_JUST=$(yq -r '.no_update_justification // ""' "$DELTA_FILE" 2>/dev/null || echo "")
 
-[ "$HAS_LITERATURE" -ge 1 ] && pass "  Literature knowledge section" || fail "  Literature knowledge section missing"
-[ "$HAS_THINKING" -ge 1 ] && pass "  Thinking knowledge section" || fail "  Thinking knowledge section missing"
-[ "$HAS_CANDIDATE" -ge 1 ] && pass "  Candidate rules section" || warn "  Candidate rules section missing"
-[ "$HAS_LOCAL" -ge 1 ] && pass "  Project-local insights section" || warn "  Project-local insights section missing"
-[ "$HAS_NO_UPDATE" -ge 1 ] && pass "  No-update explanation section" || warn "  No-update explanation section missing"
-
-# ── Content vs template check ───────────────────────────────────
-
-LINE_COUNT=$(wc -l < "$ROUND_DIR/knowledge-delta.md" 2>/dev/null | tr -d ' ')
-HAS_YES_NO=$(grep -cE 'Yes|No' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
-HAS_BULLET=$(grep -cE '^-\s+\S' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
-
-if [ "$LINE_COUNT" -gt 20 ]; then
-    pass "knowledge-delta.md has substantial content ($LINE_COUNT lines)"
-elif [ "$HAS_YES_NO" -ge 2 ] || [ "$HAS_BULLET" -ge 1 ]; then
-    pass "knowledge-delta.md has filled-in responses"
-else
-    fail "knowledge-delta.md appears to be empty template — must record learning or explain why none occurred"
-fi
-
-# ── Typed update classification ─────────────────────────────────
-
-# Check that knowledge delta classifies updates as project_local,
-# candidate_reusable, or bank_update.
-HAS_CLASSIFICATION=$(grep -cE '(project_local|candidate_reusable|bank_update)' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
-if [ "$HAS_CLASSIFICATION" -ge 1 ]; then
-    pass "knowledge-delta.md has typed update classification"
-else
-    warn "knowledge-delta.md missing typed classification (project_local, candidate_reusable, bank_update)"
-fi
-
-# ── No-update justification ─────────────────────────────────────
-
-# If knowledge delta sections are all marked "no", check for justification.
-ALL_NO_COUNT=$(grep -cE ':\s*(no|No|NO)\s*$' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
-HAS_NO_UPDATE=$(grep -cE '## (If No Updates|No-Update Justification)' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null || echo 0)
-if [ "$ALL_NO_COUNT" -ge 4 ] && [ "$HAS_NO_UPDATE" -eq 0 ]; then
-    fail "knowledge-delta.md reports no updates across all categories but has no no-update justification — must explain why (hard gate)"
-elif [ "$ALL_NO_COUNT" -ge 4 ] && [ "$HAS_NO_UPDATE" -ge 1 ]; then
-    HAS_JUSTIFICATION_CONTENT=$(sed -n '/## \(If No Updates\|No-Update Justification\)/,/^## /p' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null | grep -cE '^\w' || echo 0)
-    if [ "${HAS_JUSTIFICATION_CONTENT:-0}" -ge 2 ]; then
-        pass "knowledge-delta.md has substantive no-update justification"
+    if [ "${UPDATE_COUNT:-0}" -eq 0 ]; then
+        if [ -z "$NO_JUST" ] || [ "$NO_JUST" = "null" ]; then
+            fail "knowledge-delta.yaml has no updates and no no_update_justification"
+            ALL_PASSED=false
+        else
+            pass "  No updates with justification: ${NO_JUST:0:80}..."
+        fi
     else
-        fail "knowledge-delta.md has no-update section but justification is empty — must explain why no knowledge was distilled"
+        pass "  $UPDATE_COUNT knowledge update(s)"
+
+        # Validate each update.
+        for i in $(seq 0 $((UPDATE_COUNT - 1))); do
+            UID_VAL=$(yq -r ".updates[$i].update_id // \"\"" "$DELTA_FILE" 2>/dev/null || echo "")
+            UTYPE=$(yq -r ".updates[$i].update_type // \"\"" "$DELTA_FILE" 2>/dev/null || echo "")
+            UOP=$(yq -r ".updates[$i].operation // \"\"" "$DELTA_FILE" 2>/dev/null || echo "")
+            USCOPE=$(yq -r ".updates[$i].scope // \"\"" "$DELTA_FILE" 2>/dev/null || echo "")
+            TARGET=$(yq -r ".updates[$i].target_path // \"\"" "$DELTA_FILE" 2>/dev/null || echo "")
+            HAS_PATCHES=$(yq -r ".updates[$i].generated_from.patches // [] | length" "$DELTA_FILE" 2>/dev/null || echo "0")
+            HAS_CRITS=$(yq -r ".updates[$i].generated_from.critiques // [] | length" "$DELTA_FILE" 2>/dev/null || echo "0")
+
+            if [ -z "$UTYPE" ] || [ "$UTYPE" = "null" ]; then
+                fail "  $UID_VAL: missing update_type"
+                ALL_PASSED=false
+            fi
+            if [ -z "$UOP" ] || [ "$UOP" = "null" ]; then
+                fail "  $UID_VAL: missing operation"
+                ALL_PASSED=false
+            fi
+
+            # Non-noop updates (scope != project_local) need target_path.
+            if [ "$USCOPE" != "project_local" ]; then
+                if [ -z "$TARGET" ] || [ "$TARGET" = "null" ]; then
+                    fail "  $UID_VAL (scope=$USCOPE): missing target_path"
+                    ALL_PASSED=false
+                fi
+            fi
+
+            # Each update should be traceable to a patch, critique, or evidence.
+            if [ "${HAS_PATCHES:-0}" -eq 0 ] && [ "${HAS_CRITS:-0}" -eq 0 ]; then
+                warn "  $UID_VAL: not linked to any patch or critique"
+            fi
+
+            pass "  $UID_VAL: type=$UTYPE op=$UOP scope=$USCOPE"
+        done
+    fi
+else
+    # Fallback: check knowledge-delta.md exists (L2).
+    if [ -f "$ROUND_DIR/knowledge-delta.md" ]; then
+        warn "knowledge-delta.yaml not found; knowledge-delta.md present (L2). Consider migrating to YAML."
+    else
+        fail "knowledge-delta.yaml not found — knowledge delta required"
+        ALL_PASSED=false
     fi
 fi
 
-# ── Cross-check: bank_update references ─────────────────────────
+# ── knowledge-apply-log.yaml (L1 authoritative) ──────────────────
 
-# If knowledge-delta claims bank_update, verify target card files exist.
-BANK_UPDATE_REFS=$(grep -E 'bank_update|Target file:' "$ROUND_DIR/knowledge-delta.md" 2>/dev/null | grep -oE '/[a-z0-9_/.-]+\.md' || echo "")
-if [ -n "$BANK_UPDATE_REFS" ]; then
-    WORKSPACE_ROOT="$(cr_workspace_root)"
-    while IFS= read -r ref; do
-        [ -z "$ref" ] && continue
-        ref="${ref#/}"
-        if [ -f "$WORKSPACE_ROOT/_cr/knowledge/$ref" ] || [ -f "$ref" ]; then
-            pass "bank_update target exists: $ref"
+APPLY_FILE="$ROUND_DIR/knowledge-apply-log.yaml"
+if [ -f "$APPLY_FILE" ]; then
+    APPLY_COUNT=$(yq -r '.applied_updates | length // 0' "$APPLY_FILE" 2>/dev/null || echo "0")
+    IDX_COUNT=$(yq -r '.index_updates | length // 0' "$APPLY_FILE" 2>/dev/null || echo "0")
+
+    if [ "${APPLY_COUNT:-0}" -gt 0 ] || [ "${IDX_COUNT:-0}" -gt 0 ]; then
+        pass "knowledge-apply-log.yaml: $APPLY_COUNT applied, $IDX_COUNT index updates"
+
+        # Check each applied update has a target_path that exists.
+        for i in $(seq 0 $((APPLY_COUNT - 1))); do
+            AUID=$(yq -r ".applied_updates[$i].update_id // \"\"" "$APPLY_FILE" 2>/dev/null || echo "")
+            ATARGET=$(yq -r ".applied_updates[$i].target_path // \"\"" "$APPLY_FILE" 2>/dev/null || echo "")
+            if [ -n "$ATARGET" ] && [ "$ATARGET" != "null" ]; then
+                WORKSPACE_ROOT="$(cr_workspace_root)"
+                if [ -f "$WORKSPACE_ROOT/$ATARGET" ] || [ -f "$ATARGET" ]; then
+                    pass "  $AUID: target exists ($ATARGET)"
+                else
+                    fail "  $AUID: target not found ($ATARGET)"
+                    ALL_PASSED=false
+                fi
+            fi
+        done
+    else
+        # Empty apply log is OK if knowledge-delta also has no bank_updates.
+        if [ "${UPDATE_COUNT:-0}" -gt 0 ]; then
+            BANK_UPDATES=$(yq -r '[.updates[] | select(.scope == "bank_update")] | length' "$DELTA_FILE" 2>/dev/null || echo "0")
+            if [ "${BANK_UPDATES:-0}" -gt 0 ]; then
+                fail "knowledge-delta.yaml has bank_update entries but knowledge-apply-log.yaml is empty"
+                ALL_PASSED=false
+            else
+                pass "knowledge-apply-log.yaml: empty (no bank updates to apply)"
+            fi
         else
-            fail "bank_update references non-existent file: $ref — card must be created before round close"
+            pass "knowledge-apply-log.yaml: empty"
         fi
-    done <<< "$BANK_UPDATE_REFS"
+    fi
+else
+    warn "knowledge-apply-log.yaml not found"
 fi
 
-# ── Knowledge Implication on patches ────────────────────────────
+# ── Knowledge Implication on patches (unchanged from before) ─────
 
-# Paper mode: check that patches in patches/ have Knowledge Implication.
 PATCHES_DIR="$ROUND_DIR/patches"
 if [ -d "$PATCHES_DIR" ]; then
     PATCH_FILES=$(find "$PATCHES_DIR" -name 'PP-*.yaml' -type f 2>/dev/null || echo "")
@@ -116,16 +150,18 @@ if [ -d "$PATCHES_DIR" ]; then
             PATCH_ID=$(basename "$patch_file" .yaml)
             HAS_KNOWLEDGE_IMPL=$(grep -cE '^knowledge_implication:' "$patch_file" 2>/dev/null || echo 0)
             if [ "$HAS_KNOWLEDGE_IMPL" -ge 1 ]; then
-                # Check sub-fields exist.
-                HAS_LIT=$(grep -cE 'literature_updates:' "$patch_file" 2>/dev/null || echo 0)
-                HAS_THINK=$(grep -cE 'thinking_candidates:' "$patch_file" 2>/dev/null || echo 0)
-                [ "$HAS_LIT" -ge 1 ] && pass "$PATCH_ID: knowledge_implication.literature_updates present"
-                [ "$HAS_THINK" -ge 1 ] && pass "$PATCH_ID: knowledge_implication.thinking_candidates present"
+                pass "$PATCH_ID: knowledge_implication present"
             else
                 fail "$PATCH_ID: missing knowledge_implication field"
+                ALL_PASSED=false
             fi
         done
     fi
 fi
 
+if [ "$ALL_PASSED" = false ]; then
+    cr_exit_summary
+fi
+
+pass "Knowledge validation passed"
 cr_exit_summary
