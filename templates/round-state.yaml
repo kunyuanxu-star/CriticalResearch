@@ -18,8 +18,14 @@ phases:
     started_at: null
     completed_at: null
     depends_on: []
+    required_inputs:
+      - writing/paper-draft.md
+      - state/claim-ledger.yaml
     required_outputs:
       - paper-state.yaml
+      - loaded-knowledge.yaml
+    validators:
+      - cr-validate-schema
 
   define_round_target:
     status: blocked
@@ -40,6 +46,11 @@ phases:
       - research-plan.yaml
       - search-queue.yaml
 
+    required_inputs:
+      - round-target.yaml
+      - state/claim-ledger.yaml
+    validators:
+      - cr-validate-research
   run_retrieval:
     status: blocked
     started_at: null
@@ -59,6 +70,10 @@ phases:
     required_outputs:
       - source-index.yaml
 
+    required_inputs:
+      - raw-sources
+    validators:
+      - cr-validate-source-integrity
   normalize_evidence:
     status: blocked
     started_at: null
@@ -77,6 +92,10 @@ phases:
     required_outputs:
       - literature-delta.yaml
 
+    required_inputs:
+      - evidence-ledger.yaml
+    validators:
+      []
   adversarial_critique:
     status: blocked
     started_at: null
@@ -84,7 +103,7 @@ phases:
     depends_on:
       - normalize_evidence
     required_outputs:
-      - critique.yaml
+      - critique-ledger.yaml
 
   generate_dispositions:
     status: blocked
@@ -95,6 +114,10 @@ phases:
     required_outputs:
       - dispositions.yaml
 
+    required_inputs:
+      - critique-ledger.yaml
+    validators:
+      []
   generate_paper_patches:
     status: blocked
     started_at: null
@@ -113,6 +136,10 @@ phases:
     required_outputs:
       - experiments
 
+    required_inputs:
+      - patches
+    validators:
+      - cr-validate-experiments
   apply_patches_to_draft:
     status: blocked
     started_at: null
@@ -132,6 +159,12 @@ phases:
     required_outputs:
       - knowledge-delta.yaml
 
+    required_inputs:
+      - patches
+      - evidence-ledger.yaml
+      - writing-diff.yaml
+    validators:
+      []
   close_round:
     status: blocked
     started_at: null

@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Critique Ledger Schema",
+  "description": "Structured critique entries for paper rounds. Each critique attacks a specific claim, baseline, or assumption with evidence backing.",
+  "type": "object",
+  "required": ["schema_version", "round_id", "critiques"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "round_id": { "type": "integer", "minimum": 1 },
+    "critiques": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["critique_id", "severity", "target_type", "target_id", "attack_type", "attack_statement", "why_damaging", "required_action"],
+        "properties": {
+          "critique_id": { "type": "string", "pattern": "^CRT-[0-9]{3}$" },
+          "severity": { "type": "string", "enum": ["fatal", "high", "medium", "low"] },
+          "target_type": { "type": "string", "enum": ["claim", "baseline", "assumption", "evaluation_contract", "writing", "internal_consistency"] },
+          "target_id": { "type": "string" },
+          "attack_type": { "type": "string", "enum": ["strongest_baseline_subsumes_claim", "missing_baseline", "overclaim", "assumption_failure", "evaluation_gap", "internal_contradiction", "missing_threat", "design_not_novel", "evidence_insufficient", "scope_too_narrow", "scope_too_broad"] },
+          "attack_statement": { "type": "string", "minLength": 10 },
+          "why_damaging": { "type": "string", "minLength": 10 },
+          "evidence_refs": {
+            "type": "array",
+            "items": { "type": "string", "pattern": "^E[0-9]{3}$" }
+          },
+          "used_knowledge_cards": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "required_action": {
+            "type": "object",
+            "required": ["action_type"],
+            "properties": {
+              "action_type": { "type": "string", "enum": ["reframe_contribution", "narrow_claim", "add_baseline", "strengthen_evaluation", "delete_claim", "split_claim", "add_assumption", "rebuttal_with_evidence", "explicit_non_goal"] },
+              "target_sections": { "type": "array", "items": { "type": "string" } },
+              "must_create_patch": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

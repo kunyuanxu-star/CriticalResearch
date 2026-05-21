@@ -78,7 +78,7 @@ for i in $(seq 0 $((VALIDATOR_COUNT - 1))); do
         cr-validate-schema|cr-validate-ids)
             "$VALIDATOR_SCRIPT" "$ROUND_DIR" "$PROJECT_DIR" || gate_fail
             ;;
-        cr-validate-artifacts|cr-validate-references|cr-validate-paper-patches|cr-validate-experiments|cr-validate-knowledge)
+        cr-validate-artifacts|cr-validate-references|cr-validate-paper-patches|cr-validate-experiments|cr-validate-knowledge|cr-validate-critique)
             "$VALIDATOR_SCRIPT" "$ROUND_DIR" || gate_fail
             ;;
         cr-validate-research)

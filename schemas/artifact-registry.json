@@ -1,12 +1,13 @@
 {
   "$schema": "https://critical-research/schemas/artifact-registry.schema.json",
-  "description": "Canonical artifact registry mapping output keys to file paths, schemas, and validators. Consumed by cr-validate-round, cr-validate-stop, and cr close-round.",
+  "description": "Canonical artifact registry mapping output keys to file paths, schemas, and validators. Consumed by cr-validate-round, cr-validate-stop, and cr close-round. Three tiers: L0 (canonical state), L1 (round transaction, authoritative), L2 (human-readable report).",
   "artifacts": {
     "round_state": {
       "path_template": "rounds/round-{round_num}/round.yaml",
       "schema": "schemas/round.schema.json",
       "validator": "cr-validate-schema",
       "gate": "hard",
+      "tier": "L1",
       "description": "Round metadata and state file"
     },
     "round_phase_state": {
@@ -14,21 +15,52 @@
       "schema": "schemas/round-state.schema.json",
       "validator": "cr-validate-schema",
       "gate": "hard",
-      "description": "Per-round phase state machine definition",
+      "tier": "L1",
+      "description": "Per-round phase state machine with required_inputs, required_outputs, and validators per phase",
       "modes": ["paper"]
     },
-    "critique": {
-      "path_template": "rounds/round-{round_num}/critique.md",
-      "schema": "schemas/critique.schema.json",
+    "loaded_knowledge": {
+      "path_template": "rounds/round-{round_num}/loaded-knowledge.yaml",
+      "schema": null,
+      "validator": null,
+      "gate": "hard",
+      "tier": "L1",
+      "description": "Global knowledge cards loaded for this round with usage contract",
+      "modes": ["paper"]
+    },
+    "paper_state": {
+      "path_template": "rounds/round-{round_num}/paper-state.yaml",
+      "schema": null,
+      "validator": null,
+      "gate": "hard",
+      "tier": "L1",
+      "description": "Snapshot of current paper claims, baselines, assumptions, and risks",
+      "modes": ["paper"]
+    },
+    "round_target": {
+      "path_template": "rounds/round-{round_num}/round-target.yaml",
+      "schema": null,
+      "validator": null,
+      "gate": "hard",
+      "tier": "L1",
+      "description": "Target gap, claims, and baselines for this round",
+      "modes": ["paper"]
+    },
+    "critique_ledger": {
+      "path_template": "rounds/round-{round_num}/critique-ledger.yaml",
+      "schema": "schemas/critique-ledger.schema.json",
       "validator": "cr-validate-critique",
       "gate": "hard",
-      "description": "Critique entries for the round"
+      "tier": "L1",
+      "description": "Structured critique entries — authoritative. critique.md is a human-readable report.",
+      "modes": ["paper"]
     },
     "critique_disposition": {
       "path_template": "rounds/round-{round_num}/dispositions.yaml",
       "schema": "schemas/critique_disposition.schema.json",
       "validator": "cr-validate-paper-patches",
       "gate": "hard",
+      "tier": "L1",
       "description": "Disposition records linking critiques to patches/decisions",
       "modes": ["paper"]
     },
@@ -37,7 +69,8 @@
       "schema": "schemas/paper_patch.schema.json",
       "validator": "cr-validate-paper-patches",
       "gate": "hard",
-      "description": "Paper patch proposing a draft change",
+      "tier": "L1",
+      "description": "Paper patch proposing a draft change with before/after and claim effects",
       "modes": ["paper"]
     },
     "experiment_obligation": {
@@ -45,15 +78,53 @@
       "schema": "schemas/experiment_obligation.schema.json",
       "validator": "cr-validate-experiments",
       "gate": "hard",
+      "tier": "L1",
       "description": "Experiment obligation linked to a claim-level patch",
       "modes": ["paper"]
     },
     "knowledge_delta": {
-      "path_template": "rounds/round-{round_num}/knowledge-delta.md",
-      "schema": "schemas/knowledge_delta.schema.json",
+      "path_template": "rounds/round-{round_num}/knowledge-delta.yaml",
+      "schema": "schemas/knowledge-delta.schema.json",
       "validator": "cr-validate-knowledge",
       "gate": "hard",
-      "description": "Per-round knowledge distillation record"
+      "tier": "L1",
+      "description": "Structured YAML knowledge transaction — authoritative. knowledge-delta.md is a report."
+    },
+    "knowledge_apply_log": {
+      "path_template": "rounds/round-{round_num}/knowledge-apply-log.yaml",
+      "schema": null,
+      "validator": null,
+      "gate": "hard",
+      "tier": "L1",
+      "description": "Proof that knowledge updates were written back to the global bank",
+      "modes": ["paper"]
+    },
+    "literature_delta": {
+      "path_template": "rounds/round-{round_num}/literature-delta.yaml",
+      "schema": null,
+      "validator": null,
+      "gate": "hard",
+      "tier": "L1",
+      "description": "Updates to literature knowledge cards from this round",
+      "modes": ["paper"]
+    },
+    "writing_diff_yaml": {
+      "path_template": "rounds/round-{round_num}/writing-diff.yaml",
+      "schema": null,
+      "validator": null,
+      "gate": "hard",
+      "tier": "L1",
+      "description": "Structured YAML record of draft changes — authoritative. writing-diff.md is a report.",
+      "modes": ["paper"]
+    },
+    "closure_report": {
+      "path_template": "rounds/round-{round_num}/closure-report.yaml",
+      "schema": null,
+      "validator": null,
+      "gate": "hard",
+      "tier": "L1",
+      "description": "Generated by cr close-round when all validators pass",
+      "modes": ["paper"]
     },
     "thinking_card": {
       "path_template": "_cr/knowledge/thinking/cards/{card_id}.md",
@@ -61,6 +132,7 @@
       "validator": "cr-validate-thinking",
       "gate": "soft",
       "gate_paper": "hard",
+      "tier": "L0",
       "description": "Reusable thinking rule card (RP, WR, RV, AP, EP)",
       "modes": ["paper"]
     },
@@ -70,6 +142,7 @@
       "validator": "cr-validate-literature",
       "gate": "soft",
       "gate_paper": "hard",
+      "tier": "L0",
       "description": "Literature knowledge card (paper, system, concept, debate)",
       "modes": ["paper"]
     },
@@ -78,6 +151,7 @@
       "schema": "schemas/human_decision.schema.json",
       "validator": "cr-validate-human-gates",
       "gate": "hard",
+      "tier": "L0",
       "description": "Human judgment gate decision queue",
       "modes": ["paper"]
     },
@@ -87,6 +161,7 @@
       "validator": "cr-validate-anchors",
       "gate": "soft",
       "gate_paper": "hard",
+      "tier": "L0",
       "description": "Paper draft with declarable section anchors",
       "modes": ["paper"]
     },
@@ -95,27 +170,31 @@
       "schema": null,
       "validator": null,
       "gate": "hard",
-      "description": "Round report (validated by cr-validate-round for file presence)"
+      "tier": "L2",
+      "description": "Round report — human-readable, not authoritative"
     },
     "sources": {
       "path_template": "rounds/round-{round_num}/sources.md",
       "schema": null,
       "validator": null,
       "gate": "soft",
-      "description": "Human-readable sources report — evidence-ledger.yaml is the authoritative evidence artifact"
+      "tier": "L2",
+      "description": "Human-readable sources report — evidence-ledger.yaml is authoritative"
     },
     "writing_diff": {
       "path_template": "rounds/round-{round_num}/writing-diff.md",
       "schema": null,
       "validator": null,
-      "gate": "hard",
-      "description": "Diff log of writing changes"
+      "gate": "soft",
+      "tier": "L2",
+      "description": "Human-readable diff report — writing-diff.yaml is authoritative"
     },
     "research_plan": {
       "path_template": "rounds/round-{round_num}/research-plan.yaml",
       "schema": "schemas/research-plan.schema.json",
       "validator": "cr-validate-research",
       "gate": "hard",
+      "tier": "L1",
       "description": "Research plan with questions, query classes, and success criteria",
       "modes": ["paper"]
     },
@@ -124,6 +203,7 @@
       "schema": "schemas/search-log.schema.json",
       "validator": "cr-validate-research",
       "gate": "hard",
+      "tier": "L1",
       "description": "Log of all search queries executed with source selection",
       "modes": ["paper"]
     },
@@ -132,6 +212,7 @@
       "schema": "schemas/source-index.schema.json",
       "validator": "cr-validate-source-integrity",
       "gate": "hard",
+      "tier": "L1",
       "description": "Index of all raw source snapshots with sha256 hashes",
       "modes": ["paper"]
     },
@@ -140,6 +221,7 @@
       "schema": "schemas/evidence-ledger.schema.json",
       "validator": "cr-validate-evidence-claim-links",
       "gate": "hard",
+      "tier": "L1",
       "description": "Authoritative structured evidence — each item links source and claim",
       "modes": ["paper"]
     },
@@ -148,6 +230,7 @@
       "schema": null,
       "validator": "cr-validate-source-integrity",
       "gate": "hard",
+      "tier": "L1",
       "description": "Directory of raw source snapshots with content hashes",
       "modes": ["paper"]
     }
@@ -161,12 +244,14 @@
       {"order": 4, "name": "cr-validate-research", "gate": "hard", "checks": "Research enforcement: queries, sources, evidence, weakening evidence required"},
       {"order": 5, "name": "cr-validate-source-integrity", "gate": "hard", "checks": "Source snapshot hashes match source-index.yaml records"},
       {"order": 6, "name": "cr-validate-evidence-claim-links", "gate": "hard", "checks": "Every evidence item links to valid source and claim"},
-      {"order": 7, "name": "cr-validate-references", "gate": "hard", "checks": "Bidirectional links: critique->disposition->patch->anchor->experiment"},
-      {"order": 8, "name": "cr-validate-anchors", "gate": "hard", "checks": "Patch targets resolve to draft sections"},
-      {"order": 9, "name": "cr-validate-paper-patches", "gate": "hard", "checks": "Dispositions present, lifecycle transitions valid, Knowledge Implication fields present"},
-      {"order": 10, "name": "cr-validate-knowledge", "gate": "hard", "checks": "knowledge-delta.md content quality"},
+      {"order": 7, "name": "cr-validate-critique", "gate": "hard", "checks": "Critique ledger structure: medium+ critiques have evidence_refs, high/fatal require patch"},
+      {"order": 8, "name": "cr-validate-references", "gate": "hard", "checks": "Bidirectional links: critique->disposition->patch->anchor->experiment"},
+      {"order": 9, "name": "cr-validate-anchors", "gate": "hard", "checks": "Patch targets resolve to draft sections"},
+      {"order": 10, "name": "cr-validate-paper-patches", "gate": "hard", "checks": "Dispositions present, lifecycle transitions valid, Knowledge Implication fields present"},
       {"order": 11, "name": "cr-validate-experiments", "gate": "hard", "checks": "Experiment obligation completeness"},
-      {"order": 12, "name": "cr-validate-human-gates", "gate": "hard", "checks": "No pending thesis-level decisions in human-review-queue.yaml"}
+      {"order": 12, "name": "cr-validate-knowledge", "gate": "hard", "checks": "knowledge-delta.yaml content quality"},
+      {"order": 13, "name": "cr-validate-human-gates", "gate": "hard", "checks": "No pending thesis-level decisions in human-review-queue.yaml"},
+      {"order": 14, "name": "cr-validate-paper-completeness", "gate": "hard", "checks": "Paper draft contains all required sections and anchors"}
     ]
   }
 }
