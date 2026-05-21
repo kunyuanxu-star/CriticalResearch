@@ -42,14 +42,24 @@ fi
 check_artifact() {
     local key="$1"
     case "$key" in
-        report)              echo "$ROUND_DIR/report.md" ;;
-        evidence_update)     echo "$ROUND_DIR/evidence-ledger.yaml" ;;
-        critique_update)     echo "$ROUND_DIR/critique-ledger.yaml" ;;
-        writing_diff)        echo "$ROUND_DIR/writing-diff.yaml" ;;
-        knowledge_delta)     echo "$ROUND_DIR/knowledge-delta.yaml" ;;
-        paper_patch)         echo "$ROUND_DIR/patches" ;;
-        experiment_obligation) echo "$ROUND_DIR/experiment-obligations.yaml" ;;
-        *)                   echo "" ;;
+        report)
+            echo "$ROUND_DIR/report.md" ;;
+        evidence_ledger|evidence_update)
+            echo "$ROUND_DIR/evidence-ledger.yaml" ;;
+        critique_ledger|critique_update)
+            echo "$ROUND_DIR/critique-ledger.yaml" ;;
+        writing_diff_yaml|writing_diff)
+            echo "$ROUND_DIR/writing-diff.yaml" ;;
+        knowledge_delta)
+            echo "$ROUND_DIR/knowledge-delta.yaml" ;;
+        knowledge_apply_log)
+            echo "$ROUND_DIR/knowledge-apply-log.yaml" ;;
+        paper_patch)
+            echo "$ROUND_DIR/patches" ;;
+        experiment_obligations|experiment_obligation)
+            echo "$ROUND_DIR/experiment-obligations.yaml" ;;
+        *)
+            echo "" ;;
     esac
 }
 

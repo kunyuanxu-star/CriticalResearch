@@ -63,12 +63,17 @@ for i in $(seq 0 $((UPDATE_COUNT - 1))); do
     UID_VAL=$(yq -r ".updates[$i].update_id // \"\"" "$DELTA" 2>/dev/null || echo "")
     UOP=$(yq -r ".updates[$i].operation // \"\"" "$DELTA" 2>/dev/null || echo "")
     UTYPE=$(yq -r ".updates[$i].update_type // \"\"" "$DELTA" 2>/dev/null || echo "")
+    USCOPE=$(yq -r ".updates[$i].scope // """ "$DELTA" 2>/dev/null || echo "")
     TARGET=$(yq -r ".updates[$i].target_path // \"\"" "$DELTA" 2>/dev/null || echo "")
     RULE_TITLE=$(yq -r ".updates[$i].rule.title // \"\"" "$DELTA" 2>/dev/null || echo "")
     RULE_STMT=$(yq -r ".updates[$i].rule.statement // \"\"" "$DELTA" 2>/dev/null || echo "")
     SUMMARY=$(yq -r ".updates[$i].content_summary // \"\"" "$DELTA" 2>/dev/null || echo "")
 
     if [ -z "$TARGET" ] || [ "$TARGET" = "null" ]; then
+        if [ "$USCOPE" != "project_local" ]; then
+            echo "FAIL $UID_VAL: non-local update (scope=$USCOPE) missing target_path" >&2
+            exit 2
+        fi
         echo "  SKIP $UID_VAL: no target_path — project-local only"
         continue
     fi
@@ -114,6 +119,10 @@ MD
                 echo "$SUMMARY" >> "$TARGET_PATH"
                 echo "  UPDATED $UID_VAL: $TARGET"
             else
+                if [ "$USCOPE" != "project_local" ]; then
+                    echo "FAIL $UID_VAL: target not found for non-local $UOP: $TARGET_PATH" >&2
+                    exit 2
+                fi
                 echo "  WARN $UID_VAL: target not found ($TARGET_PATH) — skipping"
                 continue
             fi
@@ -128,6 +137,10 @@ MD
             ;;
 
         *)
+            if [ "$USCOPE" != "project_local" ]; then
+                echo "FAIL $UID_VAL: unknown operation '$UOP' for non-local update (scope=$USCOPE)" >&2
+                exit 2
+            fi
             echo "  SKIP $UID_VAL: unknown operation '$UOP'"
             continue
             ;;

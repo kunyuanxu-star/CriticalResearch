@@ -80,9 +80,12 @@ if [ -f "$DELTA_FILE" ]; then
                 fi
             fi
 
-            # Each update should be traceable to a patch, critique, or evidence.
-            if [ "${HAS_PATCHES:-0}" -eq 0 ] && [ "${HAS_CRITS:-0}" -eq 0 ]; then
-                warn "  $UID_VAL: not linked to any patch or critique"
+            # Each non-project-local update must be traceable to a patch, critique, or evidence.
+            if [ "$USCOPE" != "project_local" ]; then
+                if [ "${HAS_PATCHES:-0}" -eq 0 ] && [ "${HAS_CRITS:-0}" -eq 0 ]; then
+                    fail "  $UID_VAL (scope=$USCOPE): not linked to any patch, critique, or evidence"
+                    ALL_PASSED=false
+                fi
             fi
 
             pass "  $UID_VAL: type=$UTYPE op=$UOP scope=$USCOPE"

@@ -79,7 +79,16 @@
       "validator": "cr-validate-experiments",
       "gate": "hard",
       "tier": "L1",
-      "description": "Experiment obligation linked to a claim-level patch",
+      "description": "Individual experiment obligation spec linked to a claim-level patch",
+      "modes": ["paper"]
+    },
+    "experiment_obligations": {
+      "path_template": "rounds/round-{round_num}/experiment-obligations.yaml",
+      "schema": "schemas/experiment-obligations.schema.json",
+      "validator": "cr-validate-experiments",
+      "gate": "hard",
+      "tier": "L1",
+      "description": "Round-level experiment obligation index; encodes explicit no-op with validated_patches",
       "modes": ["paper"]
     },
     "knowledge_delta": {
@@ -92,11 +101,11 @@
     },
     "knowledge_apply_log": {
       "path_template": "rounds/round-{round_num}/knowledge-apply-log.yaml",
-      "schema": null,
-      "validator": null,
+      "schema": "schemas/knowledge-apply-log.schema.json",
+      "validator": "cr-validate-knowledge",
       "gate": "hard",
       "tier": "L1",
-      "description": "Proof that knowledge updates were written back to the global bank",
+      "description": "Proof that knowledge-delta updates were written back to _cr/knowledge with before/after sha256",
       "modes": ["paper"]
     },
     "literature_delta": {
