@@ -20,6 +20,15 @@ cr workspace init
 cr start toy-paper --profile systems
 PROJ="$TMP/toy-paper"
 
+# Populate claim-ledger.yaml with test claims.
+cat > "$PROJ/state/claim-ledger.yaml" << YAML
+schema_version: "1.0.0"
+claims:
+  - claim_id: CLM-001
+    text: "The system provides isolation under tested conditions."
+    status: active
+YAML
+
 # 2. Open a paper-mode round
 cr round toy-paper --mode paper
 

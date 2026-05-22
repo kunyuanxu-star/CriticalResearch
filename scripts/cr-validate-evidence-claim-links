@@ -36,15 +36,25 @@ if [ -f "$SRC_INDEX" ]; then
     KNOWN_SRC=$(yq -r '.sources[].source_id // ""' "$SRC_INDEX" 2>/dev/null | sort -u | tr '\n' ' ')
 fi
 
-# # Collect known claim IDs from claim-ledger.yaml (L0 authoritative), fallback to claim-graph.md.
+# Collect known claim IDs from claim-ledger.yaml (L0 authoritative), fallback to claim-graph.md.
 KNOWN_CLM=""
 if [ -f "$CLAIM_LEDGER" ]; then
-    KNOWN_CLM=$(yq -r '.claims[]?.claim_id // ""' "$CLAIM_LEDGER" 2>/dev/null | sort -u | tr '
-' ' ')
+    KNOWN_CLM=$(yq -r '.claims[]?.claim_id // ""' "$CLAIM_LEDGER" 2>/dev/null | sort -u | tr '\n' ' ')
 fi
 if [ -z "$KNOWN_CLM" ] && [ -f "$CLAIM_GRAPH" ]; then
-    KNOWN_CLM=$(grep -oE 'CLM-[0-9]{3}' "$CLAIM_GRAPH" 2>/dev/null | sort -u | tr '
-' ' ')
+    KNOWN_CLM=$(grep -oE 'CLM-[0-9]{3}' "$CLAIM_GRAPH" 2>/dev/null | sort -u | tr '\n' ' ')
+fi
+
+# Paper mode: claim-ledger.yaml is the hard truth source. If missing or empty, fail.
+WM=$(grep -E '^workflow_mode:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^workflow_mode:\s*//' | xargs || echo "")
+if [ "$WM" = "paper" ]; then
+    if [ ! -f "$CLAIM_LEDGER" ]; then
+        fail "claim-ledger.yaml not found — required for evidence validation in paper mode"
+        ALL_PASSED=false
+    elif [ -z "$KNOWN_CLM" ]; then
+        fail "claim-ledger.yaml has no claims — cannot validate evidence claim links"
+        ALL_PASSED=false
+    fi
 fi
 
 EVID_COUNT=$(yq -r '.evidence | length // 0' "$EVID_FILE" 2>/dev/null || echo "0")

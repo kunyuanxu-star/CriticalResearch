@@ -43,6 +43,8 @@ for dep in $DEPS; do
     fi
 done
 
+
+ALL_PRESENT=true
     # Check required inputs exist.
     PM=$(yq -r '.workflow_mode // ""' "$STATE_FILE" 2>/dev/null || echo "")
     INPUTS=$(yq -r ".phases.$PHASE.required_inputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
@@ -76,7 +78,6 @@ done
 
 # Check required outputs exist.
 REQ=$(yq -r ".phases.$PHASE.required_outputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
-ALL_PRESENT=true
 for output in $REQ; do
     [ -z "$output" ] && continue
     case "$output" in
