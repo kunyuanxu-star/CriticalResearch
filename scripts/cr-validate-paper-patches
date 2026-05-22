@@ -96,12 +96,13 @@ if [ -f "$CRITIQUE_FILE" ]; then
             fi
         fi
     else
-        # Check for exemption.
-        HAS_EXEMPTION=$(grep -cE 'critique.*(exempt|not applicable|no claims|setup round)' "$CRITIQUE_FILE" 2>/dev/null || echo 0)
-        if [ "$HAS_EXEMPTION" -ge 1 ]; then
-            pass "Critique exemption recorded — no dispositions required"
+        # Check for structured no-op record in critique-ledger.yaml.
+        NO_CRIT=$(yq -r '.no_medium_plus_critique.reason // ""' "$CRITIQUE_FILE" 2>/dev/null || echo "")
+        if [ -n "$NO_CRIT" ] && [ "$NO_CRIT" != "null" ]; then
+            pass "Structured no-critique record: ${NO_CRIT:0:80}..."
         else
-            warn "No medium+ critiques found and no exemption recorded"
+            fail "No medium+ critiques found and no no_medium_plus_critique record in critique-ledger.yaml"
+            ALL_PASSED=false
         fi
     fi
 fi

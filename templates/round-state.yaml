@@ -40,7 +40,7 @@ phases:
     required_outputs:
       - paper-state.yaml
       - loaded-knowledge.yaml
-    validators:
+    phase_validators_hint:
       - cr-validate-schema
 
   define_round_target:
@@ -65,7 +65,7 @@ phases:
     required_inputs:
       - round-target.yaml
       - state/claim-ledger.yaml
-    validators:
+    phase_validators_hint:
       - cr-validate-research
   run_retrieval:
     status: blocked
@@ -88,7 +88,7 @@ phases:
 
     required_inputs:
       - raw-sources
-    validators:
+    phase_validators_hint:
       - cr-validate-source-integrity
   normalize_evidence:
     status: blocked
@@ -110,7 +110,7 @@ phases:
 
     required_inputs:
       - evidence-ledger.yaml
-    validators:
+    phase_validators_hint:
       []
   adversarial_critique:
     status: blocked
@@ -132,7 +132,7 @@ phases:
 
     required_inputs:
       - critique-ledger.yaml
-    validators:
+    phase_validators_hint:
       []
   generate_paper_patches:
     status: blocked
@@ -154,7 +154,7 @@ phases:
 
     required_inputs:
       - patches
-    validators:
+    phase_validators_hint:
       - cr-validate-experiments
   apply_patches_to_draft:
     status: blocked
@@ -180,7 +180,7 @@ phases:
       - patches
       - evidence-ledger.yaml
       - writing-diff.yaml
-    validators:
+    phase_validators_hint:
       []
   close_round:
     status: blocked

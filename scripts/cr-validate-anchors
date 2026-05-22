@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
-# cr-validate-anchors — Paper draft anchor validation.
-# Checks that patches targeting draft sections can resolve their anchors
-# against the current paper-draft.md.
+# cr-validate-anchors — Anchor resolution validation.
+# Checks that patch affected_anchors resolve to declared anchors in paper-draft.md.
+# Patch application proof (after_text, writing-diff.yaml) is handled by
+# cr-validate-patch-application — this script only checks anchor existence.
 #
 # Usage: cr-validate-anchors <round_dir> <project_dir>
-#
-# Exit codes:
-#   0 — anchors valid
-#   2 — one or more failures (hard gate for dangling applied patches)
 
 set -euo pipefail
 
@@ -22,96 +19,78 @@ if [ -z "$ROUND_DIR" ] || [ -z "$PROJECT_DIR" ]; then
     exit 2
 fi
 
-ROUND_NAME="$(basename "$ROUND_DIR")"
 echo ""
-echo "══ Anchor Validation: $ROUND_NAME ══"
+echo "══ Anchor Validation: $(basename "$ROUND_DIR") ══"
 
 DRAFT_FILE="$PROJECT_DIR/writing/paper-draft.md"
+ALL_PASSED=true
 
-# Valid anchor identifiers.
-VALID_ANCHORS=("abstract" "introduction" "background" "motivation" "design" "implementation" "evaluation_plan" "related_work" "discussion" "conclusion")
-
-# Check paper draft exists.
 if [ ! -f "$DRAFT_FILE" ]; then
     fail "paper-draft.md not found at $DRAFT_FILE"
     cr_exit_summary
 fi
 
-# Extract declared anchors from paper-draft.md.
+# Collect all declared anchors from the draft.
+# Supports both formats: <!-- CR-ANCHOR: ID --> and <!-- anchor: id -->
 declare -A DRAFT_ANCHORS
 while IFS= read -r line; do
-    anchor=$(echo "$line" | grep -oE 'anchor:\s*([a-z_][a-z0-9_.]*)' | sed 's/anchor:\s*//' || echo "")
-    [ -n "$anchor" ] && DRAFT_ANCHORS[$anchor]=1
+    # CR-ANCHOR format
+    cr_a=$(echo "$line" | grep -oE 'CR-ANCHOR:\s*([A-Za-z0-9_-]+)' | sed 's/CR-ANCHOR:\s*//' || echo "")
+    [ -n "$cr_a" ] && DRAFT_ANCHORS["$cr_a"]=1
+    # Legacy anchor format
+    legacy_a=$(echo "$line" | grep -oE 'anchor:\s*([a-z_][a-z0-9_.]*)' | sed 's/anchor:\s*//' || echo "")
+    [ -n "$legacy_a" ] && DRAFT_ANCHORS["$legacy_a"]=1
 done < "$DRAFT_FILE"
 
-# Also add base section names as implicit anchors (from markdown headers).
-for sec in "${VALID_ANCHORS[@]}"; do
-    if grep -qi "$sec" "$DRAFT_FILE" 2>/dev/null; then
-        DRAFT_ANCHORS[$sec]=1
-    fi
-done
-
 if [ ${#DRAFT_ANCHORS[@]} -eq 0 ]; then
-    warn "No anchors found in paper-draft.md — add HTML comments for anchor targeting"
+    warn "No anchors found in paper-draft.md"
 else
-    pass "Found ${#DRAFT_ANCHORS[@]} anchors in paper-draft.md"
+    pass "Found ${#DRAFT_ANCHORS[@]} anchor(s) in paper-draft.md"
 fi
 
 # Check patch anchors resolve.
 PATCHES_DIR="$ROUND_DIR/patches"
-if [ -d "$PATCHES_DIR" ]; then
-    for patch_file in "$PATCHES_DIR"/PP-*.yaml; do
-        [ ! -f "$patch_file" ] && continue
-        PP_ID=$(basename "$patch_file" .yaml)
-        LIFECYCLE=$(grep -E '^lifecycle_status:' "$patch_file" 2>/dev/null | sed 's/^lifecycle_status:\s*//' | xargs || echo "")
-
-        # Extract affected_anchors from the patch.
-        PATCH_ANCHORS=$(grep -E '^\s+-\s+(abstract|introduction|background|motivation|design|implementation|evaluation_plan|related_work|discussion|conclusion)' "$patch_file" 2>/dev/null | sed 's/^\s*-\s*//' || echo "")
-
-        # Recorded patches: verify draft was actually edited (hash change + mtime).
-        if [ "$LIFECYCLE" = "recorded" ]; then
-            DIFF_LOG="$PROJECT_DIR/writing/diff-log.md"
-            PATCH_IN_DIFF=false
-            [ -f "$DIFF_LOG" ] && grep -q "$PP_ID" "$DIFF_LOG" 2>/dev/null && PATCH_IN_DIFF=true
-
-            # Compute current draft hash.
-            DRAFT_HASH=""
-            if [ -f "$DRAFT_FILE" ] && command -v shasum >/dev/null 2>&1; then
-                DRAFT_HASH=$(shasum -a 256 "$DRAFT_FILE" 2>/dev/null | cut -d' ' -f1)
-            elif [ -f "$DRAFT_FILE" ] && command -v sha256sum >/dev/null 2>&1; then
-                DRAFT_HASH=$(sha256sum "$DRAFT_FILE" 2>/dev/null | cut -d' ' -f1)
-            fi
-
-            # Check mtime as fallback.
-            PATCH_UPDATED=$(grep -E '^updated_at:' "$patch_file" 2>/dev/null | sed 's/^updated_at:\s*"//;s/"$//' | xargs || echo "")
-            DRAFT_MODIFIED=false
-            if [ -f "$DRAFT_FILE" ] && [ -n "$PATCH_UPDATED" ]; then
-                PATCH_TS=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$PATCH_UPDATED" +%s 2>/dev/null || echo 0)
-                DRAFT_TS=$(date -r "$DRAFT_FILE" +%s 2>/dev/null || echo 0)
-                [ "${DRAFT_TS:-0}" -gt "${PATCH_TS:-0}" ] && DRAFT_MODIFIED=true
-            fi
-
-            if [ "$PATCH_IN_DIFF" = true ] && [ "$DRAFT_MODIFIED" = true ]; then
-                [ -n "$DRAFT_HASH" ] && pass "$PP_ID: recorded patch verified (diff-log + draft modified, hash=$DRAFT_HASH)" || pass "$PP_ID: recorded patch verified (diff-log + draft modified)"
-            elif [ "$PATCH_IN_DIFF" = true ]; then
-                fail "$PP_ID: lifecycle=recorded with diff-log entry but paper-draft.md unchanged — apply changes to draft before round close (hard gate)"
-            else
-                fail "$PP_ID: lifecycle=recorded but no diff-log entry — run cr-apply-paper-patch first (hard gate)"
-            fi
-        fi
-
-        for anchor in $PATCH_ANCHORS; do
-            if [ -n "${DRAFT_ANCHORS[$anchor]:-}" ]; then
-                pass "$PP_ID → $anchor (resolved)"
-            else
-                if [ "$LIFECYCLE" = "applied" ] || [ "$LIFECYCLE" = "recorded" ]; then
-                    fail "$PP_ID → $anchor: applied/recorded patch targets missing anchor in paper-draft.md"
-                else
-                    warn "$PP_ID → $anchor: anchor not yet in paper-draft.md (patch not yet applied)"
-                fi
-            fi
-        done
-    done
+if [ ! -d "$PATCHES_DIR" ]; then
+    pass "No patches directory — nothing to validate"
+    cr_exit_summary
 fi
 
+for patch_file in "$PATCHES_DIR"/PP-*.yaml; do
+    [ -f "$patch_file" ] || continue
+    PP_ID=$(basename "$patch_file" .yaml)
+
+    # Read lifecycle and affected_anchors via yq.
+    LIFECYCLE=$(yq -r '.lifecycle_status // ""' "$patch_file" 2>/dev/null || echo "")
+    ANCHOR_COUNT=$(yq -r '.affected_anchors | length // 0' "$patch_file" 2>/dev/null || echo "0")
+
+    if [ "${ANCHOR_COUNT:-0}" -eq 0 ]; then
+        warn "$PP_ID: no affected_anchors declared"
+        continue
+    fi
+
+    for i in $(seq 0 $((ANCHOR_COUNT - 1))); do
+        anchor=$(yq -r ".affected_anchors[$i] // \"\"" "$patch_file" 2>/dev/null || echo "")
+        [ -z "$anchor" ] && continue
+
+        if [ -n "${DRAFT_ANCHORS[$anchor]:-}" ]; then
+            pass "$PP_ID -> $anchor (resolved)"
+        else
+            case "$LIFECYCLE" in
+                applied|recorded|validated)
+                    fail "$PP_ID -> $anchor: anchor not found in draft (lifecycle=$LIFECYCLE)"
+                    ALL_PASSED=false
+                    ;;
+                *)
+                    warn "$PP_ID -> $anchor: anchor not yet in draft (lifecycle=$LIFECYCLE)"
+                    ;;
+            esac
+        fi
+    done
+done
+
+if [ "$ALL_PASSED" = false ]; then
+    cr_exit_summary
+fi
+
+pass "Anchor validation passed"
 cr_exit_summary

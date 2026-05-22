@@ -34,7 +34,14 @@ ALL_PASSED=true
 
 CRIT_COUNT=$(yq -r '.critiques | length // 0' "$CRITIQUE_FILE" 2>/dev/null || echo "0")
 if [ "${CRIT_COUNT:-0}" -eq 0 ]; then
-    fail "No critiques in critique-ledger.yaml"
+    # Allow structured no-op: no_medium_plus_critique with reason and checked_claims.
+    NO_CRIT_REASON=$(yq -r '.no_medium_plus_critique.reason // ""' "$CRITIQUE_FILE" 2>/dev/null || echo "")
+    CHECKED=$(yq -r '.no_medium_plus_critique.checked_claims | length // 0' "$CRITIQUE_FILE" 2>/dev/null || echo "0")
+    if [ -n "$NO_CRIT_REASON" ] && [ "$NO_CRIT_REASON" != "null" ] && [ "${CHECKED:-0}" -gt 0 ]; then
+        pass "No medium+ critiques with explicit no-op record: ${NO_CRIT_REASON:0:80}..."
+        cr_exit_summary
+    fi
+    fail "No critiques in critique-ledger.yaml and no structured no_medium_plus_critique record"
     cr_exit_summary
 fi
 
