@@ -38,12 +38,13 @@ EXPERIMENTS_DIR="$ROUND_DIR/experiments"
 }
 
 OBL_COUNT=$(yq -r '.obligations | length // 0' "$OBLIGATIONS_FILE" 2>/dev/null || echo "0")
-NO_REASON=$(yq -r '.no_obligation_reason // ""' "$OBLIGATIONS_FILE" 2>/dev/null || echo "")
+NO_REASON=$(yq -r '.no_experiment_needed_reason // ""' "$OBLIGATIONS_FILE" 2>/dev/null || echo "")
+[ -z "$NO_REASON" ] || [ "$NO_REASON" = "null" ] && NO_REASON=""
 
 if [ "${OBL_COUNT:-0}" -eq 0 ]; then
     # ── No-op mode ──────────────────────────────────────────────────
     if [ -z "$NO_REASON" ] || [ "$NO_REASON" = "null" ]; then
-        fail "obligations is empty but no_obligation_reason is missing"
+        fail "obligations is empty but no_experiment_needed_reason is missing"
         ALL_PASSED=false
     else
         pass "No experiment obligations: ${NO_REASON:0:80}..."

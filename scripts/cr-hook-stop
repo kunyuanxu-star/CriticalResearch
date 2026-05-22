@@ -77,7 +77,7 @@ if [ -z "$PROJECT_DIR" ]; then
 fi
 
 if [ -z "$PROJECT_DIR" ]; then
-    echo '{"decision":"allow"}'
+    echo '{"decision":"approve"}'
     exit 0
 fi
 

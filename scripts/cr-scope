@@ -382,7 +382,25 @@ YAML
         ;;
 
     close)
+        # Prevent scope close when a full-round paper round is in progress.
         if [ -f "$SESSION_FILE" ]; then
+            scoped_project=$(yq -r '.project_id // ""' "$SESSION_FILE" 2>/dev/null || echo "")
+            if [ -n "$scoped_project" ] && [ -d "$WORKSPACE_ROOT/$scoped_project" ]; then
+                active_rnd=$(jq -r '.active_round // 0' "$WORKSPACE_ROOT/$scoped_project/state/project-state.json" 2>/dev/null || echo "0")
+                if [ "$active_rnd" != "null" ] && [ "$active_rnd" -gt 0 ] 2>/dev/null; then
+                    rnd_num=$(printf "%03d" "$active_rnd")
+                    state_file="$WORKSPACE_ROOT/$scoped_project/rounds/round-$rnd_num/state.yaml"
+                    if [ -f "$state_file" ]; then
+                        full_round=$(yq -r '.execution_policy.full_round_required // false' "$state_file" 2>/dev/null || echo "false")
+                        if [ "$full_round" = "true" ]; then
+                            echo "DENY: Cannot close scope while a full-round paper round is active."
+                            echo "  Complete all 37 phases and close the round first."
+                            echo "  Round: $active_rnd, project: $scoped_project"
+                            exit 1
+                        fi
+                    fi
+                fi
+            fi
             rm "$SESSION_FILE"
             echo "Scope released."
         else
@@ -597,7 +615,7 @@ YAML
                             ;;
                     esac
                     ;;
-                write_paper_patch|generate_patch|*patch*)
+                write_paper_patch|generate_patch|write_patch|create_patch)
                     case "$REL_PATH" in
                         */patches/*|*patches/PP-*)
                             echo "DENY:Phase '$CURRENT_PHASE' forbids patch creation. Use S25 (generate_paper_patches) to write patches."

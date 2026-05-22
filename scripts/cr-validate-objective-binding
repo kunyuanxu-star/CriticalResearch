@@ -36,7 +36,8 @@ fi
 
 OBJ_TEXT=$(yq -r '.normalized_objective // ""' "$OBJECTIVE" 2>/dev/null || echo "")
 RAW_REQ=$(yq -r '.raw_user_request // ""' "$OBJECTIVE" 2>/dev/null || echo "")
-SCOPE_POLICY=$(yq -r '.scope_policy.objective_may_limit_scope // true' "$OBJECTIVE" 2>/dev/null || echo "true")
+SCOPE_POLICY=$(yq -r '.scope_policy.objective_may_limit_scope' "$OBJECTIVE" 2>/dev/null || echo "true")
+[ -z "$SCOPE_POLICY" ] || [ "$SCOPE_POLICY" = "null" ] && SCOPE_POLICY="true"
 
 [ -n "$OBJ_TEXT" ] && pass "Round objective recorded: ${OBJ_TEXT:0:80}" || { fail "round-objective.yaml has no normalized_objective"; }
 [ "$SCOPE_POLICY" = "false" ] && pass "Objective may not limit scope" || { fail "objective_may_limit_scope must be false"; }

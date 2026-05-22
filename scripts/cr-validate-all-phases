@@ -17,10 +17,7 @@ ROUND_DIR="${2:-}"
 if [ -z "$PROJECT_DIR" ] || [ -z "$ROUND_DIR" ]; then
     echo "Usage: cr-validate-all-phases <project_dir> <round_dir> [preclose|postclose]" >&2
     exit 2
-
-MODE="${3:-postclose}"
 fi
-
 
 MODE="${3:-postclose}"
 STATE_FILE="$ROUND_DIR/state.yaml"

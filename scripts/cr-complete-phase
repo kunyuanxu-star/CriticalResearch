@@ -77,8 +77,10 @@ fi
 
 # ── Phase-specific completion predicate ─────────────────────────────
 
-COMPLETION_ALL_OUTPUTS=$(yq -r ".phases.$PHASE.completion_predicate.all_outputs_exist // true" "$STATE_FILE" 2>/dev/null || echo "true")
-COMPLETION_VALIDATOR=$(yq -r ".phases.$PHASE.completion_predicate.validator_passed // true" "$STATE_FILE" 2>/dev/null || echo "true")
+COMPLETION_ALL_OUTPUTS=$(yq -r ".phases.$PHASE.completion_predicate.all_outputs_exist" "$STATE_FILE" 2>/dev/null || echo "true")
+[ -z "$COMPLETION_ALL_OUTPUTS" ] || [ "$COMPLETION_ALL_OUTPUTS" = "null" ] && COMPLETION_ALL_OUTPUTS="true"
+COMPLETION_VALIDATOR=$(yq -r ".phases.$PHASE.completion_predicate.validator_passed" "$STATE_FILE" 2>/dev/null || echo "true")
+[ -z "$COMPLETION_VALIDATOR" ] || [ "$COMPLETION_VALIDATOR" = "null" ] && COMPLETION_VALIDATOR="true"
 
 if [ "$COMPLETION_ALL_OUTPUTS" != "true" ]; then
     echo "Error: completion_predicate.all_outputs_exist is false for phase '$PHASE'" >&2

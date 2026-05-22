@@ -312,6 +312,28 @@ LOGEOF
             exit 2
         fi
 
+        # Block forward jumps when full_round_required is true.
+        FULL_ROUND=$(yq -r '.execution_policy.full_round_required // false' "$STATE_FILE" 2>/dev/null || echo "false")
+        if [ "$FULL_ROUND" = "true" ]; then
+            CURRENT=$(get_current_phase)
+            # Find indices in phase_order.
+            CURRENT_IDX=-1
+            NEW_IDX=-1
+            IDX=0
+            while IFS= read -r p; do
+                [ -z "$p" ] && continue
+                [ "$p" = "$CURRENT" ] && CURRENT_IDX=$IDX
+                [ "$p" = "$NEW_PHASE" ] && NEW_IDX=$IDX
+                IDX=$((IDX + 1))
+            done < <(yq -r '.phase_order[]' "$STATE_FILE" 2>/dev/null)
+            if [ "$NEW_IDX" -gt "$CURRENT_IDX" ] 2>/dev/null; then
+                echo "Error: Cannot jump forward from '$CURRENT' (phase $CURRENT_IDX) to '$NEW_PHASE' (phase $NEW_IDX)." >&2
+                echo "  set-phase in repair mode only allows backward or same-phase jumps." >&2
+                echo "  Use 'cr step <project> advance' for forward progression." >&2
+                exit 2
+            fi
+        fi
+
         PREV_PHASE=$(yq -r '.current_phase // "none"' "$STATE_FILE" 2>/dev/null || echo "none")
         yq -i ".current_phase = \"$NEW_PHASE\"" "$STATE_FILE" 2>/dev/null || true
         echo "Current phase set to: $NEW_PHASE"

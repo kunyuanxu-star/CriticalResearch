@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# cr-hook-user-prompt-submit — UserPromptSubmit hook: inject scope context.
-# Runs before each user prompt is processed. Injects the current session scope
-# and project state so the model never forgets which project it's working on.
+# cr-hook-user-prompt-submit — UserPromptSubmit hook: inject scope + phase mandate.
+# Runs before each user prompt. Injects:
+# 1. Session scope context (write boundaries)
+# 2. Mandatory phase execution instruction (if execution_policy.full_round_required)
 #
-# Exit codes:
-#   0 — always (non-blocking, context injection only)
+# This ensures the agent CANNOT forget which phase it must execute.
+# Every user message is a reminder to execute the current phase.
+#
+# Exit: 0 always (non-blocking, context injection only)
 
 set -euo pipefail
 
@@ -19,17 +22,259 @@ if [ ! -d "$WORKSPACE_ROOT/_cr" ]; then
     exit 0
 fi
 
-# Resolve scope context.
+# ── Part 1: Scope context ──────────────────────────────────────
+
 SCOPE_CTX=$("$SCOPE_CLI" resolve --for-session 2>/dev/null || echo "")
 
-if [ -z "$SCOPE_CTX" ]; then
+# ── Part 2: Phase execution mandate ────────────────────────────
+# Only generated when full_round_required=true and phases are incomplete.
+
+PHASE_CTX=""
+PROJECT_DIR=""
+
+# Resolve project directory (priority: session scope > direct project > active-project).
+SESSIONS_DIR="$WORKSPACE_ROOT/_cr/sessions"
+if [ -d "$SESSIONS_DIR" ] && [ -n "$(ls -A "$SESSIONS_DIR" 2>/dev/null)" ]; then
+    SESSION_FILE="$SESSIONS_DIR/$(cr_session_id).yaml"
+    if [ -f "$SESSION_FILE" ]; then
+        SCOPED_PROJECT=$(yq -r '.project_id // ""' "$SESSION_FILE" 2>/dev/null || echo "")
+        SCOPE_TYPE=$(yq -r '.scope_type // ""' "$SESSION_FILE" 2>/dev/null || echo "")
+        if [ -n "$SCOPED_PROJECT" ] && [ "$SCOPE_TYPE" = "single_project_write" ]; then
+            PROJECT_DIR="$WORKSPACE_ROOT/$SCOPED_PROJECT"
+            [ -d "$PROJECT_DIR" ] || PROJECT_DIR=""
+        fi
+    fi
+fi
+
+# Fallback: _cr/active-project
+if [ -z "$PROJECT_DIR" ]; then
+    ACTIVE_PROJECT_FILE="$WORKSPACE_ROOT/_cr/active-project"
+    if [ -f "$ACTIVE_PROJECT_FILE" ]; then
+        ACTIVE_PROJECT=$(cat "$ACTIVE_PROJECT_FILE")
+        PROJECT_DIR="$WORKSPACE_ROOT/$ACTIVE_PROJECT"
+        [ -d "$PROJECT_DIR" ] || PROJECT_DIR=""
+    fi
+fi
+
+# Try direct project directory.
+if [ -z "$PROJECT_DIR" ]; then
+    if [ -f "$WORKSPACE_ROOT/state/project-state.json" ]; then
+        PROJECT_DIR="$WORKSPACE_ROOT"
+    fi
+fi
+
+# Generate phase execution mandate if we have an active paper round.
+if [ -n "$PROJECT_DIR" ]; then
+    STATE_FILE="$PROJECT_DIR/state/project-state.json"
+    if [ -f "$STATE_FILE" ]; then
+        ACTIVE_ROUND=$(jq -r '.active_round // empty' "$STATE_FILE" 2>/dev/null || echo "")
+        if [ -n "$ACTIVE_ROUND" ] && [ "$ACTIVE_ROUND" != "null" ]; then
+            ROUND_NUM=$(printf "%03d" "$ACTIVE_ROUND")
+            ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
+            ROUND_STATE="$ROUND_DIR/state.yaml"
+
+            if [ -f "$ROUND_STATE" ]; then
+                FULL_ROUND=$(yq -r '.execution_policy.full_round_required' "$ROUND_STATE" 2>/dev/null || echo "false")
+                [ -z "$FULL_ROUND" ] || [ "$FULL_ROUND" = "null" ] && FULL_ROUND="false"
+
+                if [ "$FULL_ROUND" = "true" ]; then
+                    CURRENT_PHASE=$(yq -r '.current_phase // "unknown"' "$ROUND_STATE" 2>/dev/null || echo "unknown")
+                    PHASE_STATUS=$(yq -r ".phases.\"$CURRENT_PHASE\".status // \"unknown\"" "$ROUND_STATE" 2>/dev/null || echo "unknown")
+                    PHASE_TOTAL=$(yq -r '.phase_order | length' "$ROUND_STATE" 2>/dev/null || echo "37")
+                    PHASE_COMPLETE=$(yq -r '[.phases | to_entries[] | select(.value.status=="complete")] | length' "$ROUND_STATE" 2>/dev/null || echo "0")
+                    PROJ_NAME=$(basename "$PROJECT_DIR")
+                    WF_MODE=$(yq -r '.workflow_mode // "paper"' "$ROUND_STATE" 2>/dev/null || echo "paper")
+
+                    # Get required outputs and check which are missing.
+                    REQ=$(yq -r ".phases.\"$CURRENT_PHASE\".required_outputs // [] | .[]" "$ROUND_STATE" 2>/dev/null || echo "")
+                    MISSING_LINES=""
+                    MISSING_COUNT=0
+                    for output in $REQ; do
+                        [ -z "$output" ] && continue
+                        case "$output" in
+                            *.yaml|*.md|*.json)
+                                if [ -f "$ROUND_DIR/$output" ] || [ -f "$PROJECT_DIR/$output" ]; then
+                                    continue
+                                fi
+                                ;;
+                            raw-sources|source-notes|patches|experiments)
+                                if [ -d "$ROUND_DIR/$output" ] && [ -n "$(ls -A "$ROUND_DIR/$output" 2>/dev/null)" ]; then
+                                    continue
+                                fi
+                                ;;
+                        esac
+                        if [ "$MISSING_COUNT" -eq 0 ]; then
+                            MISSING_LINES="   [MISSING] ${output}"
+                        else
+                            MISSING_LINES="${MISSING_LINES}"$'\n'"   [MISSING] ${output}"
+                        fi
+                        MISSING_COUNT=$((MISSING_COUNT + 1))
+                    done
+
+                    # Get required inputs.
+                    INPUTS=$(yq -r ".phases.\"$CURRENT_PHASE\".required_inputs // [] | .[]" "$ROUND_STATE" 2>/dev/null || echo "")
+                    INPUT_LINES=""
+                    INPUT_COUNT=0
+                    for input in $INPUTS; do
+                        [ -z "$input" ] && continue
+                        if [ "$INPUT_COUNT" -eq 0 ]; then
+                            INPUT_LINES="   ${input}"
+                        else
+                            INPUT_LINES="${INPUT_LINES}"$'\n'"   ${input}"
+                        fi
+                        INPUT_COUNT=$((INPUT_COUNT + 1))
+                    done
+
+                    # Get prompt path.
+                    PHASE_PROMPT=$(yq -r ".phases.\"$CURRENT_PHASE\".prompt // \"\"" "$ROUND_STATE" 2>/dev/null || echo "")
+
+                    # Get allowed actions (compact).
+                    ALLOWED=$(yq -r ".phases.\"$CURRENT_PHASE\".allowed_actions // [] | .[]" "$ROUND_STATE" 2>/dev/null || echo "")
+                    ALLOWED_STR=""
+                    for a in $ALLOWED; do
+                        [ -z "$a" ] && continue
+                        ALLOWED_STR="${ALLOWED_STR} ${a}"
+                    done
+                    ALLOWED_STR=$(echo "$ALLOWED_STR" | xargs)
+
+                    # Get forbidden actions (compact).
+                    FORBIDDEN=$(yq -r ".phases.\"$CURRENT_PHASE\".forbidden_actions // [] | .[]" "$ROUND_STATE" 2>/dev/null || echo "")
+                    FORBIDDEN_STR=""
+                    for f in $FORBIDDEN; do
+                        [ -z "$f" ] && continue
+                        FORBIDDEN_STR="${FORBIDDEN_STR} ${f}"
+                    done
+                    FORBIDDEN_STR=$(echo "$FORBIDDEN_STR" | xargs)
+
+                    # Determine required action text.
+                    ACTION_TEXT=""
+                    case "$PHASE_STATUS" in
+                        open)
+                            ACTION_TEXT="1. Read the phase prompt listed above
+2. Read all required inputs
+3. Create ALL required outputs listed as [MISSING]
+4. Run: cr step ${PROJ_NAME} advance"
+                            ;;
+                        running)
+                            if [ "$MISSING_COUNT" -gt 0 ]; then
+                                ACTION_TEXT="1. Complete creating all [MISSING] outputs above
+2. Run: cr step ${PROJ_NAME} advance"
+                            else
+                                ACTION_TEXT="1. All outputs present. Run: cr step ${PROJ_NAME} advance"
+                            fi
+                            ;;
+                        complete)
+                            ACTION_TEXT="1. ADVANCE NOW: cr step ${PROJ_NAME} advance"
+                            ;;
+                        blocked)
+                            ACTION_TEXT="1. Phase is blocked. Check dependencies.
+2. Run: cr step ${PROJ_NAME} status"
+                            ;;
+                        *)
+                            ACTION_TEXT="1. Check phase status and resolve blockers
+2. Run: cr step ${PROJ_NAME} status"
+                            ;;
+                    esac
+
+                    # Build the phase mandate block.
+                    # Use printf with the template as the format string directly.
+                    PHASE_CTX=$(printf "+==============================================================+
+| CRITICAL: Phase Execution Required                          |
++==============================================================+
+| Project: %-50s |
+| Active Round: %-45s |
+| Workflow Mode: %-43s |
+|                                                              |
+| Execution Policy:                                            |
+|   full_round_required: true                                  |
+|   allow_partial_stop: false                                  |
+|   required_phase_count: %-37s |
+|   stop_only_on: round_closed                                 |
+|                human_decision_required                       |
+|                unrecoverable_tool_error                      |
+|                                                              |
+| Current Phase: %-44s |
+| Phase Status: %-45s |
+| Progress: %s/%s phases complete" \
+                        "$PROJ_NAME" \
+                        "$ACTIVE_ROUND" \
+                        "$WF_MODE" \
+                        "$PHASE_TOTAL" \
+                        "$CURRENT_PHASE" \
+                        "$PHASE_STATUS" \
+                        "$PHASE_COMPLETE" "$PHASE_TOTAL")
+
+                    # Append missing outputs section.
+                    if [ "$MISSING_COUNT" -gt 0 ]; then
+                        MISSING_SECTION=$(printf '|                                                              |
+| Required Outputs (%s missing):                               |
+%s' "$MISSING_COUNT" "$MISSING_LINES")
+                        PHASE_CTX="${PHASE_CTX}"$'\n'"${MISSING_SECTION}"
+                    fi
+
+                    # Append required inputs section.
+                    if [ -n "$INPUT_LINES" ]; then
+                        INPUT_SECTION=$(printf '|                                                              |
+| Required Inputs:                                             |
+%s' "$INPUT_LINES")
+                        PHASE_CTX="${PHASE_CTX}"$'\n'"${INPUT_SECTION}"
+                    fi
+
+                    # Append phase prompt.
+                    if [ -n "$PHASE_PROMPT" ]; then
+                        PHASE_CTX="${PHASE_CTX}"$'\n'"|                                                              |
+| Phase Prompt: ${PHASE_PROMPT}"
+                    fi
+
+                    # Append allowed actions.
+                    if [ -n "$ALLOWED_STR" ]; then
+                        PHASE_CTX="${PHASE_CTX}"$'\n'"|                                                              |
+| Allowed: ${ALLOWED_STR}"
+                    fi
+
+                    # Append forbidden actions.
+                    if [ -n "$FORBIDDEN_STR" ]; then
+                        PHASE_CTX="${PHASE_CTX}"$'\n'"|                                                              |
+| FORBIDDEN: ${FORBIDDEN_STR}"
+                    fi
+
+                    # Append required actions.
+                    PHASE_CTX="${PHASE_CTX}"$'\n'"|                                                              |
+| REQUIRED ACTIONS:                                            |
+| ${ACTION_TEXT}"
+
+                    # Append footer.
+                    PHASE_CTX="${PHASE_CTX}"$'\n'"|                                                              |
+| !! You CANNOT stop until all ${PHASE_TOTAL} phases complete.           |
+| !! The Stop hook will BLOCK session end.                     |
+| !! EXECUTE THIS PHASE NOW. Do anything else = violation.     |
++==============================================================+"
+                fi
+            fi
+        fi
+    fi
+fi
+
+# ── Output ─────────────────────────────────────────────────────
+
+if [ -z "$SCOPE_CTX" ] && [ -z "$PHASE_CTX" ]; then
     exit 0
 fi
 
-# Inject scope as additional context.
-jq -n --arg ctx "$SCOPE_CTX" '{
+COMBINED=""
+[ -n "$SCOPE_CTX" ] && COMBINED="$SCOPE_CTX"
+[ -n "$PHASE_CTX" ] && COMBINED="${COMBINED}"$'\n'"${PHASE_CTX}"
+
+FOOTER=""
+if [ -n "$PHASE_CTX" ]; then
+    FOOTER="You MUST execute the current phase before doing anything else. The full-round execution policy requires all 37 phases to complete. You cannot stop until the round is closed. Create the required outputs, then run: cr step <project> advance"
+elif [ -n "$SCOPE_CTX" ]; then
+    FOOTER="You must respect the write boundary above. Before any write, verify the target belongs to the scoped project. Do not edit _cr metadata, protected state files, or other projects directly. Use cr commands for state mutations."
+fi
+
+jq -n --arg ctx "$COMBINED" --arg footer "$FOOTER" '{
     hookSpecificOutput: {
         hookEventName: "UserPromptSubmit",
-        additionalContext: ("\n" + $ctx + "\n\nYou must respect the write boundary above. Before any write, verify the target belongs to the scoped project. Do not edit _cr metadata, protected state files, or other projects directly. Use cr commands for state mutations.\n")
+        additionalContext: ("\n" + $ctx + "\n\n" + $footer + "\n")
     }
 }'

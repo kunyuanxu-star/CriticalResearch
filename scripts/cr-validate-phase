@@ -713,6 +713,7 @@ case "$PHASE" in
 esac
 
 if [ "$ALL_PRESENT" = false ]; then
+    CR_ERRORS=$((CR_ERRORS + 1))
     cr_exit_summary
 fi
 

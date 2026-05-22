@@ -9,7 +9,7 @@
 #   --force: user explicitly requested stop (override incomplete round)
 #
 # Output (on stdout): JSON for hook decision
-#   {"decision":"allow"} or {"decision":"block","reason":"..."}
+#   {"decision":"approve"} or {"decision":"block","reason":"..."}
 #
 # Exit codes:
 #   0 — allow stop
@@ -25,14 +25,14 @@ FORCE_STOP=false
 [ "${2:-}" = "--force" ] && FORCE_STOP=true
 
 if [ -z "$PROJECT_DIR" ]; then
-    echo '{"decision":"allow"}'
+    echo '{"decision":"approve"}'
     exit 0
 fi
 
 # ── No active project → allow stop ──────────────────────────────
 
 if [ ! -d "$PROJECT_DIR" ]; then
-    echo '{"decision":"allow"}'
+    echo '{"decision":"approve"}'
     exit 0
 fi
 
@@ -40,7 +40,7 @@ fi
 
 STATE_FILE="$PROJECT_DIR/state/project-state.json"
 if [ ! -f "$STATE_FILE" ]; then
-    echo '{"decision":"allow"}'
+    echo '{"decision":"approve"}'
     exit 0
 fi
 
@@ -48,7 +48,7 @@ fi
 
 ACTIVE_ROUND=$(jq -r '.active_round // empty' "$STATE_FILE" 2>/dev/null || echo "")
 if [ -z "$ACTIVE_ROUND" ] || [ "$ACTIVE_ROUND" = "null" ]; then
-    echo '{"decision":"allow"}'
+    echo '{"decision":"approve"}'
     exit 0
 fi
 
@@ -58,7 +58,7 @@ ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
 # ── No round directory → allow stop ─────────────────────────────
 
 if [ ! -d "$ROUND_DIR" ]; then
-    echo '{"decision":"allow"}'
+    echo '{"decision":"approve"}'
     exit 0
 fi
 
@@ -92,7 +92,7 @@ if [ "$ROUND_STATUS" = "complete" ]; then
     PIPELINE="$SCRIPT_DIR/cr-run-validator-pipeline"
     if [ -x "$PIPELINE" ]; then
         if "$PIPELINE" "$PROJECT_DIR" "$ROUND_DIR" 2>/dev/null; then
-            echo '{"decision":"allow"}'
+            echo '{"decision":"approve"}'
             exit 0
         else
             REASON="Round marked complete but validator pipeline failed. Run 'cr validate' to see failures."
@@ -100,7 +100,7 @@ if [ "$ROUND_STATUS" = "complete" ]; then
             exit 1
         fi
     fi
-    echo '{"decision":"allow"}'
+    echo '{"decision":"approve"}'
     exit 0
 fi
 
@@ -125,7 +125,7 @@ if [ -f "$SATISFACTION_FILE" ]; then
         fi
 
         if [ "$SAT_HASH" = "$CURRENT_HASH" ]; then
-            echo '{"decision":"allow"}'
+            echo '{"decision":"approve"}'
             exit 0
         fi
         # Hash mismatch — state changed, satisfaction invalidated.
@@ -136,7 +136,7 @@ fi
 
 if [ "$FORCE_STOP" = true ]; then
     cat << EOF
-{"decision":"allow","reason":"User explicitly requested stop. Active round $ROUND_NUM (status: ${ROUND_STATUS:-unknown}) not complete. Session summary required."}
+{"decision":"approve","reason":"User explicitly requested stop. Active round $ROUND_NUM (status: ${ROUND_STATUS:-unknown}) not complete. Session summary required."}
 EOF
     exit 0
 fi
@@ -145,8 +145,10 @@ fi
 
 # Check execution_policy: if full_round is required, block unless all phases complete.
 if [ -f "$ROUND_DIR/state.yaml" ]; then
-    FULL_ROUND=$(yq -r '.execution_policy.full_round_required // false' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "false")
-    ALLOW_PARTIAL=$(yq -r '.execution_policy.allow_partial_stop // true' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "true")
+    FULL_ROUND=$(yq -r '.execution_policy.full_round_required' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "false")
+    [ -z "$FULL_ROUND" ] || [ "$FULL_ROUND" = "null" ] && FULL_ROUND="false"
+    ALLOW_PARTIAL=$(yq -r '.execution_policy.allow_partial_stop' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "true")
+    [ -z "$ALLOW_PARTIAL" ] || [ "$ALLOW_PARTIAL" = "null" ] && ALLOW_PARTIAL="true"
 
     if [ "$FULL_ROUND" = "true" ] && [ "$ALLOW_PARTIAL" != "true" ]; then
         PHASE_TOTAL=$(yq -r '.phase_order | length' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "0")
@@ -155,9 +157,10 @@ if [ -f "$ROUND_DIR/state.yaml" ]; then
 
         if [ "$PHASE_COMPLETE" -lt "$PHASE_TOTAL" ]; then
             REMAINING=$((PHASE_TOTAL - PHASE_COMPLETE))
+            PROJECT_NAME=$(basename "$PROJECT_DIR")
             REASON="Full CriticalResearch round is not closed. ($PHASE_COMPLETE/$PHASE_TOTAL phases complete, $REMAINING remaining. Current phase: $CURRENT)"
             cat << EOF
-{"decision":"block","reason":"$REASON\n\nContinue executing remaining phases. The round must complete all $PHASE_TOTAL phases before stopping.\n\nRun 'cr step $PROJECT status' to see current progress.\nSet execution_policy.allow_partial_stop=true only for human decisions or unrecoverable errors."}
+{"decision":"block","reason":"$REASON\n\nContinue executing remaining phases. The round must complete all $PHASE_TOTAL phases before stopping.\n\nRun 'cr step $PROJECT_NAME status' to see current progress.\nSet execution_policy.allow_partial_stop=true only for human decisions or unrecoverable errors."}
 EOF
             exit 1
         fi
@@ -165,7 +168,8 @@ EOF
         # All phases complete but round not closed — must run close_round.
         ROUND_STATUS=$(yq -r '.status // ""' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "")
         if [ "$ROUND_STATUS" != "complete" ] && [ "$ROUND_STATUS" != "closed" ]; then
-            REASON="All $PHASE_TOTAL phases complete but round has not been closed. Run 'cr close-round $PROJECT' first."
+            PROJECT_NAME=$(basename "$PROJECT_DIR")
+            REASON="All $PHASE_TOTAL phases complete but round has not been closed. Run 'cr close-round $PROJECT_NAME' first."
             cat << EOF
 {"decision":"block","reason":"$REASON"}
 EOF
@@ -225,6 +229,10 @@ if [ "$WORKFLOW_MODE" = "paper" ]; then
     if [ -f "$HUMAN_QUEUE" ]; then
         PENDING=$(grep -cE 'decision:\s*(accepted|accepted_with_modifications|rejected|deferred|needs_more_evidence)' "$HUMAN_QUEUE" 2>/dev/null || echo 0)
         TOTAL=$(grep -cE 'decision_id:' "$HUMAN_QUEUE" 2>/dev/null || echo 0)
+        PENDING=$(echo "$PENDING" | tr -d '[:space:]')
+        TOTAL=$(echo "$TOTAL" | tr -d '[:space:]')
+        PENDING=${PENDING:-0}
+        TOTAL=${TOTAL:-0}
         UNRESOLVED=$((TOTAL - PENDING))
         if [ "$UNRESOLVED" -gt 0 ]; then
             HUMAN_GATE_BLOCK=true

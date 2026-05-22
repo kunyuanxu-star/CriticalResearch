@@ -40,7 +40,8 @@ POLICY=$(yq -r '.scope_policy.type // ""' "$OBJECTIVE" 2>/dev/null || echo "")
 [ "$POLICY" = "full_paper_required" ] && pass "Scope policy: $POLICY" || { fail "scope_policy.type must be full_paper_required, got: $POLICY"; }
 
 # 4. objective_may_limit_scope must be false.
-MAY_LIMIT=$(yq -r '.scope_policy.objective_may_limit_scope // true' "$OBJECTIVE" 2>/dev/null || echo "true")
+MAY_LIMIT=$(yq -r '.scope_policy.objective_may_limit_scope' "$OBJECTIVE" 2>/dev/null || echo "true")
+[ -z "$MAY_LIMIT" ] || [ "$MAY_LIMIT" = "null" ] && MAY_LIMIT="true"
 [ "$MAY_LIMIT" = "false" ] && pass "Objective may NOT limit scope" || { fail "objective_may_limit_scope must be false, got: $MAY_LIMIT"; }
 
 # 5. coverage_required.all_sections must be true.
