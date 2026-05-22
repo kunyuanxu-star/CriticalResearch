@@ -14,7 +14,7 @@
 #
 # Forbidden transitions (will be blocked):
 #   blocked  -> complete (skip phase)
-#   open     -> complete (skip running)
+#   open     -> complete (allowed, with validation)
 #   repair_required -> complete (no revalidation)
 #   waiting_human   -> complete (no decision artifact)
 #   any      -> skipped (not a valid status)
@@ -71,10 +71,8 @@ if [ "$FROM_STATUS" = "blocked" ] && [ "$TO_STATUS" = "repair_required" ]; then
     block_transition "Cannot jump from blocked to repair_required. Phase must be opened and run first."
 fi
 
-# open → complete (skip running + validation)
-if [ "$FROM_STATUS" = "open" ] && [ "$TO_STATUS" = "complete" ]; then
-    block_transition "Cannot jump from open to complete. Phase must be run and validated first."
-fi
+# open → complete — allowed. Phase is open (dependencies met); completion runs validation.
+# The key block is blocked→complete (skip dependency chain).
 
 # open → waiting_human (cannot need human input before running)
 if [ "$FROM_STATUS" = "open" ] && [ "$TO_STATUS" = "waiting_human" ]; then
@@ -114,6 +112,7 @@ allowed_transition() {
 case "$FROM_STATUS->$TO_STATUS" in
     "blocked->open")          allowed_transition ;;
     "open->running")          allowed_transition ;;
+    "open->complete")         allowed_transition ;; # open (deps met) -> complete (validated)
     "open->blocked")          allowed_transition ;; # re-block if dependency becomes incomplete
     "running->complete")      allowed_transition ;;
     "running->repair_required") allowed_transition ;;

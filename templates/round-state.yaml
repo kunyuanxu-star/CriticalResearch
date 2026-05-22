@@ -1,7 +1,7 @@
 schema_version: "3.0.0"
 project_id: ""
 round_id: 0
-workflow_mode: strict_paper
+workflow_mode: paper
 status: open
 current_phase: snapshot_paper_state
 
