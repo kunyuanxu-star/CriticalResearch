@@ -75,6 +75,24 @@ cp "$SKILL_DIR/scripts/critical-research-hook" "$HOOK_WRAPPER"
 chmod +x "$HOOK_WRAPPER"
 echo "  Hook wrapper installed to $HOOK_WRAPPER"
 
+# ── Install git pre-commit hook ─────────────────────────────────
+
+if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
+    GIT_HOOKS_DIR="$(git rev-parse --git-dir)/hooks"
+    PRECOMMIT_SRC="$SKILL_DIR/hooks/pre-commit"
+    PRECOMMIT_DST="$GIT_HOOKS_DIR/pre-commit"
+
+    if [ -f "$PRECOMMIT_SRC" ]; then
+        cp "$PRECOMMIT_SRC" "$PRECOMMIT_DST"
+        chmod +x "$PRECOMMIT_DST"
+        echo "  Git pre-commit hook installed to $PRECOMMIT_DST"
+    else
+        echo "  Warning: hooks/pre-commit not found — skipping git hook install"
+    fi
+else
+    echo "  Not a git repository — skipping git hook install"
+fi
+
 # ── Install CLI PATH ────────────────────────────────────────────
 
 if [ "${1:-}" != "--skill-only" ]; then

@@ -185,10 +185,56 @@ do_check() {
         return 1
     fi
 
-    # No session scope = deny all writes.
+    # No session scope = check for development mode.
     if [ ! -f "$SESSION_FILE" ]; then
-        echo "DENY:no session scope bound. Run: cr scope open --project <id>"
-        return 1
+        # If there's an active project, require scope binding.
+        local active_proj_file="$WORKSPACE_ROOT/_cr/active-project"
+        if [ -f "$active_proj_file" ]; then
+            local active_proj
+            active_proj=$(cat "$active_proj_file" 2>/dev/null || echo "")
+            if [ -n "$active_proj" ] && [ -d "$WORKSPACE_ROOT/$active_proj" ]; then
+                echo "DENY:no session scope bound. Run: cr scope open --project $active_proj"
+                return 1
+            fi
+        fi
+        # Development mode: no active project — allow workspace writes
+        # but still protect _cr metadata and research artifacts.
+        local dev_class
+        dev_class=$(classify_path "$path")
+        case "$dev_class" in
+            _cr)
+                echo "DENY:direct _cr writes blocked — use cr scope or cr workspace commands"
+                return 1
+                ;;
+            workspace_root)
+                if is_workspace_root_artifact "$path"; then
+                    echo "DENY:research artifact cannot exist outside a scoped project. Run cr scope open --project <id> first."
+                    return 1
+                fi
+                if is_protected_state_file "$path"; then
+                    echo "DENY:protected state file — use cr command to modify"
+                    return 1
+                fi
+                echo "ALLOW"
+                return 0
+                ;;
+            project:*)
+                if is_protected_state_file "$path"; then
+                    echo "DENY:protected state file — use cr command to modify"
+                    return 1
+                fi
+                echo "ALLOW"
+                return 0
+                ;;
+            outside)
+                echo "ALLOW"
+                return 0
+                ;;
+            *)
+                echo "ALLOW"
+                return 0
+                ;;
+        esac
     fi
 
     local scope_project

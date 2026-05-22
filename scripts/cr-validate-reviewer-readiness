@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# cr-validate-reviewer-readiness — Hard gate: remaining objections documented/resolved.
+# Usage: cr-validate-reviewer-readiness <project_dir> <round_dir>
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+ROUND_DIR="${2:-}"
+[ -z "$ROUND_DIR" ] && { echo "Usage: cr-validate-reviewer-readiness <project_dir> <round_dir>" >&2; exit 2; }
+echo "── Reviewer Readiness Check ──"
+REPORT="$ROUND_DIR/reviewer-readiness.yaml"
+[ ! -f "$REPORT" ] && { fail "reviewer-readiness.yaml not found"; cr_exit_summary; }
+OBJ_COUNT=$(yq -r '.remaining_objections // [] | length' "$REPORT" 2>/dev/null || echo "0")
+for i in $(seq 0 $((OBJ_COUNT - 1))); do
+  status=$(yq -r ".remaining_objections[$i].status // \"\"" "$REPORT" 2>/dev/null || echo "")
+  case "$status" in
+    resolved|blocked|next_round_tracked) pass "Objection $i: $status" ;;
+    *) fail "Objection $i has no valid status (resolved/blocked/next_round_tracked)" ;;
+  esac
+done
+pass "Reviewer readiness: $OBJ_COUNT objections tracked"
+cr_exit_summary

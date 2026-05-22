@@ -102,6 +102,9 @@ for i in $(seq 0 $((VALIDATOR_COUNT - 1))); do
         cr-validate-paper-completeness)
             "$VALIDATOR_SCRIPT" "$PROJECT_DIR" || gate_fail
             ;;
+        cr-validate-source-notes|cr-validate-claim-evidence-matrix|cr-validate-argument-flow|cr-validate-claim-paper-alignment|cr-validate-reviewer-readiness|cr-validate-transaction-chain)
+            "$VALIDATOR_SCRIPT" "$PROJECT_DIR" "$ROUND_DIR" || gate_fail
+            ;;
         *)
             if [ "$GATE" = "hard" ]; then
                 fail "Unknown hard validator: $NAME"

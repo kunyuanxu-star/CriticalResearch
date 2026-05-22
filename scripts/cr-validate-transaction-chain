@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# cr-validate-transaction-chain — Hard gate: full causal chain from source to knowledge writeback.
+# Checks S01→S37 chain: source→note→evidence→matrix→critique→disposition→patch→diff→knowledge.
+# Usage: cr-validate-transaction-chain <project_dir> <round_dir>
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+ROUND_DIR="${2:-}"
+[ -z "$ROUND_DIR" ] && { echo "Usage: cr-validate-transaction-chain <project_dir> <round_dir>" >&2; exit 2; }
+echo "── Transaction Chain Check ──"
+CHAIN=(
+  "source-index.yaml:source-index"
+  "source-notes/:source-notes"
+  "evidence-ledger.yaml:evidence-ledger"
+  "claim-evidence-matrix.yaml:claim-evidence-matrix"
+  "critique-ledger.yaml:critique-ledger"
+  "dispositions.yaml:dispositions"
+  "writing-diff.yaml:writing-diff"
+  "knowledge-delta.yaml:knowledge-delta"
+  "knowledge-apply-log.yaml:knowledge-apply-log"
+)
+MISSING=0
+for entry in "${CHAIN[@]}"; do
+  path="${entry%%:*}"
+  label="${entry##*:}"
+  if [ -f "$ROUND_DIR/$path" ] || [ -d "$ROUND_DIR/$path" ]; then
+    pass "Chain link: $label ($path)"
+  else
+    fail "Chain link missing: $label ($path)"
+    MISSING=$((MISSING + 1))
+  fi
+done
+[ "$MISSING" -gt 0 ] && { cr_exit_summary; }
+pass "Transaction chain intact"
+cr_exit_summary

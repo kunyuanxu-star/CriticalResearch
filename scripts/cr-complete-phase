@@ -47,6 +47,31 @@ if [ "$PHASE_STATUS" = "blocked" ]; then
     exit 2
 fi
 
+# ── Validate state transition ──────────────────────────────────────
+
+TRANSITION_VALIDATOR="$SCRIPT_DIR/cr-validate-phase-transition"
+if [ -x "$TRANSITION_VALIDATOR" ]; then
+    if ! "$TRANSITION_VALIDATOR" "$STATE_FILE" "$PHASE" "$PHASE_STATUS" "complete"; then
+        echo ""
+        echo "State transition $PHASE_STATUS -> complete is FORBIDDEN for phase '$PHASE'."
+        echo "  Repair path: set phase to 'running' first, re-validate, then complete."
+        echo "  If repairing from repair_required, ensure you have re-run the phase."
+        exit 2
+    fi
+else
+    echo "Warning: cr-validate-phase-transition not found — skipping transition check."
+fi
+
+# ── Phase-specific completion predicate ─────────────────────────────
+
+COMPLETION_ALL_OUTPUTS=$(yq -r ".phases.$PHASE.completion_predicate.all_outputs_exist // true" "$STATE_FILE" 2>/dev/null || echo "true")
+COMPLETION_VALIDATOR=$(yq -r ".phases.$PHASE.completion_predicate.validator_passed // true" "$STATE_FILE" 2>/dev/null || echo "true")
+
+if [ "$COMPLETION_ALL_OUTPUTS" != "true" ]; then
+    echo "Error: completion_predicate.all_outputs_exist is false for phase '$PHASE'" >&2
+    exit 2
+fi
+
 # Run phase validator. Must pass before marking complete.
 echo "Validating phase '$PHASE'..."
 PHASE_VALIDATOR="$SCRIPT_DIR/cr-validate-phase"

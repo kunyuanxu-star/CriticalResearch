@@ -216,6 +216,50 @@ case "$PHASE" in
             ALL_PRESENT=false
         fi
         ;;
+    # M0: Paper State (new 37-phase)
+    snapshot_paper_state)
+        if [ -f "$ROUND_DIR/paper-state.yaml" ]; then
+            CLAIM_COUNT=$(yq -r '.core_claims | length // 0' "$ROUND_DIR/paper-state.yaml" 2>/dev/null || echo "0")
+            [ "$CLAIM_COUNT" -gt 0 ] && pass "Paper-state: $CLAIM_COUNT claims" || { fail "No core claims"; ALL_PRESENT=false; }
+        fi
+        ;;
+    define_round_risk)
+        if [ -f "$ROUND_DIR/round-risk.yaml" ]; then
+            RISK=$(yq -r '.primary_risk.risk_type // ""' "$ROUND_DIR/round-risk.yaml" 2>/dev/null || echo "")
+            [ -n "$RISK" ] && pass "Round risk: $RISK" || { fail "No primary risk"; ALL_PRESENT=false; }
+        fi
+        ;;
+    execute_retrieval)
+        if [ -f "$ROUND_DIR/search-log.yaml" ]; then
+            Q_COUNT=$(yq -r '.searches | length // 0' "$ROUND_DIR/search-log.yaml" 2>/dev/null || echo "0")
+            [ "${Q_COUNT:-0}" -ge 5 ] && pass "search-log: $Q_COUNT queries" || { fail "search-log: $Q_COUNT queries (min 5)"; ALL_PRESENT=false; }
+        fi
+        if [ -d "$ROUND_DIR/raw-sources" ]; then
+            SRC_COUNT=$(find "$ROUND_DIR/raw-sources" -type f 2>/dev/null | wc -l | tr -d ' ')
+            [ "${SRC_COUNT:-0}" -ge 5 ] && pass "raw-sources: $SRC_COUNT" || { fail "raw-sources: $SRC_COUNT (min 5)"; ALL_PRESENT=false; }
+        fi
+        ;;
+    read_sources)
+        [ -x "$SCRIPT_DIR/cr-validate-source-notes" ] && "$SCRIPT_DIR/cr-validate-source-notes" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+        ;;
+    synthesize_claim_evidence)
+        [ -x "$SCRIPT_DIR/cr-validate-claim-evidence-matrix" ] && "$SCRIPT_DIR/cr-validate-claim-evidence-matrix" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+        ;;
+    merge_critique_ledger)
+        [ -x "$SCRIPT_DIR/cr-validate-critique" ] && "$SCRIPT_DIR/cr-validate-critique" "$ROUND_DIR" || ALL_PRESENT=false
+        ;;
+    global_argument_pass)
+        [ -x "$SCRIPT_DIR/cr-validate-argument-flow" ] && "$SCRIPT_DIR/cr-validate-argument-flow" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+        ;;
+    claim_evidence_alignment_pass)
+        [ -x "$SCRIPT_DIR/cr-validate-claim-paper-alignment" ] && "$SCRIPT_DIR/cr-validate-claim-paper-alignment" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+        ;;
+    reviewer_readiness_pass)
+        [ -x "$SCRIPT_DIR/cr-validate-reviewer-readiness" ] && "$SCRIPT_DIR/cr-validate-reviewer-readiness" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+        ;;
+    close_round)
+        [ -x "$SCRIPT_DIR/cr-validate-transaction-chain" ] && "$SCRIPT_DIR/cr-validate-transaction-chain" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+        ;;
 esac
 
 if [ "$ALL_PRESENT" = false ]; then

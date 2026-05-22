@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# cr-validate-all-phases — Hard gate: require all 14 paper workflow phases
-# complete before round close. A round cannot close unless every phase is
-# individually complete with a timestamp.
+# cr-validate-all-phases — Hard gate: require all phases complete before round close.
+# Dynamic: reads phase_order from state.yaml instead of hardcoding a fixed list.
+# A round cannot close unless every pre-close phase is individually complete with
+# a timestamp.
 #
 # Usage: cr-validate-all-phases <project_dir> <round_dir>
 
@@ -27,27 +28,35 @@ fi
 
 echo "── Phase Completeness Check ──"
 
-# Pre-close phases (1-13). close_round (14th) is marked complete by cr close-round itself.
-EXPECTED_PHASES=(
-    reconstruct_paper_state
-    define_round_target
-    plan_research
-    run_retrieval
-    ingest_sources
-    normalize_evidence
-    update_literature_knowledge
-    adversarial_critique
-    generate_dispositions
-    generate_paper_patches
-    generate_experiment_obligations
-    apply_patches_to_draft
-    distill_knowledge
-)
-
 FAIL=0
 COMPLETED=0
+TOTAL=0
 
-for phase in "${EXPECTED_PHASES[@]}"; do
+# Read phase_order dynamically from state.yaml.
+readarray -t PHASE_LIST < <(yq -r '.phase_order[]' "$STATE_FILE" 2>/dev/null || echo "")
+
+if [ "${#PHASE_LIST[@]}" -eq 0 ]; then
+    # Fallback: read phases keys directly.
+    readarray -t PHASE_LIST < <(yq -r '.phases | keys[]' "$STATE_FILE" 2>/dev/null || echo "")
+fi
+
+if [ "${#PHASE_LIST[@]}" -eq 0 ]; then
+    fail "No phases found in state.yaml — cannot validate phase completeness"
+    cr_exit_summary
+fi
+
+# Phase count check: read closure_policy for expected minimum.
+POLICY_COUNT=$(yq -r '.closure_policy.require_all_phases_complete // false' "$STATE_FILE" 2>/dev/null || echo "false")
+
+for phase in "${PHASE_LIST[@]}"; do
+    [ -z "$phase" ] && continue
+
+    # Skip close_round — it is marked complete by cr close-round itself.
+    if [ "$phase" = "close_round" ]; then
+        continue
+    fi
+
+    TOTAL=$((TOTAL + 1))
     status=$(yq -r ".phases.$phase.status // \"missing\"" "$STATE_FILE" 2>/dev/null || echo "missing")
     completed_at=$(yq -r ".phases.$phase.completed_at // \"null\"" "$STATE_FILE" 2>/dev/null || echo "null")
 
@@ -67,27 +76,17 @@ for phase in "${EXPECTED_PHASES[@]}"; do
     pass "Phase '$phase': complete at $completed_at"
 done
 
-# Verify all 13 pre-close phases are present (close_round is the 14th).
-ACTUAL_COUNT=$(yq -r '.phase_order | length // (.phases | keys | length)' "$STATE_FILE" 2>/dev/null || echo "0")
-EXPECTED_COUNT=${#EXPECTED_PHASES[@]}
-
-if [ "$ACTUAL_COUNT" -lt "$EXPECTED_COUNT" ]; then
-    fail "Phase count too low: expected at least $EXPECTED_COUNT pre-close phases, found $ACTUAL_COUNT in state.yaml"
-    FAIL=1
-fi
-
 # Check closure_policy.require_all_phases_complete is true.
-POLICY=$(yq -r '.closure_policy.require_all_phases_complete // false' "$STATE_FILE" 2>/dev/null || echo "false")
-if [ "$POLICY" != "true" ]; then
+if [ "$POLICY_COUNT" != "true" ]; then
     warn "closure_policy.require_all_phases_complete is not true"
 fi
 
 echo ""
-echo "Phases complete: $COMPLETED / $EXPECTED_COUNT"
+echo "Phases complete: $COMPLETED / $TOTAL pre-close phases"
 
 if [ "$FAIL" -ne 0 ]; then
     cr_exit_summary
 fi
 
-pass "All $EXPECTED_COUNT phases complete"
+pass "All $TOTAL pre-close phases complete"
 cr_exit_summary

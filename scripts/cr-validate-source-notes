@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# cr-validate-source-notes — Hard gate: every included source must have a deep-reading note.
+# Checks: does_not_prove field, linked claims, affected sections, problem/method/claims.
+# Usage: cr-validate-source-notes <project_dir> <round_dir>
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+ROUND_DIR="${2:-}"
+[ -z "$ROUND_DIR" ] && { echo "Usage: cr-validate-source-notes <project_dir> <round_dir>" >&2; exit 2; }
+echo "── Source Notes Check ──"
+NOTES_DIR="$ROUND_DIR/source-notes"
+SOURCE_INDEX="$ROUND_DIR/source-index.yaml"
+if [ ! -d "$NOTES_DIR" ] || [ -z "$(ls -A "$NOTES_DIR" 2>/dev/null)" ]; then
+  NO_SOURCES="$ROUND_DIR/source-notes/.no-sources.yaml"
+  if [ -f "$NO_SOURCES" ]; then
+    if grep -q "no_sources_reason\|search_failure_explanation" "$NO_SOURCES" 2>/dev/null; then
+      pass "No-op: no sources to read ($NO_SOURCES)"
+      cr_exit_summary
+    else
+      fail "No source notes found and .no-sources.yaml has no justification"
+      cr_exit_summary
+    fi
+  else
+    fail "source-notes/ directory is empty or missing"
+    cr_exit_summary
+  fi
+fi
+ERR=0
+for note in "$NOTES_DIR"/SRC-*.yaml "$NOTES_DIR"/*.yaml; do
+  [ -f "$note" ] || continue
+  sid=$(yq -r '.source_id // ""' "$note" 2>/dev/null || echo "")
+  dnp=$(yq -r '.does_not_prove // ""' "$note" 2>/dev/null || echo "")
+  [ -z "$sid" ] && { fail "Source note missing source_id: $(basename "$note")"; ERR=$((ERR+1)); continue; }
+  [ -z "$dnp" ] && { fail "Source note $sid missing does_not_prove field"; ERR=$((ERR+1)); }
+  claims=$(yq -r '.affected_claims // [] | length' "$note" 2>/dev/null || echo "0")
+  [ "$claims" -eq 0 ] 2>/dev/null && { fail "Source note $sid has no affected_claims"; ERR=$((ERR+1)); }
+done
+[ "$ERR" -gt 0 ] && { cr_exit_summary; }
+pass "All source notes validated ($(ls "$NOTES_DIR"/*.yaml 2>/dev/null | wc -l | tr -d ' ') notes)"
+cr_exit_summary

@@ -70,3 +70,49 @@ jobs:
             yq -e . "$f" > /dev/null || { echo "INVALID YAML: $f"; exit 1; }
           done
           echo "All YAML templates valid"
+
+  enforce-hooks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify hook config in settings.json
+        run: |
+          echo "Checking .claude/settings.json for all 4 hook events..."
+          for event in UserPromptSubmit PreToolUse PostToolUse Stop; do
+            grep -q "\"$event\"" .claude/settings.json || {
+              echo "FAIL: Hook $event missing from .claude/settings.json"
+              exit 1
+            }
+            echo "  OK: $event"
+          done
+          echo "All hook events configured."
+
+      - name: Verify no disableAllHooks in committed files
+        run: |
+          echo "Checking for disableAllHooks:true in tracked files..."
+          if grep -r '"disableAllHooks"\s*:\s*true' . --include="*.json" 2>/dev/null; then
+            echo "FAIL: disableAllHooks:true found in committed files"
+            exit 1
+          fi
+          echo "  OK: No disableAllHooks:true found."
+
+      - name: Verify hook wrapper dispatch is correct
+        run: |
+          echo "Checking critical-research-hook dispatch..."
+          for event in user-prompt-submit pre-tool-use post-tool-use stop; do
+            script_name="cr-hook-${event}"
+            grep -q "$script_name" scripts/critical-research-hook || {
+              echo "FAIL: $script_name not dispatched in critical-research-hook"
+              exit 1
+            }
+            echo "  OK: $event -> $script_name"
+          done
+
+      - name: Verify pre-commit hook passes syntax check
+        run: |
+          if [ -f hooks/pre-commit ]; then
+            bash -n hooks/pre-commit || { echo "FAIL: hooks/pre-commit syntax error"; exit 1; }
+            echo "  OK: hooks/pre-commit passes bash -n"
+          else
+            echo "  WARN: hooks/pre-commit not found (should be created)"
+          fi

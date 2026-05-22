@@ -1,9 +1,9 @@
-schema_version: "2.0.0"
+schema_version: "3.0.0"
 project_id: ""
 round_id: 0
-workflow_mode: paper
+workflow_mode: strict_paper
 status: open
-current_phase: reconstruct_paper_state
+current_phase: snapshot_paper_state
 
 required_research: true
 required_min_sources: 5
@@ -13,23 +13,58 @@ required_source_levels:
   allow_c_only_as_lead: true
 
 phase_order:
-  - reconstruct_paper_state
-  - define_round_target
-  - plan_research
-  - run_retrieval
+  # M0: Paper State
+  - snapshot_paper_state
+  - load_project_knowledge
+  - define_round_risk
+  - freeze_round_scope
+  # M1: Research Planning
+  - plan_research_questions
+  - generate_search_strategy
+  # M2: Research Execution
+  - execute_retrieval
+  - triage_sources
   - ingest_sources
+  - read_sources
   - normalize_evidence
+  - build_related_work_map
   - update_literature_knowledge
-  - adversarial_critique
+  # M3: Evidence Synthesis
+  - synthesize_claim_evidence
+  - synthesize_baseline_positioning
+  - synthesize_evaluation_gaps
+  # M4: Critique
+  - critique_claim_precision
+  - critique_novelty_and_baselines
+  - critique_evidence_sufficiency
+  - critique_evaluation_contract
+  - critique_writing_argument
+  - merge_critique_ledger
+  # M5: Decision / Patch
   - generate_dispositions
+  - resolve_human_decisions
   - generate_paper_patches
   - generate_experiment_obligations
-  - apply_patches_to_draft
-  - distill_knowledge
+  # M6: Writing
+  - plan_writing_changes
+  - apply_local_section_patches
+  - validate_patch_application
+  - global_argument_pass
+  - claim_evidence_alignment_pass
+  - reviewer_readiness_pass
+  # M7: Knowledge / Closure
+  - distill_literature_knowledge
+  - distill_thinking_knowledge
+  - apply_knowledge_delta
+  - prepare_next_round
   - close_round
 
 phases:
-  reconstruct_paper_state:
+  # ═══════════════════════════════════════════════════════════════════
+  # M0: Paper State — freeze current paper condition before any change
+  # ═══════════════════════════════════════════════════════════════════
+
+  snapshot_paper_state:
     status: open
     started_at: null
     completed_at: null
@@ -39,109 +74,764 @@ phases:
       - state/claim-ledger.yaml
     required_outputs:
       - paper-state.yaml
-      - loaded-knowledge.yaml
+    allowed_actions:
+      - read_draft
+      - read_claim_ledger
+      - write_paper_state
+    forbidden_actions:
+      - external_research
+      - write_paper_patch
+      - edit_draft
+      - generate_critique
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
     phase_validators_hint:
       - cr-validate-schema
 
-  define_round_target:
+  load_project_knowledge:
     status: blocked
     started_at: null
     completed_at: null
     depends_on:
-      - reconstruct_paper_state
-    required_outputs:
-      - round-target.yaml
-
-  plan_research:
-    status: blocked
-    started_at: null
-    completed_at: null
-    depends_on:
-      - define_round_target
-    required_outputs:
-      - research-plan.yaml
-      - search-queue.yaml
-
+      - snapshot_paper_state
     required_inputs:
-      - round-target.yaml
-      - state/claim-ledger.yaml
+      - _cr/knowledge/
+      - paper-state.yaml
+    required_outputs:
+      - loaded-knowledge.yaml
+    allowed_actions:
+      - read_knowledge_base
+      - write_loaded_knowledge
+    forbidden_actions:
+      - modify_knowledge_base
+      - write_literature_delta
+      - generate_patch
+      - external_research
+      - edit_draft
+      - generate_critique
+    no_op_policy:
+      allowed: true
+      required_justification_fields:
+        - knowledge_base_empty_reason
+        - why_no_cards_relevant
+      artifact_path: loaded-knowledge.yaml
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
+
+  define_round_risk:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - load_project_knowledge
+    required_inputs:
+      - paper-state.yaml
+      - loaded-knowledge.yaml
+    required_outputs:
+      - round-risk.yaml
+    allowed_actions:
+      - read_paper_state
+      - read_loaded_knowledge
+      - write_round_risk
+    forbidden_actions:
+      - external_research
+      - generate_critique
+      - edit_draft
+      - generate_patch
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
+
+  freeze_round_scope:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - define_round_risk
+    required_inputs:
+      - round-risk.yaml
+      - paper-state.yaml
+    required_outputs:
+      - round-scope.yaml
+    allowed_actions:
+      - read_round_risk
+      - read_paper_state
+      - write_round_scope
+    forbidden_actions:
+      - external_research
+      - edit_draft
+      - generate_patch
+      - modify_out_of_scope_content
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
+
+  # ═══════════════════════════════════════════════════════════════════
+  # M1: Research Planning — design research, do not execute yet
+  # ═══════════════════════════════════════════════════════════════════
+
+  plan_research_questions:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - freeze_round_scope
+    required_inputs:
+      - round-risk.yaml
+      - round-scope.yaml
+    required_outputs:
+      - research-questions.yaml
+    allowed_actions:
+      - read_round_risk
+      - read_round_scope
+      - write_research_questions
+    forbidden_actions:
+      - execute_search
+      - external_research
+      - generate_critique
+      - edit_draft
+      - generate_patch
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
     phase_validators_hint:
       - cr-validate-research
-  run_retrieval:
+
+  generate_search_strategy:
     status: blocked
     started_at: null
     completed_at: null
     depends_on:
-      - plan_research
+      - plan_research_questions
+    required_inputs:
+      - research-questions.yaml
+    required_outputs:
+      - search-plan.yaml
+      - search-queue.yaml
+    allowed_actions:
+      - read_research_questions
+      - write_search_plan
+      - write_search_queue
+    forbidden_actions:
+      - execute_search
+      - generate_critique
+      - edit_draft
+      - generate_patch
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
+
+  # ═══════════════════════════════════════════════════════════════════
+  # M2: Research Execution — retrieve, read, normalize evidence
+  # ═══════════════════════════════════════════════════════════════════
+
+  execute_retrieval:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - generate_search_strategy
+    required_inputs:
+      - search-plan.yaml
+      - search-queue.yaml
     required_outputs:
       - search-log.yaml
-      - raw-sources
+      - raw-sources/
+    allowed_actions:
+      - execute_search
+      - save_raw_source
+    forbidden_actions:
+      - generate_critique
+      - edit_draft
+      - generate_patch
+      - write_evidence_ledger
+      - synthesize_claims
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
+
+  triage_sources:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - execute_retrieval
+    required_inputs:
+      - search-log.yaml
+      - raw-sources/
+    required_outputs:
+      - source-triage.yaml
+    allowed_actions:
+      - read_raw_sources
+      - read_search_log
+      - write_source_triage
+    forbidden_actions:
+      - edit_draft
+      - generate_patch
+      - generate_critique
+      - write_evidence_ledger
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
 
   ingest_sources:
     status: blocked
     started_at: null
     completed_at: null
     depends_on:
-      - run_retrieval
+      - triage_sources
+    required_inputs:
+      - raw-sources/
+      - source-triage.yaml
     required_outputs:
       - source-index.yaml
-
-    required_inputs:
-      - raw-sources
+    allowed_actions:
+      - read_raw_sources
+      - read_source_triage
+      - write_source_index
+    forbidden_actions:
+      - edit_draft
+      - generate_patch
+      - generate_critique
+      - write_evidence_ledger
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
     phase_validators_hint:
       - cr-validate-source-integrity
-  normalize_evidence:
+
+  read_sources:
     status: blocked
     started_at: null
     completed_at: null
     depends_on:
       - ingest_sources
+    required_inputs:
+      - source-index.yaml
+      - raw-sources/
+    required_outputs:
+      - source-notes/
+    allowed_actions:
+      - read_raw_sources
+      - read_source_index
+      - write_source_notes
+    forbidden_actions:
+      - generate_critique
+      - write_paper_patch
+      - edit_draft
+      - write_evidence_ledger
+    no_op_policy:
+      allowed: true
+      required_justification_fields:
+        - no_sources_reason
+        - search_failure_explanation
+      artifact_path: source-notes/.no-sources.yaml
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint:
+      - cr-validate-source-notes
+
+  normalize_evidence:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - read_sources
+    required_inputs:
+      - source-notes/
+      - source-index.yaml
+      - state/claim-ledger.yaml
     required_outputs:
       - evidence-ledger.yaml
+    allowed_actions:
+      - read_source_notes
+      - read_claim_ledger
+      - write_evidence_ledger
+    forbidden_actions:
+      - generate_critique
+      - edit_draft
+      - generate_patch
+      - synthesize_claims
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint:
+      - cr-validate-evidence-claim-links
+
+  build_related_work_map:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - normalize_evidence
+    required_inputs:
+      - evidence-ledger.yaml
+      - source-notes/
+    required_outputs:
+      - related-work-map.yaml
+    allowed_actions:
+      - read_evidence_ledger
+      - read_source_notes
+      - write_related_work_map
+    forbidden_actions:
+      - generate_critique
+      - edit_draft
+      - generate_patch
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
 
   update_literature_knowledge:
     status: blocked
     started_at: null
     completed_at: null
     depends_on:
-      - normalize_evidence
+      - build_related_work_map
+    required_inputs:
+      - related-work-map.yaml
+      - source-notes/
+      - evidence-ledger.yaml
     required_outputs:
       - literature-delta.yaml
+    allowed_actions:
+      - read_related_work_map
+      - read_source_notes
+      - read_evidence_ledger
+      - write_literature_delta
+    forbidden_actions:
+      - write_thinking_rule
+      - edit_draft
+      - generate_patch
+      - generate_critique
+    no_op_policy:
+      allowed: true
+      required_justification_fields:
+        - no_new_literature_reason
+        - checked_source_notes
+      artifact_path: literature-delta.yaml
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
 
-    required_inputs:
-      - evidence-ledger.yaml
-    phase_validators_hint:
-      []
-  adversarial_critique:
+  # ═══════════════════════════════════════════════════════════════════
+  # M3: Evidence Synthesis — what does the evidence structure look like?
+  # ═══════════════════════════════════════════════════════════════════
+
+  synthesize_claim_evidence:
     status: blocked
     started_at: null
     completed_at: null
     depends_on:
-      - normalize_evidence
+      - update_literature_knowledge
+    required_inputs:
+      - evidence-ledger.yaml
+      - paper-state.yaml
+    required_outputs:
+      - claim-evidence-matrix.yaml
+    allowed_actions:
+      - read_evidence_ledger
+      - read_paper_state
+      - write_claim_evidence_matrix
+    forbidden_actions:
+      - generate_critique
+      - edit_draft
+      - generate_patch
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint:
+      - cr-validate-claim-evidence-matrix
+
+  synthesize_baseline_positioning:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - synthesize_claim_evidence
+    required_inputs:
+      - related-work-map.yaml
+      - claim-evidence-matrix.yaml
+    required_outputs:
+      - baseline-positioning.yaml
+    allowed_actions:
+      - read_related_work_map
+      - read_claim_evidence_matrix
+      - write_baseline_positioning
+    forbidden_actions:
+      - generate_critique
+      - edit_draft
+      - generate_patch
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
+
+  synthesize_evaluation_gaps:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - synthesize_baseline_positioning
+    required_inputs:
+      - claim-evidence-matrix.yaml
+      - baseline-positioning.yaml
+    required_outputs:
+      - evaluation-gap-map.yaml
+    allowed_actions:
+      - read_claim_evidence_matrix
+      - read_baseline_positioning
+      - write_evaluation_gap_map
+    forbidden_actions:
+      - generate_critique
+      - edit_draft
+      - generate_patch
+      - generate_experiment_obligations
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
+
+  # ═══════════════════════════════════════════════════════════════════
+  # M4: Critique — adversarial review, no patch generation allowed
+  # ═══════════════════════════════════════════════════════════════════
+
+  critique_claim_precision:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - synthesize_evaluation_gaps
+    required_inputs:
+      - paper-state.yaml
+      - claim-evidence-matrix.yaml
+    required_outputs:
+      - critique-claim-precision.yaml
+    allowed_actions:
+      - read_paper_state
+      - read_claim_evidence_matrix
+      - write_claim_precision_critique
+    forbidden_actions:
+      - edit_draft
+      - generate_patch
+      - generate_dispositions
+    no_op_policy:
+      allowed: true
+      required_justification_fields:
+        - no_imprecision_reason
+        - claims_reviewed
+      artifact_path: critique-claim-precision.yaml
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
+
+  critique_novelty_and_baselines:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - synthesize_evaluation_gaps
+    required_inputs:
+      - baseline-positioning.yaml
+      - related-work-map.yaml
+    required_outputs:
+      - critique-novelty-baseline.yaml
+    allowed_actions:
+      - read_baseline_positioning
+      - read_related_work_map
+      - write_novelty_critique
+    forbidden_actions:
+      - edit_draft
+      - generate_patch
+      - generate_dispositions
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
+
+  critique_evidence_sufficiency:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - synthesize_evaluation_gaps
+    required_inputs:
+      - claim-evidence-matrix.yaml
+      - evidence-ledger.yaml
+    required_outputs:
+      - critique-evidence.yaml
+    allowed_actions:
+      - read_claim_evidence_matrix
+      - read_evidence_ledger
+      - write_evidence_critique
+    forbidden_actions:
+      - edit_draft
+      - generate_patch
+      - generate_dispositions
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
+
+  critique_evaluation_contract:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - synthesize_evaluation_gaps
+    required_inputs:
+      - evaluation-gap-map.yaml
+    required_outputs:
+      - critique-evaluation.yaml
+    allowed_actions:
+      - read_evaluation_gap_map
+      - write_evaluation_critique
+    forbidden_actions:
+      - edit_draft
+      - generate_patch
+      - generate_dispositions
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
+
+  critique_writing_argument:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - synthesize_evaluation_gaps
+    required_inputs:
+      - writing/paper-draft.md
+      - paper-state.yaml
+      - claim-evidence-matrix.yaml
+    required_outputs:
+      - critique-writing.yaml
+    allowed_actions:
+      - read_paper_draft
+      - read_paper_state
+      - read_claim_evidence_matrix
+      - write_writing_critique
+    forbidden_actions:
+      - edit_draft
+      - generate_patch
+      - generate_dispositions
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
+
+  merge_critique_ledger:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - critique_claim_precision
+      - critique_novelty_and_baselines
+      - critique_evidence_sufficiency
+      - critique_evaluation_contract
+      - critique_writing_argument
+    required_inputs:
+      - critique-claim-precision.yaml
+      - critique-novelty-baseline.yaml
+      - critique-evidence.yaml
+      - critique-evaluation.yaml
+      - critique-writing.yaml
     required_outputs:
       - critique-ledger.yaml
+    allowed_actions:
+      - read_critique_passes
+      - write_critique_ledger
+    forbidden_actions:
+      - edit_draft
+      - generate_patch
+      - generate_dispositions
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint:
+      - cr-validate-critique
+
+  # ═══════════════════════════════════════════════════════════════════
+  # M5: Decision / Patch — turn critiques into actionable changes
+  # ═══════════════════════════════════════════════════════════════════
 
   generate_dispositions:
     status: blocked
     started_at: null
     completed_at: null
     depends_on:
-      - adversarial_critique
-    required_outputs:
-      - dispositions.yaml
-
+      - merge_critique_ledger
     required_inputs:
       - critique-ledger.yaml
-    phase_validators_hint:
-      []
-  generate_paper_patches:
+    required_outputs:
+      - dispositions.yaml
+    allowed_actions:
+      - read_critique_ledger
+      - write_dispositions
+    forbidden_actions:
+      - edit_draft
+      - generate_patch
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
+
+  resolve_human_decisions:
     status: blocked
     started_at: null
     completed_at: null
     depends_on:
       - generate_dispositions
+    required_inputs:
+      - dispositions.yaml
+      - state/human-review-queue.yaml
     required_outputs:
-      - patches
+      - human-decisions.yaml
+    allowed_actions:
+      - read_dispositions
+      - read_human_review_queue
+      - write_human_decisions
+    forbidden_actions:
+      - edit_draft
+      - generate_patch
+      - agent_decide_thesis_change
+    no_op_policy:
+      allowed: true
+      required_justification_fields:
+        - no_pending_decisions_reason
+        - dispositions_reviewed
+      artifact_path: human-decisions.yaml
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint:
+      - cr-validate-human-gates
+
+  generate_paper_patches:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - resolve_human_decisions
+    required_inputs:
+      - dispositions.yaml
+      - human-decisions.yaml
+    required_outputs:
+      - patches/
+    allowed_actions:
+      - read_dispositions
+      - read_human_decisions
+      - write_paper_patch
+    forbidden_actions:
+      - edit_draft
+      - apply_patch
+    no_op_policy:
+      allowed: true
+      required_justification_fields:
+        - no_patch_reason
+        - checked_critiques
+        - checked_dispositions
+        - evidence_refs
+      artifact_path: patches/.no-patch.yaml
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint:
+      - cr-validate-paper-patches
 
   generate_experiment_obligations:
     status: blocked
@@ -149,53 +839,392 @@ phases:
     completed_at: null
     depends_on:
       - generate_paper_patches
+    required_inputs:
+      - patches/
+      - evaluation-gap-map.yaml
     required_outputs:
       - experiment-obligations.yaml
-
-    required_inputs:
-      - patches
+      - experiments/
+    allowed_actions:
+      - read_patches
+      - read_evaluation_gap_map
+      - write_experiment_obligations
+    forbidden_actions:
+      - fabricate_experiment_results
+      - edit_draft
+    no_op_policy:
+      allowed: true
+      required_justification_fields:
+        - no_experiment_needed_reason
+        - patches_reviewed
+        - evaluation_gaps_reviewed
+      artifact_path: experiment-obligations.yaml
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
     phase_validators_hint:
       - cr-validate-experiments
-  apply_patches_to_draft:
+
+  # ═══════════════════════════════════════════════════════════════════
+  # M6: Writing — apply patches, validate, align arguments and evidence
+  # ═══════════════════════════════════════════════════════════════════
+
+  plan_writing_changes:
     status: blocked
     started_at: null
     completed_at: null
     depends_on:
-      - generate_paper_patches
+      - generate_experiment_obligations
+    required_inputs:
+      - patches/
+      - writing/paper-draft.md
+    required_outputs:
+      - writing-plan.yaml
+    allowed_actions:
+      - read_patches
+      - read_paper_draft
+      - write_writing_plan
+    forbidden_actions:
+      - edit_draft
+      - apply_patch
+    no_op_policy:
+      allowed: true
+      required_justification_fields:
+        - no_writing_change_reason
+        - patches_reviewed
+      artifact_path: writing-plan.yaml
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
+
+  apply_local_section_patches:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - plan_writing_changes
+    required_inputs:
+      - writing-plan.yaml
+      - patches/
+      - writing/paper-draft.md
     required_outputs:
       - writing-diff.yaml
+      - writing/paper-draft.md
+    allowed_actions:
+      - read_writing_plan
+      - read_patches
+      - edit_draft
+      - write_writing_diff
+    forbidden_actions:
+      - add_new_evidence
+      - change_unpatched_sections
+      - generate_critique
+    no_op_policy:
+      allowed: true
+      required_justification_fields:
+        - no_patches_to_apply_reason
+        - writing_plan_reviewed
+      artifact_path: writing-diff.yaml
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
 
-  distill_knowledge:
+  validate_patch_application:
     status: blocked
     started_at: null
     completed_at: null
     depends_on:
-      - apply_patches_to_draft
-      - generate_experiment_obligations
+      - apply_local_section_patches
+    required_inputs:
+      - patches/
+      - writing-diff.yaml
+      - writing/paper-draft.md
+    required_outputs:
+      - patch-application-report.yaml
+    allowed_actions:
+      - read_patches
+      - read_writing_diff
+      - read_paper_draft
+      - write_patch_application_report
+    forbidden_actions:
+      - edit_draft
+      - apply_patch
+    no_op_policy:
+      allowed: true
+      required_justification_fields:
+        - no_patches_applied_reason
+      artifact_path: patch-application-report.yaml
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint:
+      - cr-validate-patch-application
+
+  global_argument_pass:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - validate_patch_application
+    required_inputs:
+      - writing/paper-draft.md
+      - paper-state.yaml
+      - writing-diff.yaml
+    required_outputs:
+      - argument-flow-report.yaml
+    allowed_actions:
+      - read_paper_draft
+      - read_paper_state
+      - read_writing_diff
+      - write_argument_flow_report
+    forbidden_actions:
+      - edit_draft
+      - apply_patch
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint:
+      - cr-validate-argument-flow
+
+  claim_evidence_alignment_pass:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - global_argument_pass
+    required_inputs:
+      - writing/paper-draft.md
+      - claim-evidence-matrix.yaml
+      - evidence-ledger.yaml
+    required_outputs:
+      - claim-paper-matrix.yaml
+    allowed_actions:
+      - read_paper_draft
+      - read_claim_evidence_matrix
+      - read_evidence_ledger
+      - write_claim_paper_matrix
+    forbidden_actions:
+      - edit_draft
+      - add_evidence
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint:
+      - cr-validate-claim-paper-alignment
+
+  reviewer_readiness_pass:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - claim_evidence_alignment_pass
+    required_inputs:
+      - writing/paper-draft.md
+      - critique-ledger.yaml
+      - argument-flow-report.yaml
+      - claim-paper-matrix.yaml
+    required_outputs:
+      - reviewer-readiness.yaml
+    allowed_actions:
+      - read_paper_draft
+      - read_critique_ledger
+      - read_argument_flow_report
+      - read_claim_paper_matrix
+      - write_reviewer_readiness
+    forbidden_actions:
+      - edit_draft
+      - generate_patch
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint:
+      - cr-validate-reviewer-readiness
+
+  # ═══════════════════════════════════════════════════════════════════
+  # M7: Knowledge / Closure — distill, write back, prepare next, close
+  # ═══════════════════════════════════════════════════════════════════
+
+  distill_literature_knowledge:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - reviewer_readiness_pass
+    required_inputs:
+      - literature-delta.yaml
+      - related-work-map.yaml
+      - source-notes/
+    required_outputs:
+      - literature-knowledge-delta.yaml
+    allowed_actions:
+      - read_literature_delta
+      - read_related_work_map
+      - read_source_notes
+      - write_literature_knowledge_delta
+    forbidden_actions:
+      - write_thinking_rule
+      - edit_draft
+      - generate_patch
+    no_op_policy:
+      allowed: true
+      required_justification_fields:
+        - no_literature_knowledge_reason
+        - literature_reviewed
+      artifact_path: literature-knowledge-delta.yaml
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
+
+  distill_thinking_knowledge:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - reviewer_readiness_pass
+    required_inputs:
+      - critique-ledger.yaml
+      - argument-flow-report.yaml
+      - reviewer-readiness.yaml
+    required_outputs:
+      - thinking-knowledge-delta.yaml
+    allowed_actions:
+      - read_critique_ledger
+      - read_argument_flow_report
+      - read_reviewer_readiness
+      - write_thinking_knowledge_delta
+    forbidden_actions:
+      - generic_advice
+      - edit_draft
+      - generate_patch
+    no_op_policy:
+      allowed: true
+      required_justification_fields:
+        - no_thinking_rule_reason
+        - critique_reviewed
+      artifact_path: thinking-knowledge-delta.yaml
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
+
+  apply_knowledge_delta:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - distill_literature_knowledge
+      - distill_thinking_knowledge
+    required_inputs:
+      - literature-knowledge-delta.yaml
+      - thinking-knowledge-delta.yaml
     required_outputs:
       - knowledge-delta.yaml
       - knowledge-apply-log.yaml
-
-    required_inputs:
-      - patches
-      - evidence-ledger.yaml
-      - writing-diff.yaml
+    allowed_actions:
+      - read_knowledge_deltas
+      - write_knowledge_delta
+      - write_knowledge_apply_log
+      - write_to_knowledge_base
+    forbidden_actions:
+      - edit_draft
+      - generate_patch
+      - modify_claim_ledger
+    no_op_policy:
+      allowed: true
+      required_justification_fields:
+        - no_knowledge_delta_reason
+        - deltas_reviewed
+      artifact_path: knowledge-delta.yaml
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
     phase_validators_hint:
-      []
+      - cr-validate-knowledge
+
+  prepare_next_round:
+    status: blocked
+    started_at: null
+    completed_at: null
+    depends_on:
+      - apply_knowledge_delta
+    required_inputs:
+      - reviewer-readiness.yaml
+      - experiment-obligations.yaml
+      - knowledge-delta.yaml
+    required_outputs:
+      - next-round-targets.yaml
+    allowed_actions:
+      - read_reviewer_readiness
+      - read_experiment_obligations
+      - read_knowledge_delta
+      - write_next_round_targets
+    forbidden_actions:
+      - edit_draft
+      - generate_patch
+      - start_new_round
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint: []
+
   close_round:
     status: blocked
     started_at: null
     completed_at: null
     depends_on:
-      - distill_knowledge
+      - prepare_next_round
     required_outputs:
       - closure-report.yaml
+    allowed_actions:
+      - read_all_artifacts
+      - write_closure_report
+    forbidden_actions:
+      - edit_draft
+      - generate_patch
+      - modify_artifacts
+    no_op_policy:
+      allowed: false
+      required_justification_fields: []
+    completion_predicate:
+      all_outputs_exist: true
+      validator_passed: true
+      no_unresolved_blockers: true
+    phase_validators_hint:
+      - cr-run-validator-pipeline
 
 closure_policy:
   require_all_phases_complete: true
   require_external_research: true
-  require_evidence_for_each_core_claim: true
+  require_no_skipped_phases: true
+  require_no_pending_human_decisions: true
+  require_transaction_chain_complete: true
   require_patch_for_medium_plus_critique: true
   require_experiment_for_claim_patch: true
   require_draft_diff_for_applied_patch: true
-  require_no_pending_human_decisions: true
+  require_knowledge_writeback: true
