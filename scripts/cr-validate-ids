@@ -100,7 +100,16 @@ if [ -d "$EXPERIMENTS_DIR" ]; then
     done
 fi
 
-# ── Scan critique-ledger.yaml for definitions ───────────────────────────────
+# ── Scan claim-ledger.yaml for CLM definitions ───────────────────────────────
+
+CLAIM_LEDGER="$PROJECT_DIR/state/claim-ledger.yaml"
+if [ -f "$CLAIM_LEDGER" ]; then
+    for clm in $(yq -r '.claims[]?.claim_id // ""' "$CLAIM_LEDGER" 2>/dev/null || echo ""); do
+        [ -n "$clm" ] && register_definition "$clm" "claim-ledger.yaml"
+    done
+fi
+
+# ── Scan critique-ledger.yaml for CRT definitions ───────────────────────────────
 
 CRITIQUE_FILE="$ROUND_DIR/critique-ledger.yaml"
 if [ -f "$CRITIQUE_FILE" ]; then
@@ -113,7 +122,11 @@ fi
 
 DISPOSITIONS_FILE="$ROUND_DIR/dispositions.yaml"
 if [ -f "$DISPOSITIONS_FILE" ]; then
-    # Disposition entries don't have their own IDs; they reference critique_ids.
+    # Register DSP definitions.
+    for dsp in $(yq -r '.dispositions[]?.disposition_id // ""' "$DISPOSITIONS_FILE" 2>/dev/null || echo ""); do
+        [ -n "$dsp" ] && register_definition "$dsp" "dispositions.yaml"
+    done
+    # Dispositions reference critique_ids.
     for ref_id in $(grep -oE 'critique_id:.*CRT-[0-9]{3}' "$DISPOSITIONS_FILE" 2>/dev/null | grep -oE 'CRT-[0-9]{3}' || echo ""); do
         register_reference "$ref_id" "dispositions.yaml"
     done
