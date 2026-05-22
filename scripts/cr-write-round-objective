@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# cr-write-round-objective — Write or update the round objective.
+# The user's slash command argument must be persisted as a round-objective.yaml
+# so it can be validated and traced through all 37 phases.
+#
+# Usage: cr write-objective <project> "<user request>"
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+PROJECT="${1:-}"
+USER_REQUEST="${2:-}"
+
+if [ -z "$PROJECT" ] || [ -z "$USER_REQUEST" ]; then
+    echo "Usage: cr write-objective <project> \"<user request>\"" >&2
+    exit 2
+fi
+
+WORKSPACE_ROOT="$(cr_workspace_root)"
+PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
+
+if [ ! -d "$PROJECT_DIR" ]; then
+    echo "Error: project directory not found: $PROJECT_DIR" >&2
+    exit 1
+fi
+
+ACTIVE_RND=$(jq -r '.active_round // 0' "$PROJECT_DIR/state/project-state.json" 2>/dev/null || echo "0")
+if [ "$ACTIVE_RND" = "null" ] || [ "$ACTIVE_RND" -eq 0 ]; then
+    echo "Error: no active round. Run 'cr round $PROJECT --mode paper' first." >&2
+    exit 1
+fi
+
+ROUND_NUM=$(printf "%03d" "$ACTIVE_RND")
+ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
+
+mkdir -p "$ROUND_DIR"
+
+cat > "$ROUND_DIR/round-objective.yaml" << YAML
+schema_version: "1.0.0"
+round_id: $ACTIVE_RND
+
+raw_user_request: "$USER_REQUEST"
+
+normalized_objective: >
+  $USER_REQUEST
+
+objective_role: primary_focus
+
+scope_policy:
+  type: full_paper_required
+  objective_may_limit_scope: false
+  objective_may_change_priority: true
+  objective_may_change_critique_weight: true
+  objective_may_change_patch_priority: true
+
+coverage_required:
+  entire_paper: true
+  all_sections: true
+  all_core_claims: true
+  all_assumptions: true
+  all_baselines: true
+  all_evaluation_obligations: true
+  all_open_critiques: true
+
+primary_focus:
+  type: ""
+  description: "$USER_REQUEST"
+
+success_criteria:
+  - "All 37 phases are executed."
+  - "Every phase records full_paper_coverage."
+  - "Every phase records objective_relevance."
+  - "User objective is addressed through weighted analysis."
+  - "Any non-focus high-risk full-paper issue is recorded as secondary finding."
+YAML
+
+# Update execution_policy to enforce full round.
+STATE_FILE="$ROUND_DIR/state.yaml"
+if [ -f "$STATE_FILE" ]; then
+    yq -i '.execution_policy.full_round_required = true' "$STATE_FILE" 2>/dev/null || true
+    yq -i '.execution_policy.full_paper_required = true' "$STATE_FILE" 2>/dev/null || true
+    yq -i '.execution_policy.allow_partial_stop = false' "$STATE_FILE" 2>/dev/null || true
+fi
+
+echo "Round objective written to $ROUND_DIR/round-objective.yaml"
+echo "  raw_user_request: ${USER_REQUEST:0:80}..."
+echo "  scope_policy: full_paper_required"
+echo "  objective_may_limit_scope: false"
+echo "  execution_policy.full_round_required: true"

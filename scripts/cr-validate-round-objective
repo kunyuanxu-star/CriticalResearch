@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# cr-validate-round-objective — Hard gate: round-objective.yaml exists with correct semantics.
+# Checks that the user objective is recorded, scope policy is full_paper_required,
+# and objective_may_limit_scope is false.
+#
+# Usage: cr-validate-round-objective <project_dir> <round_dir>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+ROUND_DIR="${2:-}"
+
+if [ -z "$PROJECT_DIR" ] || [ -z "$ROUND_DIR" ]; then
+    echo "Usage: cr-validate-round-objective <project_dir> <round_dir>" >&2
+    exit 2
+fi
+
+echo "── Round Objective Validation ──"
+
+OBJECTIVE="$ROUND_DIR/round-objective.yaml"
+
+if [ ! -f "$OBJECTIVE" ]; then
+    fail "round-objective.yaml not found — user request was never recorded"
+    cr_exit_summary
+fi
+
+# 1. raw_user_request must be non-empty.
+RAW=$(yq -r '.raw_user_request // ""' "$OBJECTIVE" 2>/dev/null || echo "")
+[ -n "$RAW" ] && pass "Raw user request: ${RAW:0:80}" || { fail "raw_user_request is empty"; }
+
+# 2. normalized_objective must be non-empty.
+NORM=$(yq -r '.normalized_objective // ""' "$OBJECTIVE" 2>/dev/null || echo "")
+[ -n "$NORM" ] && pass "Normalized objective present" || { fail "normalized_objective is empty"; }
+
+# 3. scope_policy.type must be full_paper_required.
+POLICY=$(yq -r '.scope_policy.type // ""' "$OBJECTIVE" 2>/dev/null || echo "")
+[ "$POLICY" = "full_paper_required" ] && pass "Scope policy: $POLICY" || { fail "scope_policy.type must be full_paper_required, got: $POLICY"; }
+
+# 4. objective_may_limit_scope must be false.
+MAY_LIMIT=$(yq -r '.scope_policy.objective_may_limit_scope // true' "$OBJECTIVE" 2>/dev/null || echo "true")
+[ "$MAY_LIMIT" = "false" ] && pass "Objective may NOT limit scope" || { fail "objective_may_limit_scope must be false, got: $MAY_LIMIT"; }
+
+# 5. coverage_required.all_sections must be true.
+ALL_SEC=$(yq -r '.coverage_required.all_sections // false' "$OBJECTIVE" 2>/dev/null || echo "false")
+[ "$ALL_SEC" = "true" ] && pass "All sections required" || { fail "coverage_required.all_sections must be true"; }
+
+# 6. success_criteria must be non-empty.
+SUCCESS_COUNT=$(yq -r '.success_criteria | length // 0' "$OBJECTIVE" 2>/dev/null || echo "0")
+[ "$SUCCESS_COUNT" -gt 0 ] 2>/dev/null && pass "Success criteria: $SUCCESS_COUNT items" || { fail "No success_criteria defined"; }
+
+cr_exit_summary

@@ -59,7 +59,12 @@ cr start my-topic                # Create a new research project
 cr continue                      # Show next-round task prompt
 cr status                        # Show workspace and project status
 
-# Round lifecycle
+# Full-Round Execution (Claude Code)
+/critical-cs-research <objective>  # Start mandatory full-paper 37-phase transaction
+                                   # The objective is a weighting lens, not a scope limiter.
+                                   # Cannot stop until round closes or hard blocker recorded.
+
+# Round lifecycle (CLI)
 cr round my-topic --mode paper   # Open a new paper-mode round (37-phase strict state machine)
 cr step my-topic status          # Show current phase and missing outputs
 cr step my-topic advance         # Validate current phase and advance to next
