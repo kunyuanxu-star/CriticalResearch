@@ -289,7 +289,7 @@
     },
     "no_patch_decision": {
       "path_template": "rounds/round-{round_num}/patches/.no-patch.yaml",
-      "schema": null,
+      "schema": "schemas/no-patch.schema.json",
       "validator": "cr-validate-paper-patches",
       "gate": "hard",
       "tier": "L1",

@@ -53,14 +53,22 @@ if [ -d "$EXPERIMENTS_DIR" ]; then
     ALL_EXP_IDS=$(find "$EXPERIMENTS_DIR" -name 'EXP-*.yaml' -exec basename {} .yaml \; 2>/dev/null | sort -u || echo "")
 fi
 
-# From claim graph (if present)
+# Claim truth source: claim-ledger.yaml (L0 authoritative).
 CLAIM_LEDGER="$PROJECT_DIR/state/claim-ledger.yaml"
 if [ -f "$CLAIM_LEDGER" ]; then
     ALL_CLM_IDS=$(yq -r '.claims[]?.claim_id // ""' "$CLAIM_LEDGER" 2>/dev/null | sort -u || echo "")
 fi
-# Fallback to claim-graph.md only if claim-ledger.yaml is absent (legacy).
-if [ -z "$ALL_CLM_IDS" ] && [ -f "$PROJECT_DIR/state/claim-graph.md" ]; then
-    ALL_CLM_IDS=$(grep -oE 'CLM-[0-9]{3}' "$PROJECT_DIR/state/claim-graph.md" 2>/dev/null | sort -u || echo "")
+
+# Paper mode: claim-ledger.yaml is required for cross-reference validation.
+WM=$(grep -E '^workflow_mode:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^workflow_mode:\s*//' | xargs || echo "")
+if [ "$WM" = "paper" ]; then
+    if [ ! -f "$CLAIM_LEDGER" ]; then
+        fail "claim-ledger.yaml not found (required for paper mode)"
+        ALL_PASSED=false
+    elif [ -z "$ALL_CLM_IDS" ]; then
+        fail "claim-ledger.yaml has no claims — cannot validate cross-references"
+        ALL_PASSED=false
+    fi
 fi
 
 # ── Check patch → critique references ─────────────────────────────
@@ -74,7 +82,7 @@ if [ -d "$PATCHES_DIR" ]; then
             if echo "$ALL_CRT_IDS" | grep -q "$LINKED_CRT" 2>/dev/null; then
                 pass "$PP_ID → $LINKED_CRT (resolved)"
             else
-                fail "$PP_ID → $LINKED_CRT: critique ID not found in critique.md"
+                fail "$PP_ID → $LINKED_CRT: critique ID not found in critique-ledger.yaml"
             fi
         fi
 
@@ -120,7 +128,7 @@ if [ -d "$EXPERIMENTS_DIR" ]; then
             if echo "$ALL_CLM_IDS" | grep -q "$TARGET_CLAIM" 2>/dev/null; then
                 pass "$EXP_ID → $TARGET_CLAIM (claim resolved)"
             else
-                warn "$EXP_ID → $TARGET_CLAIM: claim ID not found in claim-ledger.yaml (or claim-graph.md fallback)"
+                warn "$EXP_ID → $TARGET_CLAIM: claim ID not found in claim-ledger.yaml"
             fi
         fi
     done

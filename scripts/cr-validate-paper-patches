@@ -117,7 +117,7 @@ if [ -d "$PATCHES_DIR" ]; then
         declare -A SEEN_IDS
 
         for patch_file in $PATCH_FILES; do
-            PATCH_ID=$(grep -E '^patch_id:' "$patch_file" 2>/dev/null | sed 's/^patch_id:\s*//' | xargs || echo "")
+            PATCH_ID=$(yq -r '.patch_id // ""' "$patch_file" 2>/dev/null || echo "")
 
             if [ -z "$PATCH_ID" ] || [[ ! "$PATCH_ID" =~ ^PP-[0-9]{3}$ ]]; then
                 fail "Invalid or missing patch_id in $(basename "$patch_file")"
@@ -149,7 +149,7 @@ if [ -d "$PATCHES_DIR" ]; then
             fi
 
             # ── Lifecycle validation ────────────────────────────────
-            LIFECYCLE_STATUS=$(grep -E '^lifecycle_status:' "$patch_file" 2>/dev/null | sed 's/^lifecycle_status:\s*//' | xargs || echo "")
+            LIFECYCLE_STATUS=$(yq -r '.lifecycle_status // ""' "$patch_file" 2>/dev/null || echo "")
             VALID_STATUSES=("proposed" "needs_human_decision" "approved" "recorded" "applied" "rejected" "superseded")
             STATUS_VALID=false
             for vs in "${VALID_STATUSES[@]}"; do
@@ -161,18 +161,18 @@ if [ -d "$PATCHES_DIR" ]; then
 
             # Check terminal states have required fields.
             if [ "$LIFECYCLE_STATUS" = "rejected" ]; then
-                REJ_REASON=$(grep -E '^rejection_reason:' "$patch_file" 2>/dev/null | sed 's/^rejection_reason:\s*//' | xargs || echo "")
+                REJ_REASON=$(yq -r '.rejection_reason // ""' "$patch_file" 2>/dev/null || echo "")
                 [ -z "$REJ_REASON" ] && fail "$PATCH_ID: lifecycle_status=rejected but no rejection_reason"
             fi
 
             if [ "$LIFECYCLE_STATUS" = "superseded" ]; then
-                SUPERSEDED_BY=$(grep -E '^superseded_by:' "$patch_file" 2>/dev/null | sed 's/^superseded_by:\s*//' | xargs || echo "")
+                SUPERSEDED_BY=$(yq -r '.superseded_by // ""' "$patch_file" 2>/dev/null || echo "")
                 [ -z "$SUPERSEDED_BY" ] && fail "$PATCH_ID: lifecycle_status=superseded but no superseded_by"
             fi
 
             # ── Knowledge Implication check ──────────────────────────
             HAS_KNOWLEDGE_IMPL=$(grep -cE '^knowledge_implication:' "$patch_file" 2>/dev/null || echo 0)
-            if [ "$HAS_KNOWLEDGE_IMPL" -eq 0 ]; then
+            if [ "$HAS_KNOWLEDGE_IMPL" != "true" ]; then
                 fail "$PATCH_ID: missing knowledge_implication field"
             else
                 # Check literature_updates and thinking_candidates exist.

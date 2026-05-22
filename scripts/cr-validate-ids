@@ -64,7 +64,13 @@ if [ -d "$PATCHES_DIR" ]; then
 
         # Definitions: fields ending in _id with value prefix-XXX are definitions.
         # References: linked_* fields are references, not definitions.
-        for prefix in CRT CLM GAP EXP DEC; do
+        # created_from fields are references (nested YAML, use yq).
+        crt_ref=$(yq -r '.created_from.critique_id // ""' "$pf" 2>/dev/null || echo "")
+        [ -n "$crt_ref" ] && register_reference "$crt_ref" "$bf"
+        dsp_ref2=$(yq -r '.created_from.disposition_id // ""' "$pf" 2>/dev/null || echo "")
+        [ -n "$dsp_ref2" ] && register_reference "$dsp_ref2" "$bf"
+
+        for prefix in CRT CLM GAP EXP DEC DSP; do
             # linked_ fields are references.
             for ref_id in $(grep -oE "linked_.*:.*${prefix}-[0-9]{3}" "$pf" 2>/dev/null | grep -oE "${prefix}-[0-9]{3}" || echo ""); do
                 register_reference "$ref_id" "$bf"
