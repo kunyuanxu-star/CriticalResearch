@@ -136,6 +136,14 @@
         "phase_validators_hint": {
           "type": "array",
           "items": { "type": "string" }
+        },
+        "prompt": {
+          "type": "string",
+          "description": "Path to the phase-specific prompt file"
+        },
+        "prompt_hash": {
+          "type": ["string", "null"],
+          "description": "SHA256 hash of the prompt file for integrity verification"
         }
       }
     }

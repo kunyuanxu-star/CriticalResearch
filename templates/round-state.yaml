@@ -68,6 +68,8 @@ phases:
     status: open
     started_at: null
     completed_at: null
+    prompt: prompts/phases/snapshot_paper_state.md
+    prompt_hash: null
     depends_on: []
     required_inputs:
       - writing/paper-draft.md
@@ -97,6 +99,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/load_project_knowledge.md
+    prompt_hash: null
     depends_on:
       - snapshot_paper_state
     required_inputs:
@@ -130,6 +134,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/define_round_risk.md
+    prompt_hash: null
     depends_on:
       - load_project_knowledge
     required_inputs:
@@ -159,6 +165,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/freeze_round_scope.md
+    prompt_hash: null
     depends_on:
       - define_round_risk
     required_inputs:
@@ -192,6 +200,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/plan_research_questions.md
+    prompt_hash: null
     depends_on:
       - freeze_round_scope
     required_inputs:
@@ -223,6 +233,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/generate_search_strategy.md
+    prompt_hash: null
     depends_on:
       - plan_research_questions
     required_inputs:
@@ -256,6 +268,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/execute_retrieval.md
+    prompt_hash: null
     depends_on:
       - generate_search_strategy
     required_inputs:
@@ -286,6 +300,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/triage_sources.md
+    prompt_hash: null
     depends_on:
       - execute_retrieval
     required_inputs:
@@ -315,6 +331,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/ingest_sources.md
+    prompt_hash: null
     depends_on:
       - triage_sources
     required_inputs:
@@ -345,6 +363,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/read_sources.md
+    prompt_hash: null
     depends_on:
       - ingest_sources
     required_inputs:
@@ -378,6 +398,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/normalize_evidence.md
+    prompt_hash: null
     depends_on:
       - read_sources
     required_inputs:
@@ -409,6 +431,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/build_related_work_map.md
+    prompt_hash: null
     depends_on:
       - normalize_evidence
     required_inputs:
@@ -437,6 +461,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/update_literature_knowledge.md
+    prompt_hash: null
     depends_on:
       - build_related_work_map
     required_inputs:
@@ -475,6 +501,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/synthesize_claim_evidence.md
+    prompt_hash: null
     depends_on:
       - update_literature_knowledge
     required_inputs:
@@ -504,6 +532,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/synthesize_baseline_positioning.md
+    prompt_hash: null
     depends_on:
       - synthesize_claim_evidence
     required_inputs:
@@ -532,6 +562,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/synthesize_evaluation_gaps.md
+    prompt_hash: null
     depends_on:
       - synthesize_baseline_positioning
     required_inputs:
@@ -565,6 +597,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/critique_claim_precision.md
+    prompt_hash: null
     depends_on:
       - synthesize_evaluation_gaps
     required_inputs:
@@ -596,6 +630,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/critique_novelty_and_baselines.md
+    prompt_hash: null
     depends_on:
       - synthesize_evaluation_gaps
     required_inputs:
@@ -624,6 +660,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/critique_evidence_sufficiency.md
+    prompt_hash: null
     depends_on:
       - synthesize_evaluation_gaps
     required_inputs:
@@ -652,6 +690,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/critique_evaluation_contract.md
+    prompt_hash: null
     depends_on:
       - synthesize_evaluation_gaps
     required_inputs:
@@ -678,6 +718,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/critique_writing_argument.md
+    prompt_hash: null
     depends_on:
       - synthesize_evaluation_gaps
     required_inputs:
@@ -708,6 +750,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/merge_critique_ledger.md
+    prompt_hash: null
     depends_on:
       - critique_claim_precision
       - critique_novelty_and_baselines
@@ -747,6 +791,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/generate_dispositions.md
+    prompt_hash: null
     depends_on:
       - merge_critique_ledger
     required_inputs:
@@ -772,6 +818,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/resolve_human_decisions.md
+    prompt_hash: null
     depends_on:
       - generate_dispositions
     required_inputs:
@@ -804,6 +852,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/generate_paper_patches.md
+    prompt_hash: null
     depends_on:
       - resolve_human_decisions
     required_inputs:
@@ -837,6 +887,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/generate_experiment_obligations.md
+    prompt_hash: null
     depends_on:
       - generate_paper_patches
     required_inputs:
@@ -874,6 +926,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/plan_writing_changes.md
+    prompt_hash: null
     depends_on:
       - generate_experiment_obligations
     required_inputs:
@@ -904,6 +958,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/apply_local_section_patches.md
+    prompt_hash: null
     depends_on:
       - plan_writing_changes
     required_inputs:
@@ -938,6 +994,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/validate_patch_application.md
+    prompt_hash: null
     depends_on:
       - apply_local_section_patches
     required_inputs:
@@ -970,6 +1028,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/global_argument_pass.md
+    prompt_hash: null
     depends_on:
       - validate_patch_application
     required_inputs:
@@ -1000,6 +1060,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/claim_evidence_alignment_pass.md
+    prompt_hash: null
     depends_on:
       - global_argument_pass
     required_inputs:
@@ -1030,6 +1092,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/reviewer_readiness_pass.md
+    prompt_hash: null
     depends_on:
       - claim_evidence_alignment_pass
     required_inputs:
@@ -1066,6 +1130,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/distill_literature_knowledge.md
+    prompt_hash: null
     depends_on:
       - reviewer_readiness_pass
     required_inputs:
@@ -1099,6 +1165,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/distill_thinking_knowledge.md
+    prompt_hash: null
     depends_on:
       - reviewer_readiness_pass
     required_inputs:
@@ -1132,6 +1200,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/apply_knowledge_delta.md
+    prompt_hash: null
     depends_on:
       - distill_literature_knowledge
       - distill_thinking_knowledge
@@ -1167,6 +1237,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/prepare_next_round.md
+    prompt_hash: null
     depends_on:
       - apply_knowledge_delta
     required_inputs:
@@ -1197,6 +1269,8 @@ phases:
     status: blocked
     started_at: null
     completed_at: null
+    prompt: prompts/phases/close_round.md
+    prompt_hash: null
     depends_on:
       - prepare_next_round
     required_outputs:

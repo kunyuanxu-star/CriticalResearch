@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# cr-validate-prompts — Hard gate: every phase in phase_order must have a prompt file.
+# Checks: prompt file exists, has required sections, hash matches state.yaml record.
+#
+# Usage: cr-validate-prompts <project_dir> <round_dir>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+ROUND_DIR="${2:-}"
+
+if [ -z "$PROJECT_DIR" ] || [ -z "$ROUND_DIR" ]; then
+    echo "Usage: cr-validate-prompts <project_dir> <round_dir>" >&2
+    exit 2
+fi
+
+STATE_FILE="$ROUND_DIR/state.yaml"
+if [ ! -f "$STATE_FILE" ]; then
+    fail "state.yaml not found in $ROUND_DIR"
+    cr_exit_summary
+fi
+
+# Resolve skill home for prompt paths.
+SKILL_HOME="$(cr_skill_home)"
+
+echo "── Phase Prompt Validation ──"
+
+FAIL=0
+TOTAL=0
+
+REQUIRED_SECTIONS=("Mission" "Inputs" "Outputs" "Allowed Actions" "Forbidden Actions" "Failure Conditions")
+
+readarray -t PHASE_LIST < <(yq -r '.phase_order[]' "$STATE_FILE" 2>/dev/null || echo "")
+
+for phase in "${PHASE_LIST[@]}"; do
+    [ -z "$phase" ] && continue
+    TOTAL=$((TOTAL + 1))
+
+    # Read prompt path from state.yaml.
+    PROMPT_PATH=$(yq -r ".phases.\"$phase\".prompt // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
+
+    if [ -z "$PROMPT_PATH" ] || [ "$PROMPT_PATH" = "null" ]; then
+        fail "Phase '$phase': no prompt path configured"
+        FAIL=1
+        continue
+    fi
+
+    # Resolve prompt path: relative to skill home.
+    if [ -f "$SKILL_HOME/$PROMPT_PATH" ]; then
+        FULL_PATH="$SKILL_HOME/$PROMPT_PATH"
+    elif [ -f "$PROJECT_DIR/$PROMPT_PATH" ]; then
+        FULL_PATH="$PROJECT_DIR/$PROMPT_PATH"
+    elif [ -f "$PROMPT_PATH" ]; then
+        FULL_PATH="$PROMPT_PATH"
+    else
+        fail "Phase '$phase': prompt file not found: $PROMPT_PATH (looked in skill home, project dir, and absolute)"
+        FAIL=1
+        continue
+    fi
+
+    # Check file is non-empty and >100 bytes.
+    PSIZE=$(wc -c < "$FULL_PATH" 2>/dev/null | tr -d ' ' || echo "0")
+    if [ "${PSIZE:-0}" -lt 100 ]; then
+        fail "Phase '$phase': prompt file too small (${PSIZE} bytes, need >=100)"
+        FAIL=1
+        continue
+    fi
+
+    # Check required sections.
+    for section in "${REQUIRED_SECTIONS[@]}"; do
+        if grep -qi "^## $section" "$FULL_PATH" 2>/dev/null; then
+            : # found
+        else
+            fail "Phase '$phase': missing section '## $section' in $PROMPT_PATH"
+            FAIL=1
+        fi
+    done
+
+    # Verify prompt_hash if recorded.
+    RECORDED_HASH=$(yq -r ".phases.\"$phase\".prompt_hash // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
+    if [ -n "$RECORDED_HASH" ] && [ "$RECORDED_HASH" != "null" ]; then
+        ACTUAL_HASH=$(shasum -a 256 "$FULL_PATH" 2>/dev/null | cut -d' ' -f1 || echo "")
+        if [ "$RECORDED_HASH" = "$ACTUAL_HASH" ]; then
+            pass "Phase '$phase': prompt OK (hash verified)"
+        else
+            fail "Phase '$phase': prompt hash mismatch (recorded=$RECORDED_HASH, actual=$ACTUAL_HASH)"
+            FAIL=1
+        fi
+    else
+        pass "Phase '$phase': prompt OK (no hash recorded)"
+    fi
+done
+
+echo ""
+echo "Phases with prompts: $TOTAL"
+
+if [ "$FAIL" -ne 0 ]; then
+    cr_exit_summary
+fi
+
+pass "All $TOTAL phases have valid prompts"
+cr_exit_summary
