@@ -54,7 +54,12 @@ if [ -d "$EXPERIMENTS_DIR" ]; then
 fi
 
 # From claim graph (if present)
-if [ -n "$PROJECT_DIR" ] && [ -f "$PROJECT_DIR/state/claim-graph.md" ]; then
+CLAIM_LEDGER="$PROJECT_DIR/state/claim-ledger.yaml"
+if [ -f "$CLAIM_LEDGER" ]; then
+    ALL_CLM_IDS=$(yq -r '.claims[]?.claim_id // ""' "$CLAIM_LEDGER" 2>/dev/null | sort -u || echo "")
+fi
+# Fallback to claim-graph.md only if claim-ledger.yaml is absent (legacy).
+if [ -z "$ALL_CLM_IDS" ] && [ -f "$PROJECT_DIR/state/claim-graph.md" ]; then
     ALL_CLM_IDS=$(grep -oE 'CLM-[0-9]{3}' "$PROJECT_DIR/state/claim-graph.md" 2>/dev/null | sort -u || echo "")
 fi
 
@@ -115,7 +120,7 @@ if [ -d "$EXPERIMENTS_DIR" ]; then
             if echo "$ALL_CLM_IDS" | grep -q "$TARGET_CLAIM" 2>/dev/null; then
                 pass "$EXP_ID → $TARGET_CLAIM (claim resolved)"
             else
-                warn "$EXP_ID → $TARGET_CLAIM: claim ID not found in claim-ledger.yaml or claim-graph.md"
+                warn "$EXP_ID → $TARGET_CLAIM: claim ID not found in claim-ledger.yaml (or claim-graph.md fallback)"
             fi
         fi
     done

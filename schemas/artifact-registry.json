@@ -286,6 +286,17 @@
       "modes": [
         "paper"
       ]
+    },
+    "no_patch_decision": {
+      "path_template": "rounds/round-{round_num}/patches/.no-patch.yaml",
+      "schema": null,
+      "validator": "cr-validate-paper-patches",
+      "gate": "hard",
+      "tier": "L1",
+      "description": "Structured no-op record when no paper patches were generated",
+      "modes": [
+        "paper"
+      ]
     }
   },
   "validator_pipeline": {

@@ -69,19 +69,19 @@ fi
 CRITIQUE_FILE="$ROUND_DIR/critique-ledger.yaml"
 if [ -f "$CRITIQUE_FILE" ]; then
     # Extract critique IDs with medium+ severity.
-    CRITIQUE_IDS=$(yq -r '.critiques[]?.critique_id // ""' "$CRITIQUE_FILE" 2>/dev/null | sort -u || echo "")
-    HIGH_SEVERITY_COUNT=$(yq -r '[.critiques[]? | select(.severity == "fatal" or .severity == "high" or .severity == "medium")] | length' "$CRITIQUE_FILE" 2>/dev/null || echo 0)
+    MEDIUM_PLUS_IDS=$(yq -r '[.critiques[]? | select(.severity == "fatal" or .severity == "high" or .severity == "medium")] | .[].critique_id // ""' "$CRITIQUE_FILE" 2>/dev/null | sort -u || echo "")
+    HIGH_SEVERITY_COUNT=$(echo "$MEDIUM_PLUS_IDS" | grep -c 'CRT-' 2>/dev/null || echo 0)
 
-    if [ -n "$CRITIQUE_IDS" ] && [ "$HIGH_SEVERITY_COUNT" -gt 0 ]; then
+    if [ "${HIGH_SEVERITY_COUNT:-0}" -gt 0 ]; then
         # Count critique IDs found.
         CRT_COUNT=0
-        for cid in $CRITIQUE_IDS; do
+        for cid in $MEDIUM_PLUS_IDS; do
             CRT_COUNT=$((CRT_COUNT + 1))
         done
 
         # Check if each critique has a disposition.
         if [ "$DISPOSITIONS_JSON" != "[]" ] && command -v jq >/dev/null 2>&1; then
-            for cid in $CRITIQUE_IDS; do
+            for cid in $MEDIUM_PLUS_IDS; do
                 HAS_DISP=$(printf '%s' "$DISPOSITIONS_JSON" | jq -r --arg cid "$cid" '(.dispositions // [])[] | select(.critique_id == $cid) | .critique_id' 2>/dev/null)
                 if [ -z "$HAS_DISP" ]; then
                     fail "Critique $cid has no disposition record"
