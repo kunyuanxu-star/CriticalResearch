@@ -79,7 +79,7 @@ for i in $(seq 0 $((VALIDATOR_COUNT - 1))); do
             "$VALIDATOR_SCRIPT" "$ROUND_DIR" "$PROJECT_DIR" || gate_fail
             ;;
         cr-validate-all-phases)
-            "$VALIDATOR_SCRIPT" "$PROJECT_DIR" "$ROUND_DIR" || gate_fail
+            "$VALIDATOR_SCRIPT" "$PROJECT_DIR" "$ROUND_DIR" postclose || gate_fail
             ;;
         cr-validate-references)
             "$VALIDATOR_SCRIPT" "$ROUND_DIR" "$PROJECT_DIR" || gate_fail

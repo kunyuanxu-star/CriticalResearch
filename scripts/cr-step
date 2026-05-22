@@ -6,7 +6,8 @@
 #   status         Show current phase and what's missing
 #   status --machine  Machine-readable output (for hook injection)
 #   current        Print current phase name only
-#   advance        Validate current phase and advance to next
+#   start          Set current phase to running
+#   advance        Auto-start (open->running) then validate and advance
 #   validate       Validate current phase only (no advance)
 #   validate --stop-gate  Validate for stop hook (returns JSON)
 #   set-phase <p>  Manually set current phase (for repair)
@@ -24,6 +25,7 @@ usage() {
     echo "Subcommands:"
     echo "  status          Show current phase and missing requirements"
     echo "  current         Print current phase name only"
+    echo "  start           Set current phase to running (open->running)"
     echo "  advance         Validate current phase and advance to next"
     echo "  validate        Validate current phase without advancing"
     echo "  set-phase <p>   Manually set current phase (repair only)"
@@ -180,9 +182,49 @@ case "$SUBCMD" in
         get_current_phase
         ;;
 
+    start)
+        CURRENT=$(get_current_phase)
+        PHASE_STATUS=$(get_phase_status "$CURRENT")
+
+        if [ "$PHASE_STATUS" != "open" ]; then
+            echo "Error: cannot start phase '$CURRENT' (status=$PHASE_STATUS, must be open)" >&2
+            exit 2
+        fi
+
+        # Validate transition open->running.
+        if [ -x "$SCRIPT_DIR/cr-validate-phase-transition" ]; then
+            "$SCRIPT_DIR/cr-validate-phase-transition" "$STATE_FILE" "$CURRENT" "$PHASE_STATUS" "running" || exit 2
+        fi
+
+        NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        yq -i ".phases.\"$CURRENT\".status = \"running\"" "$STATE_FILE" 2>/dev/null
+        yq -i ".phases.\"$CURRENT\".started_at = \"$NOW\"" "$STATE_FILE" 2>/dev/null
+
+        # Write phase-run-log started record.
+        PHASE_ORDER=$(yq -r ".phase_order | index(\"$CURRENT\") // 0" "$STATE_FILE" 2>/dev/null || echo "0")
+        PHASE_ORDER=$((PHASE_ORDER + 1))
+        cat >> "$ROUND_DIR/phase-run-log.yaml" << LOGEOF
+- phase: $CURRENT
+  order: $PHASE_ORDER
+  started_at: "$NOW"
+  status_transition:
+    from: open
+    to: running
+LOGEOF
+        echo "Phase '$CURRENT' started (open -> running)"
+        ;;
+
     advance)
         CURRENT=$(get_current_phase)
-        echo "Current phase: $CURRENT"
+        PHASE_STATUS=$(get_phase_status "$CURRENT")
+        echo "Current phase: $CURRENT ($PHASE_STATUS)"
+
+        # Auto-start: if phase is open, set to running first.
+        if [ "$PHASE_STATUS" = "open" ]; then
+            echo "Auto-starting phase..."
+            "$0" "$PROJECT" start || { echo "Failed to start phase"; exit 2; }
+            PHASE_STATUS="running"
+        fi
 
         # Delegate to cr-complete-phase: validates, marks complete, unblocks next.
         if [ -x "$SCRIPT_DIR/cr-complete-phase" ]; then

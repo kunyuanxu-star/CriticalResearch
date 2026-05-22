@@ -15,7 +15,7 @@ jobs:
         run: sudo apt-get install -y shellcheck
       - name: Run shellcheck
         run: |
-          shellcheck scripts/cr scripts/cr-* scripts/critical-research-hook || true
+          shellcheck scripts/cr scripts/cr-* scripts/critical-research-hook
 
   syntax:
     runs-on: ubuntu-latest
@@ -53,7 +53,7 @@ jobs:
       - name: Run happy-path test
         run: |
           export PATH="$PWD/scripts:$PATH"
-          bash tests/test-paper-round-happy-path.sh
+          bash tests/test-full-round-enforcement.sh
 
   yaml-templates:
     runs-on: ubuntu-latest

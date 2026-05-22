@@ -297,14 +297,41 @@ MD
         echo "Closing round $ACTIVE_RND for project '$PROJECT'..."
         echo ""
 
-        # Run the full validator pipeline from artifact-registry.json.
-        # No fallback — every hard gate in the registry must pass.
         PIPELINE="$SCRIPT_DIR/cr-run-validator-pipeline"
+        STATE_FILE="$ROUND_DIR/state.yaml"
         if [ ! -x "$PIPELINE" ]; then
             echo "Error: cr-run-validator-pipeline not found or not executable" >&2
             exit 1
         fi
 
+        # Phase 1: Pre-close — validate phases 1-36.
+        echo "── Phase 1: Pre-close validation (phases 1-36) ──"
+        if ! "$SCRIPT_DIR/cr-validate-all-phases" "$PROJECT_DIR" "$ROUND_DIR" preclose; then
+            echo ""
+            echo "Pre-close validation failed. Fix failures before closing."
+            exit 1
+        fi
+
+        # Phase 2: Complete close_round as the 37th phase.
+        echo ""
+        echo "── Phase 2: Completing close_round (37th phase) ──"
+        if ! "$SCRIPT_DIR/cr-complete-phase" "$PROJECT_DIR" "$ROUND_DIR" close_round; then
+            echo ""
+            echo "Failed to complete close_round phase. Fix required outputs and retry."
+            exit 1
+        fi
+
+        # Phase 3: Post-close — validate all 37 phases.
+        echo ""
+        echo "── Phase 3: Post-close validation (37/37 phases) ──"
+        if ! "$SCRIPT_DIR/cr-validate-all-phases" "$PROJECT_DIR" "$ROUND_DIR" postclose; then
+            echo ""
+            echo "Post-close validation failed."
+            exit 1
+        fi
+
+        # Phase 4: Run full validator pipeline.
+        echo ""
         if ! "$PIPELINE" "$PROJECT_DIR" "$ROUND_DIR"; then
             echo ""
             echo "Round cannot close. Fix the failures listed above and re-run 'cr close-round $PROJECT'."
@@ -313,10 +340,8 @@ MD
 
         NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-        # Mark close_round phase complete (the 14th and final phase).
-        STATE_FILE="$ROUND_DIR/state.yaml"
+        # Mark round as closed.
         if [ -f "$STATE_FILE" ]; then
-            yq -i ".phases.close_round.status = \"complete\" | .phases.close_round.completed_at = \"$NOW\"" "$STATE_FILE" 2>/dev/null || true
             yq -i ".current_phase = \"close_round\" | .status = \"complete\"" "$STATE_FILE" 2>/dev/null || true
         fi
 

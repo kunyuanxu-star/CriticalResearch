@@ -4,7 +4,7 @@
 # A round cannot close unless every pre-close phase is individually complete with
 # a timestamp.
 #
-# Usage: cr-validate-all-phases <project_dir> <round_dir>
+# Usage: cr-validate-all-phases <project_dir> <round_dir> [preclose|postclose]
 
 set -euo pipefail
 
@@ -15,10 +15,14 @@ PROJECT_DIR="${1:-}"
 ROUND_DIR="${2:-}"
 
 if [ -z "$PROJECT_DIR" ] || [ -z "$ROUND_DIR" ]; then
-    echo "Usage: cr-validate-all-phases <project_dir> <round_dir>" >&2
+    echo "Usage: cr-validate-all-phases <project_dir> <round_dir> [preclose|postclose]" >&2
     exit 2
+
+MODE="${3:-postclose}"
 fi
 
+
+MODE="${3:-postclose}"
 STATE_FILE="$ROUND_DIR/state.yaml"
 
 if [ ! -f "$STATE_FILE" ]; then
@@ -51,8 +55,11 @@ POLICY_COUNT=$(yq -r '.closure_policy.require_all_phases_complete // false' "$ST
 for phase in "${PHASE_LIST[@]}"; do
     [ -z "$phase" ] && continue
 
-    # close_round is the 37th phase — must be complete like every other phase.
-    # It is no longer a side effect of cr close-round; it must be completed via cr-complete-phase.
+    # preclose mode: skip close_round (not yet complete).
+    # postclose mode: check close_round like every other phase.
+    if [ "$MODE" = "preclose" ] && [ "$phase" = "close_round" ]; then
+        continue
+    fi
 
     TOTAL=$((TOTAL + 1))
     status=$(yq -r ".phases.$phase.status // \"missing\"" "$STATE_FILE" 2>/dev/null || echo "missing")
@@ -80,11 +87,11 @@ if [ "$POLICY_COUNT" != "true" ]; then
 fi
 
 echo ""
-echo "Phases complete: $COMPLETED / $TOTAL phases"
+echo "Phases complete ($MODE): $COMPLETED / $TOTAL phases"
 
 if [ "$FAIL" -ne 0 ]; then
     cr_exit_summary
 fi
 
-pass "All $TOTAL phases complete"
+pass "All $TOTAL phases complete ($MODE)"
 cr_exit_summary
