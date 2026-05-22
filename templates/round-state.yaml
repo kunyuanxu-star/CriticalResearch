@@ -12,6 +12,17 @@ required_source_levels:
   allow_b: true
   allow_c_only_as_lead: true
 
+execution_policy:
+  invocation_mode: slash_command
+  full_round_required: true
+  full_paper_required: true
+  required_phase_count: 37
+  allow_partial_stop: false
+  stop_only_on:
+    - round_closed
+    - human_decision_required
+    - unrecoverable_tool_error
+
 phase_order:
   # M0: Paper State
   - snapshot_paper_state

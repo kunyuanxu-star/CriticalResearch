@@ -13,6 +13,20 @@
     "current_phase": { "type": "string" },
     "required_research": { "type": "boolean" },
     "required_min_sources": { "type": "integer", "minimum": 0 },
+    "execution_policy": {
+      "type": "object",
+      "properties": {
+        "invocation_mode": { "type": "string", "enum": ["slash_command", "manual"] },
+        "full_round_required": { "type": "boolean" },
+        "full_paper_required": { "type": "boolean" },
+        "required_phase_count": { "type": "integer", "minimum": 1 },
+        "allow_partial_stop": { "type": "boolean" },
+        "stop_only_on": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["round_closed", "human_decision_required", "unrecoverable_tool_error"] }
+        }
+      }
+    },
     "required_source_levels": {
       "type": "object",
       "properties": {

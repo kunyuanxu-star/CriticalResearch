@@ -68,7 +68,7 @@ cr close-round my-topic          # Validate and close the active round
 cr validate my-topic             # Run all project invariant checks
 
 # Automated phase runner (validates and advances, does not generate artifacts)
-cr run-round my-topic            # Auto-advance through all phases
+cr run-round my-topic            # Advance through all 37 phases (validates only)
 ```
 
 ## Workflow Modes
