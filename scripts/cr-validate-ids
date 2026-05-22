@@ -135,7 +135,13 @@ fi
 # Check that referenced IDs exist (warn if not).
 for ref_id in "${!REFERENCED_IDS[@]}"; do
     if [ -z "${DEFINED_IDS[$ref_id]:-}" ]; then
-        warn "Referenced ID not defined in this round: $ref_id (referenced by:${REFERENCED_IDS[$ref_id]})"
+                    WM2=$(grep -E '^workflow_mode:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^workflow_mode:\s*//' | xargs || echo "")
+            if [ "$WM2" = "paper" ]; then
+                fail "Referenced ID not defined in this round: $ref_id (referenced by:${REFERENCED_IDS[$ref_id]})"
+                ALL_PASSED=false
+            else
+                warn "Referenced ID not defined in this round: $ref_id (referenced by:${REFERENCED_IDS[$ref_id]})"
+            fi
     fi
 done
 

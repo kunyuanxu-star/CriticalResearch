@@ -281,7 +281,8 @@ cat > "$ROUND/dispositions.yaml" << YAML
 schema_version: "1.0.0"
 round_id: $ACTIVE
 dispositions:
-  - critique_id: CRT-001
+  - disposition_id: DSP-001
+    critique_id: CRT-001
     disposition_type: paper_patch
     linked_patch_id: PP-001
     justification: "The critique is valid and requires claim narrowing."
