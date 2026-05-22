@@ -128,7 +128,11 @@ if [ -d "$EXPERIMENTS_DIR" ]; then
             if echo "$ALL_CLM_IDS" | grep -q "$TARGET_CLAIM" 2>/dev/null; then
                 pass "$EXP_ID → $TARGET_CLAIM (claim resolved)"
             else
-                warn "$EXP_ID → $TARGET_CLAIM: claim ID not found in claim-ledger.yaml"
+                if [ "${WM:-}" = "paper" ]; then
+                    fail "$EXP_ID → $TARGET_CLAIM: claim ID not found in claim-ledger.yaml"
+                else
+                    warn "$EXP_ID → $TARGET_CLAIM: claim ID not found in claim-ledger.yaml"
+                fi
             fi
         fi
     done

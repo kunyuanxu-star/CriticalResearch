@@ -171,19 +171,18 @@ if [ -d "$PATCHES_DIR" ]; then
             fi
 
             # ── Knowledge Implication check ──────────────────────────
-            HAS_KNOWLEDGE_IMPL=$(grep -cE '^knowledge_implication:' "$patch_file" 2>/dev/null || echo 0)
+            HAS_KNOWLEDGE_IMPL=$(yq -r 'has("knowledge_implication")' "$patch_file" 2>/dev/null || echo "false")
             if [ "$HAS_KNOWLEDGE_IMPL" != "true" ]; then
                 fail "$PATCH_ID: missing knowledge_implication field"
             else
-                # Check literature_updates and thinking_candidates exist.
-                HAS_LIT=$(grep -cE 'literature_updates:' "$patch_file" 2>/dev/null || echo 0)
-                HAS_THINK=$(grep -cE 'thinking_candidates:' "$patch_file" 2>/dev/null || echo 0)
-                [ "$HAS_LIT" -ge 1 ] && pass "  $PATCH_ID: knowledge_implication.literature_updates present" || fail "  $PATCH_ID: knowledge_implication.literature_updates missing"
-                [ "$HAS_THINK" -ge 1 ] && pass "  $PATCH_ID: knowledge_implication.thinking_candidates present" || fail "  $PATCH_ID: knowledge_implication.thinking_candidates missing"
+                HAS_LIT=$(yq -r '.knowledge_implication | has("literature_updates")' "$patch_file" 2>/dev/null || echo "false")
+                HAS_THINK=$(yq -r '.knowledge_implication | has("thinking_candidates")' "$patch_file" 2>/dev/null || echo "false")
+                [ "$HAS_LIT" = "true" ] && pass "  $PATCH_ID: knowledge_implication.literature_updates present" || fail "  $PATCH_ID: knowledge_implication.literature_updates missing"
+                [ "$HAS_THINK" = "true" ] && pass "  $PATCH_ID: knowledge_implication.thinking_candidates present" || fail "  $PATCH_ID: knowledge_implication.thinking_candidates missing"
             fi
 
             # ── Human gate check ─────────────────────────────────────
-            NEEDS_HUMAN=$(grep -E '^needs_human_decision:' "$patch_file" 2>/dev/null | sed 's/^needs_human_decision:\s*//' | xargs || echo "false")
+            NEEDS_HUMAN=$(yq -r '.needs_human_decision // false' "$patch_file" 2>/dev/null || echo "false")
             if [ "$NEEDS_HUMAN" = "true" ]; then
                 HUMAN_RATIONALE=$(grep -E '^human_decision_rationale:' "$patch_file" 2>/dev/null | sed 's/^human_decision_rationale:\s*//' | xargs || echo "")
                 [ -z "$HUMAN_RATIONALE" ] && fail "$PATCH_ID: needs_human_decision=true but no human_decision_rationale"
@@ -193,11 +192,21 @@ if [ -d "$PATCHES_DIR" ]; then
             pass "$PATCH_ID: validated (status=$LIFECYCLE_STATUS)"
         done
     else
-        warn "patches/ directory exists but no PP-*.yaml files found"
+        # No PP-*.yaml: require patches/.no-patch.yaml with no_patch_reason.
+        NO_PATCH_FILE="$PATCHES_DIR/.no-patch.yaml"
+        if [ -f "$NO_PATCH_FILE" ]; then
+            NO_PATCH_REASON=$(yq -r '.no_patch_reason // ""' "$NO_PATCH_FILE" 2>/dev/null || echo "")
+            if [ -n "$NO_PATCH_REASON" ] && [ "$NO_PATCH_REASON" != "null" ]; then
+                pass "No-patch decision: ${NO_PATCH_REASON:0:80}..."
+            else
+                fail "patches/.no-patch.yaml exists but no_patch_reason is empty"
+            fi
+        else
+            fail "No PP-*.yaml files and no patches/.no-patch.yaml"
+        fi
     fi
 else
-    # Paper mode requires a patches directory.
-    warn "patches/ directory not found — paper mode rounds should contain patches/"
+    fail "patches/ directory not found — paper mode requires patches/"
 fi
 
 # ── Check patch→disposition linkage ─────────────────────────────────
