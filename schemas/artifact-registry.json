@@ -265,9 +265,9 @@
         "paper"
       ]
     },
-    "round_risk": {
-      "path_template": "rounds/round-{round_num}/round-risk.yaml",
-      "schema": "schemas/round-risk.schema.json",
+    "round_objective": {
+      "path_template": "rounds/round-{round_num}/round-objective.yaml",
+      "schema": "schemas/round-objective.schema.json",
       "validator": null,
       "gate": "hard",
       "tier": "L1",
@@ -276,9 +276,9 @@
       ],
       "description": "Primary risk and secondary risks this round targets"
     },
-    "round_scope": {
-      "path_template": "rounds/round-{round_num}/round-scope.yaml",
-      "schema": "schemas/round-scope.schema.json",
+    "full_paper_coverage_plan": {
+      "path_template": "rounds/round-{round_num}/full-paper-coverage-plan.yaml",
+      "schema": "schemas/full-paper-coverage-plan.schema.json",
       "validator": null,
       "gate": "hard",
       "tier": "L1",
@@ -542,120 +542,126 @@
       },
       {
         "order": 4,
+        "name": "cr-validate-full-paper-coverage",
+        "gate": "hard",
+        "checks": "Every phase covers full paper: all sections, claims, assumptions, baselines, evaluations. Objective is weighting lens, not scope limiter."
+      },
+      {
+        "order": 5,
         "name": "cr-validate-all-phases",
         "gate": "hard",
         "checks": "All phases in phase_order complete with timestamps (dynamically reads phase_order)"
       },
       {
-        "order": 5,
+        "order": 6,
         "name": "cr-validate-ids",
         "gate": "hard",
         "checks": "ID uniqueness within scope, pattern compliance, no dangling references"
       },
       {
-        "order": 6,
+        "order": 7,
         "name": "cr-validate-research",
         "gate": "hard",
         "checks": "Research enforcement: queries, sources, evidence, weakening evidence required"
       },
       {
-        "order": 7,
+        "order": 8,
         "name": "cr-validate-source-integrity",
         "gate": "hard",
         "checks": "Source snapshot hashes match source-index.yaml records"
       },
       {
-        "order": 8,
+        "order": 9,
         "name": "cr-validate-evidence-claim-links",
         "gate": "hard",
         "checks": "Every evidence item links to valid source and claim"
       },
       {
-        "order": 9,
+        "order": 10,
         "name": "cr-validate-critique",
         "gate": "hard",
         "checks": "Critique ledger structure: medium+ critiques have evidence_refs, high/fatal require patch"
       },
       {
-        "order": 10,
+        "order": 11,
         "name": "cr-validate-references",
         "gate": "hard",
         "checks": "Bidirectional links: critique->disposition->patch->anchor->experiment"
       },
       {
-        "order": 11,
+        "order": 12,
         "name": "cr-validate-anchors",
         "gate": "hard",
         "checks": "Patch targets resolve to draft sections"
       },
       {
-        "order": 12,
+        "order": 13,
         "name": "cr-validate-paper-patches",
         "gate": "hard",
         "checks": "Dispositions present, lifecycle transitions valid, Knowledge Implication fields present"
       },
       {
-        "order": 13,
+        "order": 14,
         "name": "cr-validate-experiments",
         "gate": "hard",
         "checks": "Experiment obligation completeness or explicit no-op record"
       },
       {
-        "order": 14,
+        "order": 15,
         "name": "cr-validate-patch-application",
         "gate": "hard",
         "checks": "Applied/recorded patches have after_text in draft and writing-diff references"
       },
       {
-        "order": 15,
+        "order": 16,
         "name": "cr-validate-knowledge",
         "gate": "hard",
         "checks": "knowledge-delta.yaml content quality and apply-log writeback"
       },
       {
-        "order": 16,
+        "order": 17,
         "name": "cr-validate-human-gates",
         "gate": "hard",
         "checks": "No pending thesis-level decisions in human-review-queue.yaml"
       },
       {
-        "order": 17,
+        "order": 18,
         "name": "cr-validate-paper-completeness",
         "gate": "hard",
         "checks": "Paper draft contains all required sections and anchors"
       },
       {
-        "order": 18,
+        "order": 19,
         "name": "cr-validate-source-notes",
         "gate": "hard",
         "checks": "Every source note has does_not_prove, linked claims, affected sections"
       },
       {
-        "order": 19,
+        "order": 20,
         "name": "cr-validate-claim-evidence-matrix",
         "gate": "hard",
         "checks": "Every core claim in matrix, support levels assigned, evidence gaps flagged"
       },
       {
-        "order": 20,
+        "order": 21,
         "name": "cr-validate-argument-flow",
         "gate": "hard",
         "checks": "Upstream/downstream section consistency after patch application"
       },
       {
-        "order": 21,
+        "order": 22,
         "name": "cr-validate-claim-paper-alignment",
         "gate": "hard",
         "checks": "Paper claim strength does not exceed evidence support level"
       },
       {
-        "order": 22,
+        "order": 23,
         "name": "cr-validate-reviewer-readiness",
         "gate": "hard",
         "checks": "High/fatal critiques resolved or tracked; remaining objections documented"
       },
       {
-        "order": 23,
+        "order": 24,
         "name": "cr-validate-transaction-chain",
         "gate": "hard",
         "checks": "Full S01-S37 causal chain: source->note->evidence->matrix->critique->disposition->patch->diff->knowledge"

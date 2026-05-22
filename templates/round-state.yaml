@@ -16,8 +16,8 @@ phase_order:
   # M0: Paper State
   - snapshot_paper_state
   - load_project_knowledge
-  - define_round_risk
-  - freeze_round_scope
+  - define_round_objective
+  - freeze_full_paper_coverage
   # M1: Research Planning
   - plan_research_questions
   - generate_search_strategy
@@ -130,11 +130,11 @@ phases:
       no_unresolved_blockers: true
     phase_validators_hint: []
 
-  define_round_risk:
+  define_round_objective:
     status: blocked
     started_at: null
     completed_at: null
-    prompt: prompts/phases/define_round_risk.md
+    prompt: prompts/phases/define_round_objective.md
     prompt_hash: null
     depends_on:
       - load_project_knowledge
@@ -142,12 +142,13 @@ phases:
       - paper-state.yaml
       - loaded-knowledge.yaml
     required_outputs:
-      - round-risk.yaml
+      - round-objective.yaml
     allowed_actions:
       - read_paper_state
       - read_loaded_knowledge
-      - write_round_risk
+      - write_round_objective
     forbidden_actions:
+      - limit_paper_scope
       - external_research
       - generate_critique
       - edit_draft
@@ -161,28 +162,33 @@ phases:
       no_unresolved_blockers: true
     phase_validators_hint: []
 
-  freeze_round_scope:
+  freeze_full_paper_coverage:
     status: blocked
     started_at: null
     completed_at: null
-    prompt: prompts/phases/freeze_round_scope.md
+    prompt: prompts/phases/freeze_full_paper_coverage.md
     prompt_hash: null
     depends_on:
-      - define_round_risk
+      - define_round_objective
     required_inputs:
-      - round-risk.yaml
+      - round-objective.yaml
       - paper-state.yaml
     required_outputs:
-      - round-scope.yaml
+      - full-paper-coverage-plan.yaml
     allowed_actions:
-      - read_round_risk
+      - read_round_objective
       - read_paper_state
-      - write_round_scope
+      - inventory_all_sections
+      - inventory_all_claims
+      - inventory_all_baselines
+      - inventory_all_evaluations
+      - write_full_paper_coverage_plan
     forbidden_actions:
+      - limit_paper_scope
       - external_research
       - edit_draft
       - generate_patch
-      - modify_out_of_scope_content
+      - exclude_any_section_or_claim
     no_op_policy:
       allowed: false
       required_justification_fields: []
@@ -190,7 +196,8 @@ phases:
       all_outputs_exist: true
       validator_passed: true
       no_unresolved_blockers: true
-    phase_validators_hint: []
+    phase_validators_hint:
+      - cr-validate-full-paper-coverage
 
   # ═══════════════════════════════════════════════════════════════════
   # M1: Research Planning — design research, do not execute yet
@@ -203,10 +210,10 @@ phases:
     prompt: prompts/phases/plan_research_questions.md
     prompt_hash: null
     depends_on:
-      - freeze_round_scope
+      - freeze_full_paper_coverage
     required_inputs:
-      - round-risk.yaml
-      - round-scope.yaml
+      - round-objective.yaml
+      - full-paper-coverage-plan.yaml
     required_outputs:
       - research-questions.yaml
     allowed_actions:

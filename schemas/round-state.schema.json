@@ -32,8 +32,8 @@
       "properties": {
         "snapshot_paper_state": { "$ref": "#/$defs/phase" },
         "load_project_knowledge": { "$ref": "#/$defs/phase" },
-        "define_round_risk": { "$ref": "#/$defs/phase" },
-        "freeze_round_scope": { "$ref": "#/$defs/phase" },
+        "define_round_objective": { "$ref": "#/$defs/phase" },
+        "freeze_full_paper_coverage": { "$ref": "#/$defs/phase" },
         "plan_research_questions": { "$ref": "#/$defs/phase" },
         "generate_search_strategy": { "$ref": "#/$defs/phase" },
         "execute_retrieval": { "$ref": "#/$defs/phase" },

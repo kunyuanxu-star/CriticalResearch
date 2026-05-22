@@ -209,32 +209,60 @@ round_recommendation:
   reason: ""
 YAML
 
-    cat > "$ROUND_DIR/round-risk.yaml" << YAML
-# Round Risk
-# Primary and secondary risks this round targets.
+    cat > "$ROUND_DIR/round-objective.yaml" << YAML
+# Round Objective
+# User-specified primary focus for this round. The objective is a weighting lens,
+# NOT a scope limiter. Every phase must cover the full paper.
 schema_version: "1.0.0"
 round_id: $NEXT_ROUND
-primary_risk:
-  risk_type: ""
-  linked_claim_id: ""
-  linked_section_anchor: ""
+raw_user_request: ""
+normalized_objective: ""
+objective_role: primary_focus
+scope_policy:
+  type: full_paper_required
+  objective_may_limit_scope: false
+  objective_may_change_priority: true
+  objective_may_change_critique_weight: true
+  objective_may_change_patch_priority: true
+coverage_required:
+  entire_paper: true
+  all_sections: true
+  all_core_claims: true
+  all_assumptions: true
+  all_baselines: true
+  all_evaluation_obligations: true
+  all_open_critiques: true
+primary_focus:
+  type: ""
   description: ""
-  reviewer_impact: ""
-secondary_risks: []
+success_criteria: []
 YAML
 
-    cat > "$ROUND_DIR/round-scope.yaml" << YAML
-# Round Scope
-# Frozen scope boundary for this round.
+    cat > "$ROUND_DIR/full-paper-coverage-plan.yaml" << YAML
+# Full-Paper Coverage Plan
+# Complete inventory of every element that every phase must check.
+# No section, claim, assumption, baseline, or evaluation may be excluded.
 schema_version: "1.0.0"
 round_id: $NEXT_ROUND
-in_scope_claims: []
-in_scope_sections: []
-in_scope_baselines: []
-out_of_scope_claims: []
-out_of_scope_sections: []
-allowed_changes: []
-forbidden_changes: []
+paper_inventory:
+  sections: []
+  claims: []
+  assumptions: []
+  baselines: []
+  evaluation_items: []
+coverage_policy:
+  all_sections_required: true
+  all_claims_required: true
+  all_assumptions_required: true
+  all_baselines_required: true
+  all_evaluation_items_required: true
+objective_focus:
+  objective_id: current
+  focus_type: ""
+  priority_weight: high
+non_focus_policy:
+  if_issue_found: record_as_secondary_finding
+  if_severe: create_patch_or_human_decision
 YAML
 
     cat > "$ROUND_DIR/research-questions.yaml" << YAML

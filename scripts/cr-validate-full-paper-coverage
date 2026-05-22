@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# cr-validate-full-paper-coverage — Hard gate: every phase must cover the full paper.
+# Checks that full-paper-coverage-plan.yaml exists and that every phase artifact
+# that should have full_paper_coverage actually does.
+#
+# InvFull0-InvFull5: The user objective is a weighting lens, not a scope limiter.
+# Every phase must cover all sections, claims, assumptions, baselines, evaluations.
+#
+# Usage: cr-validate-full-paper-coverage <project_dir> <round_dir>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+ROUND_DIR="${2:-}"
+
+if [ -z "$PROJECT_DIR" ] || [ -z "$ROUND_DIR" ]; then
+    echo "Usage: cr-validate-full-paper-coverage <project_dir> <round_dir>" >&2
+    exit 2
+fi
+
+STATE_FILE="$ROUND_DIR/state.yaml"
+if [ ! -f "$STATE_FILE" ]; then
+    fail "state.yaml not found"
+    cr_exit_summary
+fi
+
+COVERAGE_PLAN="$ROUND_DIR/full-paper-coverage-plan.yaml"
+OBJECTIVE="$ROUND_DIR/round-objective.yaml"
+
+echo "── Full-Paper Coverage Validation ──"
+
+# 1. Coverage plan must exist.
+if [ ! -f "$COVERAGE_PLAN" ]; then
+    fail "full-paper-coverage-plan.yaml not found — S04 must produce this"
+    cr_exit_summary
+fi
+pass "full-paper-coverage-plan.yaml exists"
+
+# 2. Round objective must have scope_policy.full_paper_required=true.
+if [ -f "$OBJECTIVE" ]; then
+    POLICY=$(yq -r '.scope_policy.type // ""' "$OBJECTIVE" 2>/dev/null || echo "")
+    MAY_LIMIT=$(yq -r '.scope_policy.objective_may_limit_scope // true' "$OBJECTIVE" 2>/dev/null || echo "true")
+    [ "$POLICY" = "full_paper_required" ] && pass "Scope policy: full_paper_required" || { fail "Scope policy must be full_paper_required, got: $POLICY"; }
+    [ "$MAY_LIMIT" = "false" ] && pass "Objective may NOT limit scope" || { fail "objective_may_limit_scope must be false, got: $MAY_LIMIT"; }
+fi
+
+# 3. Check that paper inventory has content.
+SECTIONS=$(yq -r '.paper_inventory.sections | length // 0' "$COVERAGE_PLAN" 2>/dev/null || echo "0")
+CLAIMS=$(yq -r '.paper_inventory.claims | length // 0' "$COVERAGE_PLAN" 2>/dev/null || echo "0")
+[ "$SECTIONS" -gt 0 ] 2>/dev/null && pass "Paper inventory: $SECTIONS sections" || { fail "Paper inventory has no sections — inventory the full paper"; }
+[ "$CLAIMS" -gt 0 ] 2>/dev/null && pass "Paper inventory: $CLAIMS claims" || warn "Paper inventory has no claims listed"
+
+# 4. Check that every completed phase artifact has full_paper_coverage.
+# Phases whose artifacts must have this field (phases that produce analysis):
+PHASES_WITH_COVERAGE=(
+    "snapshot_paper_state:paper-state.yaml"
+    "load_project_knowledge:loaded-knowledge.yaml"
+    "define_round_objective:round-objective.yaml"
+    "plan_research_questions:research-questions.yaml"
+    "critique_claim_precision:critique-claim-precision.yaml"
+    "critique_novelty_and_baselines:critique-novelty-baseline.yaml"
+    "critique_evidence_sufficiency:critique-evidence.yaml"
+    "critique_evaluation_contract:critique-evaluation.yaml"
+    "critique_writing_argument:critique-writing.yaml"
+    "merge_critique_ledger:critique-ledger.yaml"
+    "generate_dispositions:dispositions.yaml"
+    "global_argument_pass:argument-flow-report.yaml"
+    "claim_evidence_alignment_pass:claim-paper-matrix.yaml"
+    "reviewer_readiness_pass:reviewer-readiness.yaml"
+    "close_round:closure-report.yaml"
+)
+
+for entry in "${PHASES_WITH_COVERAGE[@]}"; do
+    phase="${entry%%:*}"
+    artifact="${entry##*:}"
+    PHASE_STATUS=$(yq -r ".phases.$phase.status // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
+
+    if [ "$PHASE_STATUS" = "complete" ]; then
+        AF="$ROUND_DIR/$artifact"
+        if [ -f "$AF" ]; then
+            HAS_COVERAGE=$(yq -r '.full_paper_coverage // ""' "$AF" 2>/dev/null || echo "")
+            if [ -n "$HAS_COVERAGE" ] && [ "$HAS_COVERAGE" != "null" ]; then
+                pass "Coverage: $phase ($artifact)"
+            else
+                fail "Phase '$phase' complete but $artifact has no full_paper_coverage field"
+            fi
+            HAS_OBJ=$(yq -r '.objective_relevance // ""' "$AF" 2>/dev/null || echo "")
+            if [ -n "$HAS_OBJ" ] && [ "$HAS_OBJ" != "null" ]; then
+                pass "  Objective relevance recorded"
+            else
+                fail "Phase '$phase' complete but $artifact has no objective_relevance field"
+            fi
+        fi
+    fi
+done
+
+cr_exit_summary

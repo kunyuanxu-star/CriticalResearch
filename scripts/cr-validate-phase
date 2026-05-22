@@ -206,29 +206,29 @@ case "$PHASE" in
         fi
         ;;
 
-    define_round_risk)
-        check_field_substantive "$ROUND_DIR/round-risk.yaml" '.primary_risk.risk_type' "Primary risk type"
-        check_field_substantive "$ROUND_DIR/round-risk.yaml" '.primary_risk.description' "Risk description"
-        check_field_substantive "$ROUND_DIR/round-risk.yaml" '.primary_risk.reviewer_impact' "Reviewer impact"
+    define_round_objective)
+        check_field_substantive "$ROUND_DIR/round-objective.yaml" '.primary_risk.risk_type' "Primary focus type"
+        check_field_substantive "$ROUND_DIR/round-objective.yaml" '.primary_risk.description' "Objective description"
+        check_field_substantive "$ROUND_DIR/round-objective.yaml" '.primary_risk.reviewer_impact' "Scope policy check"
         # Primary risk must bind to claim_id or section_anchor
-        RISK_CLAIM=$(yq -r '.primary_risk.linked_claim_id // ""' "$ROUND_DIR/round-risk.yaml" 2>/dev/null || echo "")
-        RISK_SECTION=$(yq -r '.primary_risk.linked_section_anchor // ""' "$ROUND_DIR/round-risk.yaml" 2>/dev/null || echo "")
+        RISK_CLAIM=$(yq -r '.primary_risk.linked_claim_id // ""' "$ROUND_DIR/round-objective.yaml" 2>/dev/null || echo "")
+        RISK_SECTION=$(yq -r '.primary_risk.linked_section_anchor // ""' "$ROUND_DIR/round-objective.yaml" 2>/dev/null || echo "")
         [ -n "$RISK_CLAIM" ] || [ -n "$RISK_SECTION" ] || { fail "Primary risk must bind to a claim_id or section_anchor"; ALL_PRESENT=false; }
         # Risk type must be from valid set
-        RISK_TYPE=$(yq -r '.primary_risk.risk_type // ""' "$ROUND_DIR/round-risk.yaml" 2>/dev/null || echo "")
+        RISK_TYPE=$(yq -r '.primary_risk.risk_type // ""' "$ROUND_DIR/round-objective.yaml" 2>/dev/null || echo "")
         case "$RISK_TYPE" in
-            novelty_risk|baseline_risk|evidence_risk|evaluation_risk|writing_risk|assumption_risk|scope_risk|thesis_risk) pass "Risk type valid: $RISK_TYPE" ;;
-            *) fail "Invalid risk_type: $RISK_TYPE"; ALL_PRESENT=false ;;
+            novelty_risk|baseline_risk|evidence_risk|evaluation_risk|writing_risk|assumption_risk|scope_risk|thesis_risk) pass "Objective valid: $RISK_TYPE" ;;
+            *) fail "Invalid objective focus_type: $RISK_TYPE"; ALL_PRESENT=false ;;
         esac
         ;;
 
-    freeze_round_scope)
-        check_array_content "$ROUND_DIR/round-scope.yaml" '.in_scope_claims' 1 "In-scope claims"
-        check_array_content "$ROUND_DIR/round-scope.yaml" '.forbidden_changes' 1 "Forbidden changes"
+    freeze_full_paper_coverage)
+        check_array_content "$ROUND_DIR/full-paper-coverage-plan.yaml" '.in_scope_claims' 1 "In-scope claims"
+        check_array_content "$ROUND_DIR/full-paper-coverage-plan.yaml" '.forbidden_changes' 1 "Forbidden changes"
         # Each in-scope claim must reference a claim from paper-state
-        if [ -f "$ROUND_DIR/round-scope.yaml" ] && [ -f "$ROUND_DIR/paper-state.yaml" ]; then
+        if [ -f "$ROUND_DIR/full-paper-coverage-plan.yaml" ] && [ -f "$ROUND_DIR/paper-state.yaml" ]; then
             PAPER_CLAIMS=$(yq -r '.core_claims[].claim_id' "$ROUND_DIR/paper-state.yaml" 2>/dev/null || echo "")
-            IN_SCOPE=$(yq -r '.in_scope_claims[]' "$ROUND_DIR/round-scope.yaml" 2>/dev/null || echo "")
+            IN_SCOPE=$(yq -r '.in_scope_claims[]' "$ROUND_DIR/full-paper-coverage-plan.yaml" 2>/dev/null || echo "")
             for isc in $IN_SCOPE; do
                 echo "$PAPER_CLAIMS" | grep -qw "$isc" || { fail "In-scope claim '$isc' not found in paper-state"; ALL_PRESENT=false; }
             done

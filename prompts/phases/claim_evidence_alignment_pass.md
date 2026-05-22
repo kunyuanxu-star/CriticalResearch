@@ -39,5 +39,33 @@ mapping[*]:
 - Paper claim strength exceeds evidence without documented justification.
 - Mapping is empty.
 
+
+## Full-Paper Coverage Requirement
+
+This phase must operate over the entire paper, not only over the current round objective.
+
+You must inspect all required sections, claims, assumptions, baselines, and evaluation items listed in `full-paper-coverage-plan.yaml`.
+
+The current round objective determines priority and emphasis, but it must not narrow coverage.
+
+Your output artifact must include:
+
+```yaml
+full_paper_coverage:
+  sections_checked: []
+  claims_checked: []
+  assumptions_checked: []
+  baselines_checked: []
+  evaluation_items_checked: []
+  omissions: []
+
+objective_relevance:
+  level: direct | indirect
+  explanation: ""
+  objective_specific_findings: []
+```
+
+If any required item is not checked, this phase must not be marked complete.
+
 ## Handoff
 reviewer_readiness_pass depends on this alignment report.
