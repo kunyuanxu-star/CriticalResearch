@@ -48,7 +48,7 @@ echo "  Workflow mode: paper"
 
 # ── Check disposition records exist ─────────────────────────────────
 
-# Look for dispositions in YAML file or inline in critique.md.
+# Collect CRT IDs from critique-ledger.yaml (L1 authoritative), fallback to critique.md.
 DISPOSITIONS_FILE="$ROUND_DIR/dispositions.yaml"
 DISPOSITIONS_JSON=""
 
@@ -66,11 +66,12 @@ fi
 
 # ── Check critiques have dispositions ──────────────────────────────
 
-CRITIQUE_FILE="$ROUND_DIR/critique.md"
+CRITIQUE_FILE="$ROUND_DIR/critique-ledger.yaml"
+CRITIQUE_MD="$ROUND_DIR/critique.md"
 if [ -f "$CRITIQUE_FILE" ]; then
     # Extract critique IDs with medium+ severity.
-    CRITIQUE_IDS=$(grep -oE 'CRT-[0-9]{3}' "$CRITIQUE_FILE" 2>/dev/null || echo "")
-    HIGH_SEVERITY_COUNT=$(grep -cE '\b(fatal|high|medium)\b' "$CRITIQUE_FILE" 2>/dev/null || echo 0)
+    CRITIQUE_IDS=$(yq -r '.critiques[]?.critique_id // ""' "$CRITIQUE_FILE" 2>/dev/null | sort -u || echo "")
+    HIGH_SEVERITY_COUNT=$(yq -r '[.critiques[]? | select(.severity == "fatal" or .severity == "high" or .severity == "medium")] | length' "$CRITIQUE_FILE" 2>/dev/null || echo 0)
 
     if [ -n "$CRITIQUE_IDS" ] && [ "$HIGH_SEVERITY_COUNT" -gt 0 ]; then
         # Count critique IDs found.

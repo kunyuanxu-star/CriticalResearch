@@ -20,6 +20,7 @@ echo "── Evidence-Claim Links ──"
 
 EVID_FILE="$ROUND_DIR/evidence-ledger.yaml"
 SRC_INDEX="$ROUND_DIR/source-index.yaml"
+CLAIM_LEDGER="$PROJECT_DIR/state/claim-ledger.yaml"
 CLAIM_GRAPH="$PROJECT_DIR/state/claim-graph.md"
 
 ALL_PASSED=true
@@ -35,10 +36,15 @@ if [ -f "$SRC_INDEX" ]; then
     KNOWN_SRC=$(yq -r '.sources[].source_id // ""' "$SRC_INDEX" 2>/dev/null | sort -u | tr '\n' ' ')
 fi
 
-# Collect known claim IDs from claim-graph.md if present.
+# # Collect known claim IDs from claim-ledger.yaml (L0 authoritative), fallback to claim-graph.md.
 KNOWN_CLM=""
-if [ -f "$CLAIM_GRAPH" ]; then
-    KNOWN_CLM=$(grep -oE 'CLM-[0-9]{3}' "$CLAIM_GRAPH" 2>/dev/null | sort -u | tr '\n' ' ')
+if [ -f "$CLAIM_LEDGER" ]; then
+    KNOWN_CLM=$(yq -r '.claims[]?.claim_id // ""' "$CLAIM_LEDGER" 2>/dev/null | sort -u | tr '
+' ' ')
+fi
+if [ -z "$KNOWN_CLM" ] && [ -f "$CLAIM_GRAPH" ]; then
+    KNOWN_CLM=$(grep -oE 'CLM-[0-9]{3}' "$CLAIM_GRAPH" 2>/dev/null | sort -u | tr '
+' ' ')
 fi
 
 EVID_COUNT=$(yq -r '.evidence | length // 0' "$EVID_FILE" 2>/dev/null || echo "0")
@@ -75,7 +81,7 @@ for i in $(seq 0 $((EVID_COUNT - 1))); do
             if echo "$KNOWN_CLM" | grep -qw "$clm"; then
                 pass "  $clm: valid claim link"
             else
-                fail "  $clm: claim not found in claim-graph.md"
+                fail "  $clm: claim not found in claim-ledger.yaml or claim-graph.md"
                 ALL_PASSED=false
                 DANGLING_CLM=$((DANGLING_CLM + 1))
             fi

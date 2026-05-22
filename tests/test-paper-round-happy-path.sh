@@ -320,11 +320,45 @@ YAML
 cat > "$PROJ/writing/paper-draft.md" << 'MD'
 # Title
 
+<!-- anchor: abstract -->
+## Abstract
+Test abstract.
+
 <!-- CR-ANCHOR: INTRO-P1 -->
+## Introduction
 The system provides isolation under the tested conditions.
+
+<!-- anchor: background -->
+## Background
+Test background.
+
+<!-- anchor: motivation -->
+## Motivation
+Test motivation.
+
+<!-- anchor: design -->
+## Design
+Test design.
+
+<!-- anchor: implementation -->
+## Implementation Plan
+Test implementation.
+
+<!-- anchor: evaluation_plan -->
+## Evaluation Plan
+Test evaluation.
 
 <!-- anchor: related_work -->
 ## Related Work
+Test related work.
+
+<!-- anchor: discussion -->
+## Discussion and Limitations
+Test discussion.
+
+<!-- anchor: conclusion -->
+## Conclusion
+Test conclusion.
 MD
 
 # Phase 12: apply_patches_to_draft
