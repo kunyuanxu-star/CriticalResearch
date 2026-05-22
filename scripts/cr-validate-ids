@@ -100,12 +100,12 @@ if [ -d "$EXPERIMENTS_DIR" ]; then
     done
 fi
 
-# ── Scan critique.md for definitions ───────────────────────────────
+# ── Scan critique-ledger.yaml for definitions ───────────────────────────────
 
-CRITIQUE_FILE="$ROUND_DIR/critique.md"
+CRITIQUE_FILE="$ROUND_DIR/critique-ledger.yaml"
 if [ -f "$CRITIQUE_FILE" ]; then
     for cid in $(grep -oE 'critique_id:.*CRT-[0-9]{3}' "$CRITIQUE_FILE" 2>/dev/null | grep -oE 'CRT-[0-9]{3}' || echo ""); do
-        register_definition "$cid" "critique.md"
+        register_definition "$cid" "critique-ledger.yaml"
     done
 fi
 

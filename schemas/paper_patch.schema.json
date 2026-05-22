@@ -2,19 +2,24 @@
   "$schema": "https://json-schema.org/draft-07/schema#",
   "$id": "https://critical-research/schemas/paper_patch.schema.json",
   "title": "Paper Patch",
-  "description": "Schema for a paper patch — a proposed change to the paper draft triggered by a critique disposition of type paper_patch.",
+  "description": "Schema for a paper patch \u2014 a proposed change to the paper draft triggered by a critique disposition of type paper_patch.",
   "type": "object",
-  "required": ["patch_id", "linked_critique", "linked_round", "severity", "patch_type", "affected_anchors", "proposed_change", "lifecycle_status", "knowledge_implication"],
+  "required": [
+    "patch_id",
+    "created_from",
+    "linked_round",
+    "severity",
+    "patch_type",
+    "affected_anchors",
+    "proposed_change",
+    "lifecycle_status",
+    "knowledge_implication"
+  ],
   "properties": {
     "patch_id": {
       "type": "string",
       "description": "Unique patch identifier within the project.",
       "pattern": "^PP-[0-9]{3}$"
-    },
-    "linked_critique": {
-      "type": "string",
-      "description": "Critique that triggered this patch.",
-      "pattern": "^CRT-[0-9]{3}$"
     },
     "linked_claim": {
       "type": "string",
@@ -28,14 +33,32 @@
     "severity": {
       "type": "string",
       "description": "Severity of the triggering critique.",
-      "enum": ["fatal", "high", "medium"]
+      "enum": [
+        "fatal",
+        "high",
+        "medium"
+      ]
     },
     "patch_type": {
       "type": "array",
       "description": "Types of changes this patch makes.",
       "items": {
         "type": "string",
-        "enum": ["weaken_claim", "strengthen_claim", "reframe_contribution", "add_evidence", "remove_claim", "add_limitation", "narrow_scope", "add_evaluation", "rewrite_section", "add_related_work", "fix_terminology", "restructure_argument"]
+        "enum": [
+          "weaken_claim",
+          "strengthen_claim",
+          "reframe_contribution",
+          "add_evidence",
+          "remove_claim",
+          "add_limitation",
+          "narrow_scope",
+          "add_evaluation",
+          "rewrite_section",
+          "add_related_work",
+          "fix_terminology",
+          "restructure_argument",
+          "narrow_claim"
+        ]
       },
       "minItems": 1,
       "uniqueItems": true
@@ -45,7 +68,7 @@
       "description": "Paper sections this patch targets.",
       "items": {
         "type": "string",
-        "enum": ["abstract", "introduction", "background", "motivation", "design", "implementation", "evaluation_plan", "related_work", "discussion", "conclusion"]
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
       },
       "minItems": 1,
       "uniqueItems": true
@@ -53,11 +76,24 @@
     "proposed_change": {
       "type": "object",
       "description": "Before/after description of the proposed text change.",
-      "required": ["before", "after", "rationale"],
+      "required": [
+        "before",
+        "after",
+        "rationale"
+      ],
       "properties": {
-        "before": { "type": "string", "description": "Current text or claim." },
-        "after": { "type": "string", "description": "Proposed replacement text or claim." },
-        "rationale": { "type": "string", "description": "Why this change addresses the critique." }
+        "before": {
+          "type": "string",
+          "description": "Current text or claim."
+        },
+        "after": {
+          "type": "string",
+          "description": "Proposed replacement text or claim."
+        },
+        "rationale": {
+          "type": "string",
+          "description": "Why this change addresses the critique."
+        }
       }
     },
     "experiment_obligations": {
@@ -82,10 +118,17 @@
       "description": "Alternative resolution options presented to the human reviewer.",
       "items": {
         "type": "object",
-        "required": ["label", "description"],
+        "required": [
+          "label",
+          "description"
+        ],
         "properties": {
-          "label": { "type": "string" },
-          "description": { "type": "string" }
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
         }
       }
     },
@@ -93,31 +136,52 @@
       "type": "object",
       "description": "Agent's recommended option and reasoning.",
       "properties": {
-        "choice": { "type": "string" },
-        "reason": { "type": "string" }
+        "choice": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
       }
     },
     "knowledge_implication": {
       "type": "object",
       "description": "What reusable knowledge this patch teaches us.",
-      "required": ["literature_updates", "thinking_candidates"],
+      "required": [
+        "literature_updates",
+        "thinking_candidates"
+      ],
       "properties": {
         "literature_updates": {
           "type": "array",
           "description": "Literature cards to create or update.",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "thinking_candidates": {
           "type": "array",
           "description": "Thinking rule candidates derived from this patch.",
           "items": {
             "type": "object",
-            "required": ["rule", "category"],
+            "required": [
+              "rule",
+              "category"
+            ],
             "properties": {
-              "rule": { "type": "string", "description": "Candidate rule statement." },
+              "rule": {
+                "type": "string",
+                "description": "Candidate rule statement."
+              },
               "category": {
                 "type": "string",
-                "enum": ["research_principle", "writing_rule", "reviewer_pattern", "anti_pattern", "experiment_pattern"]
+                "enum": [
+                  "research_principle",
+                  "writing_rule",
+                  "reviewer_pattern",
+                  "anti_pattern",
+                  "experiment_pattern"
+                ]
               }
             }
           }
@@ -127,19 +191,40 @@
     "lifecycle_status": {
       "type": "string",
       "description": "Current state in the patch lifecycle.",
-      "enum": ["proposed", "needs_human_decision", "approved", "recorded", "applied", "rejected", "superseded"]
+      "enum": [
+        "proposed",
+        "needs_human_decision",
+        "approved",
+        "recorded",
+        "applied",
+        "rejected",
+        "superseded"
+      ]
     },
     "lifecycle_history": {
       "type": "array",
       "description": "Ordered history of lifecycle transitions.",
       "items": {
         "type": "object",
-        "required": ["from", "to", "timestamp"],
+        "required": [
+          "from",
+          "to",
+          "timestamp"
+        ],
         "properties": {
-          "from": { "type": "string" },
-          "to": { "type": "string" },
-          "timestamp": { "type": "string", "format": "date-time" },
-          "reason": { "type": "string" }
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string"
+          }
         }
       }
     },
@@ -165,9 +250,21 @@
       "format": "date-time",
       "description": "When this patch was applied to paper-draft.md."
     },
-    "applied_diff_anchor": {
-      "type": "string",
-      "description": "Anchor in diff-log.md recording the applied change."
+    "created_from": {
+      "type": "object",
+      "required": [
+        "critique_id"
+      ],
+      "properties": {
+        "critique_id": {
+          "type": "string",
+          "pattern": "^CRT-[0-9]{3}$"
+        },
+        "disposition_id": {
+          "type": "string",
+          "pattern": "^DSP-[0-9]{3}$"
+        }
+      }
     }
   },
   "additionalProperties": false

@@ -155,12 +155,14 @@ MD
 
     cat > "$ROUND_DIR/experiment-obligations.yaml" << YAML
 # Experiment Obligations
-# Records experiment obligations for this round. May be empty with explicit reason.
+# Records experiment obligations. If empty, no_obligation_reason is required.
 schema_version: "1.0.0"
 round_id: $NEXT_ROUND
 phase: generate_experiment_obligations
 obligations: []
+# Fill no_obligation_reason if obligations is empty:
 no_obligation_reason: ""
+# validated_patches must cover all PP-*.yaml if obligations is empty:
 validated_patches: []
 YAML
 
@@ -265,9 +267,14 @@ YAML
     cat > "$ROUND_DIR/critique-ledger.yaml" << YAML
 # Critique Ledger
 # Structured critique entries attacking claims, baselines, or assumptions.
+# If no medium+ critiques were found, fill no_medium_plus_critique instead.
 schema_version: "1.0.0"
 round_id: $NEXT_ROUND
 critiques: []
+# no_medium_plus_critique:
+#   reason: ""
+#   checked_claims: []
+#   reviewer_lenses: []
 YAML
 
     cat > "$ROUND_DIR/literature-delta.yaml" << YAML
