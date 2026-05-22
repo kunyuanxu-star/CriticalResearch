@@ -71,8 +71,7 @@ if [ "$FROM_STATUS" = "blocked" ] && [ "$TO_STATUS" = "repair_required" ]; then
     block_transition "Cannot jump from blocked to repair_required. Phase must be opened and run first."
 fi
 
-# open → complete — allowed. Phase is open (dependencies met); completion runs validation.
-# The key block is blocked→complete (skip dependency chain).
+# open → complete — FORBIDDEN. Phase must go through running state to record execution proof.
 
 # open → waiting_human (cannot need human input before running)
 if [ "$FROM_STATUS" = "open" ] && [ "$TO_STATUS" = "waiting_human" ]; then
@@ -112,7 +111,7 @@ allowed_transition() {
 case "$FROM_STATUS->$TO_STATUS" in
     "blocked->open")          allowed_transition ;;
     "open->running")          allowed_transition ;;
-    "open->complete")         allowed_transition ;; # open (deps met) -> complete (validated)
+    "open->complete")         block_transition "Cannot jump from open to complete. Phase must be set to running first. Use cr step start to begin phase execution, then complete after validation." ;;
     "open->blocked")          allowed_transition ;; # re-block if dependency becomes incomplete
     "running->complete")      allowed_transition ;;
     "running->repair_required") allowed_transition ;;

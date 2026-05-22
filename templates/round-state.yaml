@@ -1312,11 +1312,14 @@ phases:
 
 closure_policy:
   require_all_phases_complete: true
-  require_external_research: true
+  require_exact_phase_count: 37
   require_no_skipped_phases: true
+  require_external_research: true
   require_no_pending_human_decisions: true
   require_transaction_chain_complete: true
   require_patch_for_medium_plus_critique: true
   require_experiment_for_claim_patch: true
   require_draft_diff_for_applied_patch: true
   require_knowledge_writeback: true
+  close_round_is_phase: true
+  require_phase_run_log: true

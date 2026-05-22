@@ -51,10 +51,8 @@ POLICY_COUNT=$(yq -r '.closure_policy.require_all_phases_complete // false' "$ST
 for phase in "${PHASE_LIST[@]}"; do
     [ -z "$phase" ] && continue
 
-    # Skip close_round — it is marked complete by cr close-round itself.
-    if [ "$phase" = "close_round" ]; then
-        continue
-    fi
+    # close_round is the 37th phase — must be complete like every other phase.
+    # It is no longer a side effect of cr close-round; it must be completed via cr-complete-phase.
 
     TOTAL=$((TOTAL + 1))
     status=$(yq -r ".phases.$phase.status // \"missing\"" "$STATE_FILE" 2>/dev/null || echo "missing")
@@ -82,11 +80,11 @@ if [ "$POLICY_COUNT" != "true" ]; then
 fi
 
 echo ""
-echo "Phases complete: $COMPLETED / $TOTAL pre-close phases"
+echo "Phases complete: $COMPLETED / $TOTAL phases"
 
 if [ "$FAIL" -ne 0 ]; then
     cr_exit_summary
 fi
 
-pass "All $TOTAL pre-close phases complete"
+pass "All $TOTAL phases complete"
 cr_exit_summary

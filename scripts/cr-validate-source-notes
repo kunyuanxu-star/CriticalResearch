@@ -1,40 +1,56 @@
 #!/usr/bin/env bash
 # cr-validate-source-notes — Hard gate: every included source must have a deep-reading note.
-# Checks: does_not_prove field, linked claims, affected sections, problem/method/claims.
+# Forbids .no-sources.yaml when source-index has included sources.
 # Usage: cr-validate-source-notes <project_dir> <round_dir>
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/cr-common.sh"
 ROUND_DIR="${2:-}"
 [ -z "$ROUND_DIR" ] && { echo "Usage: cr-validate-source-notes <project_dir> <round_dir>" >&2; exit 2; }
-echo "── Source Notes Check ──"
+echo "── Source Notes Validation ──"
 NOTES_DIR="$ROUND_DIR/source-notes"
 SOURCE_INDEX="$ROUND_DIR/source-index.yaml"
-if [ ! -d "$NOTES_DIR" ] || [ -z "$(ls -A "$NOTES_DIR" 2>/dev/null)" ]; then
-  NO_SOURCES="$ROUND_DIR/source-notes/.no-sources.yaml"
+
+# Check if we have included sources
+INCLUDED_COUNT=0
+if [ -f "$SOURCE_INDEX" ]; then
+  INCLUDED_COUNT=$(yq -r '[.sources[] | select(.included==true)] | length' "$SOURCE_INDEX" 2>/dev/null || echo "0")
+fi
+
+# If sources exist, .no-sources.yaml is FORBIDDEN
+NO_SOURCES="$ROUND_DIR/source-notes/.no-sources.yaml"
+if [ "${INCLUDED_COUNT:-0}" -gt 0 ]; then
   if [ -f "$NO_SOURCES" ]; then
-    if grep -q "no_sources_reason\|search_failure_explanation" "$NO_SOURCES" 2>/dev/null; then
-      pass "No-op: no sources to read ($NO_SOURCES)"
-      cr_exit_summary
-    else
-      fail "No source notes found and .no-sources.yaml has no justification"
-      cr_exit_summary
+    fail "source-index has $INCLUDED_COUNT included sources but .no-sources.yaml exists — every included source must have a source note"
+    cr_exit_summary
+  fi
+  # Check every included source has a note
+  ERR=0
+  for sid in $(yq -r '.sources[] | select(.included==true) | .source_id' "$SOURCE_INDEX" 2>/dev/null); do
+    [ -z "$sid" ] && continue
+    NOTE="$NOTES_DIR/${sid}.yaml"
+    if [ ! -f "$NOTE" ]; then
+      fail "Missing source note for included source: $sid"
+      ERR=$((ERR+1))
+      continue
     fi
+    dnp=$(yq -r '.does_not_prove // ""' "$NOTE" 2>/dev/null || echo "")
+    prob=$(yq -r '.problem // ""' "$NOTE" 2>/dev/null || echo "")
+    claims=$(yq -r '.affected_claims | length // 0' "$NOTE" 2>/dev/null || echo "0")
+    [ -z "$dnp" ] && { fail "Source note $sid missing does_not_prove"; ERR=$((ERR+1)); }
+    [ ${#prob} -lt 50 ] && { fail "Source note $sid problem too short (${#prob} chars)"; ERR=$((ERR+1)); }
+    [ "$claims" -eq 0 ] 2>/dev/null && { fail "Source note $sid has no affected_claims"; ERR=$((ERR+1)); }
+  done
+  [ "$ERR" -gt 0 ] && { fail "$ERR source note failure(s)"; cr_exit_summary; }
+  pass "All $INCLUDED_COUNT included sources have deep-reading notes"
+else
+  # No included sources — .no-sources.yaml is required with justification
+  if [ -f "$NO_SOURCES" ]; then
+    REASON=$(yq -r '.no_sources_reason // .search_failure_explanation // ""' "$NO_SOURCES" 2>/dev/null || echo "")
+    [ ${#REASON} -gt 20 ] && pass "No sources: justified" || { fail ".no-sources.yaml has no substantive reason"; cr_exit_summary; }
   else
-    fail "source-notes/ directory is empty or missing"
+    fail "No included sources and no .no-sources.yaml — either find sources or document search failure"
     cr_exit_summary
   fi
 fi
-ERR=0
-for note in "$NOTES_DIR"/SRC-*.yaml "$NOTES_DIR"/*.yaml; do
-  [ -f "$note" ] || continue
-  sid=$(yq -r '.source_id // ""' "$note" 2>/dev/null || echo "")
-  dnp=$(yq -r '.does_not_prove // ""' "$note" 2>/dev/null || echo "")
-  [ -z "$sid" ] && { fail "Source note missing source_id: $(basename "$note")"; ERR=$((ERR+1)); continue; }
-  [ -z "$dnp" ] && { fail "Source note $sid missing does_not_prove field"; ERR=$((ERR+1)); }
-  claims=$(yq -r '.affected_claims // [] | length' "$note" 2>/dev/null || echo "0")
-  [ "$claims" -eq 0 ] 2>/dev/null && { fail "Source note $sid has no affected_claims"; ERR=$((ERR+1)); }
-done
-[ "$ERR" -gt 0 ] && { cr_exit_summary; }
-pass "All source notes validated ($(ls "$NOTES_DIR"/*.yaml 2>/dev/null | wc -l | tr -d ' ') notes)"
 cr_exit_summary

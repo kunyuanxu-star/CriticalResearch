@@ -1,0 +1,238 @@
+# Phase Manifest — Single source of truth for the 37-phase strict paper workflow.
+# All other files (templates, schemas, validators, prompts, tests) must be
+# consistent with this manifest. Checked by cr-validate-phase-manifest-consistency.
+phase_count: 37
+close_round_is_phase: true
+execution_policy:
+  full_round_required: true
+  full_paper_required: true
+  required_phase_count: 37
+  allow_partial_stop: false
+  stop_only_on:
+    - round_closed
+    - human_decision_required
+    - unrecoverable_tool_error
+
+phases:
+  - order: 1
+    id: snapshot_paper_state
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 2
+    id: load_project_knowledge
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: true
+  - order: 3
+    id: define_round_objective
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 4
+    id: freeze_full_paper_coverage
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 5
+    id: plan_research_questions
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 6
+    id: generate_search_strategy
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 7
+    id: execute_retrieval
+    full_paper_coverage: false
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 8
+    id: triage_sources
+    full_paper_coverage: false
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 9
+    id: ingest_sources
+    full_paper_coverage: false
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 10
+    id: read_sources
+    full_paper_coverage: false
+    objective_binding: true
+    state_required: running
+    no_op_allowed: true
+  - order: 11
+    id: normalize_evidence
+    full_paper_coverage: false
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 12
+    id: build_related_work_map
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 13
+    id: update_literature_knowledge
+    full_paper_coverage: false
+    objective_binding: true
+    state_required: running
+    no_op_allowed: true
+  - order: 14
+    id: synthesize_claim_evidence
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 15
+    id: synthesize_baseline_positioning
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 16
+    id: synthesize_evaluation_gaps
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 17
+    id: critique_claim_precision
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: true
+  - order: 18
+    id: critique_novelty_and_baselines
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 19
+    id: critique_evidence_sufficiency
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 20
+    id: critique_evaluation_contract
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 21
+    id: critique_writing_argument
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 22
+    id: merge_critique_ledger
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 23
+    id: generate_dispositions
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 24
+    id: resolve_human_decisions
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: true
+  - order: 25
+    id: generate_paper_patches
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: true
+  - order: 26
+    id: generate_experiment_obligations
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: true
+  - order: 27
+    id: plan_writing_changes
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: true
+  - order: 28
+    id: apply_local_section_patches
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: true
+  - order: 29
+    id: validate_patch_application
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 30
+    id: global_argument_pass
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 31
+    id: claim_evidence_alignment_pass
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 32
+    id: reviewer_readiness_pass
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 33
+    id: distill_literature_knowledge
+    full_paper_coverage: false
+    objective_binding: true
+    state_required: running
+    no_op_allowed: true
+  - order: 34
+    id: distill_thinking_knowledge
+    full_paper_coverage: false
+    objective_binding: true
+    state_required: running
+    no_op_allowed: true
+  - order: 35
+    id: apply_knowledge_delta
+    full_paper_coverage: false
+    objective_binding: true
+    state_required: running
+    no_op_allowed: true
+  - order: 36
+    id: prepare_next_round
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false
+  - order: 37
+    id: close_round
+    full_paper_coverage: true
+    objective_binding: true
+    state_required: running
+    no_op_allowed: false

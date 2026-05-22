@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# cr-validate-phase-manifest-consistency — Hard gate: all phase definitions must be
+# consistent with phase-manifest.yaml (the single source of truth).
+# Checks: phase count, ordering, prompt existence, fields per phase.
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+SKILL_HOME="$(cr_skill_home)"
+MANIFEST="$SKILL_HOME/workflow/phase-manifest.yaml"
+echo "── Phase Manifest Consistency Check ──"
+[ ! -f "$MANIFEST" ] && { fail "phase-manifest.yaml not found"; cr_exit_summary; }
+MANIFEST_COUNT=$(yq -r '.phase_count' "$MANIFEST" 2>/dev/null || echo "0")
+CLOSE_IS_PHASE=$(yq -r '.close_round_is_phase' "$MANIFEST" 2>/dev/null || echo "false")
+[ "$MANIFEST_COUNT" = "37" ] && pass "Manifest: 37 phases" || { fail "Manifest phase_count=$MANIFEST_COUNT"; }
+[ "$CLOSE_IS_PHASE" = "true" ] && pass "Manifest: close_round_is_phase" || fail "close_round_is_phase not true"
+# Check each phase has a prompt
+MISSING_PROMPTS=0
+for i in $(seq 0 36); do
+  pid=$(yq -r ".phases[$i].id" "$MANIFEST" 2>/dev/null || echo "")
+  [ -z "$pid" ] && { fail "Phase $i has no id"; continue; }
+  PROMPT="$SKILL_HOME/prompts/phases/${pid}.md"
+  [ -f "$PROMPT" ] || { fail "Missing prompt: prompts/phases/${pid}.md"; MISSING_PROMPTS=$((MISSING_PROMPTS+1)); }
+done
+[ "$MISSING_PROMPTS" -gt 0 ] && fail "$MISSING_PROMPTS prompts missing"
+pass "All phases have prompts"
+# Check state_required is running for all phases
+WRONG_STATE=0
+for i in $(seq 0 36); do
+  sr=$(yq -r ".phases[$i].state_required // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+  [ "$sr" != "running" ] && { fail "Phase $i state_required=$sr (must be running)"; WRONG_STATE=$((WRONG_STATE+1)); }
+done
+[ "$WRONG_STATE" -gt 0 ] && fail "$WRONG_STATE phases with wrong state_required"
+pass "All phases require running state"
+cr_exit_summary

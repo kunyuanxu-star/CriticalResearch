@@ -55,9 +55,17 @@ while [ "$ITER" -lt "$MAX_ITER" ]; do
 
     CURRENT=$(yq -r '.current_phase // "close_round"' "$STATE_FILE" 2>/dev/null || echo "close_round")
 
+    # close_round is the 37th phase. Advance through it like any other phase.
+    # cr close-round is called after all 37 phases (including close_round) are complete.
     if [ "$CURRENT" = "close_round" ]; then
-        echo "All phases complete. Running close-round..."
-        exec "$SCRIPT_DIR/cr" close-round "$PROJECT"
+        echo "Final phase: close_round. Completing last phase..."
+        if "$SCRIPT_DIR/cr-step" "$PROJECT" advance 2>&1; then
+            echo "All 37 phases complete. Running close-round validation..."
+            exec "$SCRIPT_DIR/cr" close-round "$PROJECT"
+        else
+            echo "close_round phase has missing outputs. Fix and re-run."
+            exit 2
+        fi
     fi
 
     PHASE_STATUS=$(yq -r ".phases.$CURRENT.status // \"unknown\"" "$STATE_FILE" 2>/dev/null || echo "unknown")

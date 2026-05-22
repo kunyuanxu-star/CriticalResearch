@@ -56,6 +56,10 @@ if [ "$PHASE_STATUS" = "blocked" ]; then
     exit 2
 fi
 
+# Collect all inputs and outputs for phase-run-log recording.
+ALL_OUTPUTS=$(yq -r ".phases.$PHASE.required_outputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
+ALL_INPUTS=$(yq -r ".phases.$PHASE.required_inputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
+
 # ── Validate state transition ──────────────────────────────────────
 
 TRANSITION_VALIDATOR="$SCRIPT_DIR/cr-validate-phase-transition"
@@ -122,6 +126,51 @@ yq -i ".phases.$PHASE.status = \"complete\" | .phases.$PHASE.completed_at = \"$N
 }
 
 echo "Phase '$PHASE' marked complete at $NOW"
+
+# ── Record phase-run-log (execution proof) ────────────────────────
+
+PHASE_ORDER=$(yq -r ".phase_order | index("$PHASE") // 0" "$STATE_FILE" 2>/dev/null || echo "0")
+PHASE_ORDER=$((PHASE_ORDER + 1))
+RUN_LOG="$ROUND_DIR/phase-run-log.yaml"
+
+# Compute hashes of phase outputs for tamper-proof record.
+OUTPUT_HASHES=""
+for out in $ALL_OUTPUTS; do
+    f="$ROUND_DIR/$out"
+    if [ -f "$f" ]; then
+        h=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
+        OUTPUT_HASHES="$OUTPUT_HASHES
+      $out: $h"
+    fi
+done
+INPUT_HASHES=""
+for inp in $ALL_INPUTS; do
+    f="$ROUND_DIR/$inp"
+    [ -f "$f" ] || f="$PROJECT_DIR/$inp"
+    if [ -f "$f" ]; then
+        h=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
+        INPUT_HASHES="$INPUT_HASHES
+      $inp: $h"
+    fi
+done
+
+cat >> "$RUN_LOG" << LOGEOF
+- phase: $PHASE
+  order: $PHASE_ORDER
+  started_at: "$NOW"
+  completed_at: "$NOW"
+  status_transition:
+    from: "$PHASE_STATUS"
+    to: complete
+  prompt_path: "$(yq -r ".phases."$PHASE".prompt // """ "$STATE_FILE" 2>/dev/null || echo "unknown")"
+  validator: "cr-validate-phase"
+  validator_exit_code: 0
+  input_hashes: {$INPUT_HASHES
+  }
+  output_hashes: {$OUTPUT_HASHES
+  }
+LOGEOF
+echo "  Phase execution recorded in phase-run-log.yaml"
 
 # ── Auto-unblock next phases whose dependencies are now satisfied ──
 
