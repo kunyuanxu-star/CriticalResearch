@@ -67,7 +67,6 @@ fi
 # ── Check critiques have dispositions ──────────────────────────────
 
 CRITIQUE_FILE="$ROUND_DIR/critique-ledger.yaml"
-CRITIQUE_MD="$ROUND_DIR/critique.md"
 if [ -f "$CRITIQUE_FILE" ]; then
     # Extract critique IDs with medium+ severity.
     CRITIQUE_IDS=$(yq -r '.critiques[]?.critique_id // ""' "$CRITIQUE_FILE" 2>/dev/null | sort -u || echo "")
