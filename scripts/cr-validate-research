@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # cr-validate-research — Enforce that real research happened this round.
-# Checks: research-plan.yaml, search-log.yaml, raw-sources/, source-index.yaml,
+# Checks: research-questions.yaml, search-plan.yaml, search-log.yaml, raw-sources/, source-index.yaml,
 # evidence-ledger.yaml, query class coverage, source count, evidence levels,
 # and that at least one evidence item weakens/contradicts a claim.
 #
@@ -53,11 +53,19 @@ fi
 
 ALL_PASSED=true
 
-# 1. Research plan.
-if [ -f "$ROUND_DIR/research-plan.yaml" ]; then
-    pass "research-plan.yaml exists"
+# 1. Research questions.
+if [ -f "$ROUND_DIR/research-questions.yaml" ]; then
+    pass "research-questions.yaml exists"
 else
-    fail "research-plan.yaml is missing"
+    fail "research-questions.yaml is missing"
+    ALL_PASSED=false
+fi
+
+# 1b. Search plan.
+if [ -f "$ROUND_DIR/search-plan.yaml" ]; then
+    pass "search-plan.yaml exists"
+else
+    fail "search-plan.yaml is missing"
     ALL_PASSED=false
 fi
 

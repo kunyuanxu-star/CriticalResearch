@@ -174,7 +174,7 @@ YAML
     # Create search-queue.yaml template.
     cat > "$ROUND_DIR/search-queue.yaml" << YAML
 # Research Search Queue
-# Queries to execute during the run_retrieval phase.
+# Queries to execute during the execute_retrieval phase.
 queries: []
 YAML
 
@@ -209,26 +209,47 @@ round_recommendation:
   reason: ""
 YAML
 
-    cat > "$ROUND_DIR/round-target.yaml" << YAML
-# Round Target
-# What this round aims to accomplish.
+    cat > "$ROUND_DIR/round-risk.yaml" << YAML
+# Round Risk
+# Primary and secondary risks this round targets.
 schema_version: "1.0.0"
 round_id: $NEXT_ROUND
-target_gap: ""
-target_claims: []
-target_baselines: []
-success_criteria: []
+primary_risk:
+  risk_type: ""
+  linked_claim_id: ""
+  linked_section_anchor: ""
+  description: ""
+  reviewer_impact: ""
+secondary_risks: []
 YAML
 
-    cat > "$ROUND_DIR/research-plan.yaml" << YAML
-# Research Plan
-# Structured research questions and queries derived from claims and baselines.
+    cat > "$ROUND_DIR/round-scope.yaml" << YAML
+# Round Scope
+# Frozen scope boundary for this round.
 schema_version: "1.0.0"
 round_id: $NEXT_ROUND
-research_goal: ""
-target_claims: []
-target_baselines: []
-search_questions: []
+in_scope_claims: []
+in_scope_sections: []
+in_scope_baselines: []
+out_of_scope_claims: []
+out_of_scope_sections: []
+allowed_changes: []
+forbidden_changes: []
+YAML
+
+    cat > "$ROUND_DIR/research-questions.yaml" << YAML
+# Research Questions
+# Structured research questions derived from round risk.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+questions: []
+YAML
+
+    cat > "$ROUND_DIR/search-plan.yaml" << YAML
+# Search Plan
+# Search strategy with query classes and expected evidence types.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
 queries: []
 required_query_classes:
   - core_problem
@@ -280,12 +301,173 @@ critiques: []
 #   reviewer_lenses: []
 YAML
 
-    cat > "$ROUND_DIR/literature-delta.yaml" << YAML
-# Literature Delta
-# Updates to literature knowledge cards from this round.
+    cat > "$ROUND_DIR/literature-knowledge-delta.yaml" << YAML
+# Literature Knowledge Delta
+# Literature card updates from source notes.
 schema_version: "1.0.0"
 round_id: $NEXT_ROUND
 updates: []
+YAML
+
+    cat > "$ROUND_DIR/thinking-knowledge-delta.yaml" << YAML
+# Thinking Knowledge Delta
+# Thinking rules derived from critique failures and reviewer patterns.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+updates: []
+YAML
+
+    cat > "$ROUND_DIR/source-triage.yaml" << YAML
+# Source Triage
+# Include/exclude/maybe decisions per source.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+triage: []
+YAML
+
+    mkdir -p "$ROUND_DIR/source-notes"
+
+    cat > "$ROUND_DIR/related-work-map.yaml" << YAML
+# Related Work Map
+# Baseline families, closest work, positioning risks.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+baseline_families: []
+closest_work: []
+dangerous_prior_work: []
+positioning_risks: []
+YAML
+
+    cat > "$ROUND_DIR/claim-evidence-matrix.yaml" << YAML
+# Claim-Evidence Matrix
+# Per-claim evidence summary with support levels.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+claim_rows: []
+YAML
+
+    cat > "$ROUND_DIR/baseline-positioning.yaml" << YAML
+# Baseline Positioning
+# Strongest baseline, novelty threat, required changes.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+strongest_baseline: {}
+novelty_threat: ""
+required_positioning_change: ""
+YAML
+
+    cat > "$ROUND_DIR/evaluation-gap-map.yaml" << YAML
+# Evaluation Gap Map
+# Per-claim evaluation contract and gap assessment.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+gap_map: []
+YAML
+
+    cat > "$ROUND_DIR/critique-claim-precision.yaml" << YAML
+# Critique: Claim Precision
+# Falsifiability, scope clarity, term definitions per claim.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+assessments: []
+YAML
+
+    cat > "$ROUND_DIR/critique-novelty-baseline.yaml" << YAML
+# Critique: Novelty & Baselines
+# Novelty and baseline coverage assessment.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+baseline_assessments: []
+YAML
+
+    cat > "$ROUND_DIR/critique-evidence.yaml" << YAML
+# Critique: Evidence
+# Evidence sufficiency judgments per claim.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+evidence_judgments: []
+YAML
+
+    cat > "$ROUND_DIR/critique-evaluation.yaml" << YAML
+# Critique: Evaluation
+# Evaluation contract critique.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+evaluation_assessments: []
+YAML
+
+    cat > "$ROUND_DIR/critique-writing.yaml" << YAML
+# Critique: Writing Argument
+# Argument chain review with section anchors.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+argument_checks: []
+YAML
+
+    cat > "$ROUND_DIR/human-decisions.yaml" << YAML
+# Human Decisions
+# Resolved human decisions from this round.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+decisions: []
+YAML
+
+    cat > "$ROUND_DIR/writing-plan.yaml" << YAML
+# Writing Plan
+# Ordered plan for applying patches to draft sections.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+target_sections: []
+patch_order: []
+do_not_touch_sections: []
+YAML
+
+    cat > "$ROUND_DIR/patch-application-report.yaml" << YAML
+# Patch Application Report
+# Post-apply verification report for patches.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+verification: []
+YAML
+
+    cat > "$ROUND_DIR/argument-flow-report.yaml" << YAML
+# Argument Flow Report
+# Global argument chain consistency check.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+flow_checks:
+  introduction_chain: ""
+  motivation_to_problem: ""
+  design_to_evaluation: ""
+  conclusion_to_claims: ""
+YAML
+
+    cat > "$ROUND_DIR/claim-paper-matrix.yaml" << YAML
+# Claim-Paper Alignment Matrix
+# Cross-reference: paper claims vs claim-ledger vs evidence level.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+mapping: []
+YAML
+
+    cat > "$ROUND_DIR/reviewer-readiness.yaml" << YAML
+# Reviewer Readiness
+# Pre-submission check: remaining objections and known weaknesses.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+remaining_objections: []
+likely_reviewer_questions: []
+known_weaknesses: []
+YAML
+
+    cat > "$ROUND_DIR/next-round-targets.yaml" << YAML
+# Next Round Targets
+# Candidate risks and priorities for next round.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+candidate_risks: []
+priority: []
+blocked_items: []
 YAML
 
     cat > "$ROUND_DIR/writing-diff.yaml" << YAML

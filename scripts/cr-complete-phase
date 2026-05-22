@@ -33,6 +33,15 @@ if [ "$PHASE_STATUS" = "unknown" ]; then
     exit 2
 fi
 
+# ── Only allow completing current_phase ────────────────────────────
+
+CURRENT_PHASE=$(yq -r '.current_phase // ""' "$STATE_FILE" 2>/dev/null || echo "")
+if [ "$PHASE" != "$CURRENT_PHASE" ]; then
+    echo "Error: Cannot complete phase '$PHASE'; current_phase is '$CURRENT_PHASE'" >&2
+    echo "  Phases must be completed in phase_order sequence." >&2
+    exit 2
+fi
+
 if [ "$PHASE_STATUS" = "complete" ]; then
     echo "Phase '$PHASE' is already complete."
     exit 0

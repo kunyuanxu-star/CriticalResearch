@@ -3,7 +3,7 @@
 # Usage: cr research <project> <subcommand> [args...]
 #
 # Subcommands:
-#   plan <project>       Generate research-plan.yaml from state and gap
+#   plan <project>       Generate research-questions.yaml from state and gap
 #   run <project>        Validate search-log and source coverage
 #   ingest <project> <S> Ingest a specific source snapshot into the index
 #   normalize <project>  Validate evidence-ledger completeness
@@ -19,7 +19,7 @@ usage() {
     echo "Usage: cr research <project> <subcommand> [args...]"
     echo ""
     echo "Subcommands:"
-    echo "  plan       Validate research-plan.yaml setup"
+    echo "  plan       Validate research-questions.yaml setup"
     echo "  run        Check search-log.yaml and source coverage"
     echo "  ingest     Verify raw-sources/ and source-index.yaml integrity"
     echo "  normalize  Check evidence-ledger.yaml completeness"
@@ -51,13 +51,13 @@ ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
 case "$SUBCMD" in
     plan)
         echo "Research plan for $PROJECT, round $ROUND_NUM"
-        if [ -f "$ROUND_DIR/research-plan.yaml" ]; then
-            echo "  research-plan.yaml: present"
-            RQ_COUNT=$(yq -r '.research_questions | length // 0' "$ROUND_DIR/research-plan.yaml" 2>/dev/null || echo "0")
+        if [ -f "$ROUND_DIR/research-questions.yaml" ]; then
+            echo "  research-questions.yaml: present"
+            RQ_COUNT=$(yq -r '.research_questions | length // 0' "$ROUND_DIR/research-questions.yaml" 2>/dev/null || echo "0")
             echo "  Research questions: $RQ_COUNT"
-            yq -r '.research_questions[] | "    - \(.id): \(.question)"' "$ROUND_DIR/research-plan.yaml" 2>/dev/null || true
+            yq -r '.research_questions[] | "    - \(.id): \(.question)"' "$ROUND_DIR/research-questions.yaml" 2>/dev/null || true
         else
-            echo "  research-plan.yaml: not found — create it before advancing plan_research phase"
+            echo "  research-questions.yaml: not found — create it before advancing plan_research_questions phase"
         fi
         if [ -f "$ROUND_DIR/search-queue.yaml" ]; then
             Q_COUNT=$(yq -r '.queries | length // 0' "$ROUND_DIR/search-queue.yaml" 2>/dev/null || echo "0")

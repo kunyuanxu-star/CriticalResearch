@@ -53,7 +53,7 @@ is_workspace_root_artifact() {
     case "$(basename "$path")" in
         report.md|sources.md|critique.md|writing-diff.md|knowledge-delta.md)
             return 0 ;;
-        research-plan.yaml|search-log.yaml|source-index.yaml|evidence-ledger.yaml|search-queue.yaml)
+        research-questions.yaml|search-plan.yaml|search-log.yaml|source-index.yaml|evidence-ledger.yaml|search-queue.yaml)
             return 0 ;;
         round.yaml|state.yaml|dispositions.yaml|closure-report.yaml)
             return 0 ;;

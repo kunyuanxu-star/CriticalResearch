@@ -29,8 +29,7 @@
       "tier": "L1",
       "description": "Global knowledge cards loaded for this round with usage contract",
       "modes": [
-        "paper",
-        "strict_paper"
+        "paper"
       ]
     },
     "paper_state": {
@@ -40,18 +39,6 @@
       "gate": "hard",
       "tier": "L1",
       "description": "Snapshot of current paper claims, baselines, assumptions, and risks",
-      "modes": [
-        "paper",
-        "strict_paper"
-      ]
-    },
-    "round_target": {
-      "path_template": "rounds/round-{round_num}/round-target.yaml",
-      "schema": null,
-      "validator": null,
-      "gate": "hard",
-      "tier": "L1",
-      "description": "Target gap, claims, and baselines for this round",
       "modes": [
         "paper"
       ]
@@ -126,17 +113,6 @@
       "gate": "hard",
       "tier": "L1",
       "description": "Proof that knowledge-delta updates were written back to _cr/knowledge with before/after sha256",
-      "modes": [
-        "paper"
-      ]
-    },
-    "literature_delta": {
-      "path_template": "rounds/round-{round_num}/literature-delta.yaml",
-      "schema": null,
-      "validator": null,
-      "gate": "hard",
-      "tier": "L1",
-      "description": "Updates to literature knowledge cards from this round",
       "modes": [
         "paper"
       ]
@@ -234,17 +210,6 @@
       "tier": "L2",
       "description": "Human-readable diff report \u2014 writing-diff.yaml is authoritative"
     },
-    "research_plan": {
-      "path_template": "rounds/round-{round_num}/research-plan.yaml",
-      "schema": "schemas/research-plan.schema.json",
-      "validator": "cr-validate-research",
-      "gate": "hard",
-      "tier": "L1",
-      "description": "Research plan with questions, query classes, and success criteria",
-      "modes": [
-        "paper"
-      ]
-    },
     "search_log": {
       "path_template": "rounds/round-{round_num}/search-log.yaml",
       "schema": "schemas/search-log.schema.json",
@@ -307,7 +272,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Primary risk and secondary risks this round targets"
     },
@@ -318,7 +283,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Frozen scope boundary for this round"
     },
@@ -329,7 +294,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Research questions derived from round risk"
     },
@@ -340,7 +305,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Search strategy with query classes and expected evidence types"
     },
@@ -351,7 +316,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Include/exclude/maybe triage decisions per source"
     },
@@ -362,7 +327,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Deep-reading notes per source"
     },
@@ -373,7 +338,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Baseline families, closest work, positioning risks"
     },
@@ -384,7 +349,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Per-claim evidence summary with support levels"
     },
@@ -395,7 +360,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Strongest baseline, novelty threat, required changes"
     },
@@ -406,7 +371,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Per-claim evaluation contract and gap assessment"
     },
@@ -417,7 +382,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Falsifiability and scope clarity assessment per claim"
     },
@@ -428,7 +393,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Novelty and baseline coverage critique"
     },
@@ -439,7 +404,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Evidence sufficiency judgments per claim"
     },
@@ -450,7 +415,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Evaluation contract critique"
     },
@@ -461,7 +426,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Argument chain review with section anchors"
     },
@@ -472,7 +437,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Ordered plan for applying patches to draft sections"
     },
@@ -483,7 +448,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Post-apply verification report for patches"
     },
@@ -494,7 +459,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Global argument chain consistency check"
     },
@@ -505,7 +470,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Cross-reference: paper claims vs claim-ledger"
     },
@@ -516,7 +481,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Pre-submission check of remaining objections"
     },
@@ -527,7 +492,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Literature card updates from source notes"
     },
@@ -538,7 +503,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Thinking rules from critique/reviewer patterns"
     },
@@ -549,7 +514,7 @@
       "gate": "hard",
       "tier": "L1",
       "modes": [
-        "strict_paper"
+        "paper"
       ],
       "description": "Candidate risks and priorities for next round"
     }
@@ -573,7 +538,7 @@
         "order": 3,
         "name": "cr-validate-all-phases",
         "gate": "hard",
-        "checks": "All phases in phase_order complete with timestamps (dynamic, not hardcoded to 14)"
+        "checks": "All phases in phase_order complete with timestamps (dynamically reads phase_order)"
       },
       {
         "order": 4,

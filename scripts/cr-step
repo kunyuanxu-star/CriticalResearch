@@ -62,8 +62,8 @@ fi
 # ── Helpers ──────────────────────────────────────────────────────
 
 get_current_phase() {
-    yq -r '.current_phase // "reconstruct_paper_state"' "$STATE_FILE" 2>/dev/null || \
-        echo "reconstruct_paper_state"
+    yq -r '.current_phase // "snapshot_paper_state"' "$STATE_FILE" 2>/dev/null || \
+        echo "snapshot_paper_state"
 }
 
 get_phase_status() {
@@ -251,6 +251,13 @@ case "$SUBCMD" in
         ;;
 
     set-phase)
+        if [ "${CR_REPAIR_MODE:-0}" != "1" ]; then
+            echo "Error: set-phase is restricted to repair mode." >&2
+            echo "  Set CR_REPAIR_MODE=1 to override." >&2
+            echo "  This will write to repair-log.yaml." >&2
+            exit 2
+        fi
+
         NEW_PHASE="${3:-}"
         if [ -z "$NEW_PHASE" ]; then
             echo "Usage: cr step <project> set-phase <phase_name>" >&2
@@ -263,8 +270,20 @@ case "$SUBCMD" in
             exit 2
         fi
 
+        PREV_PHASE=$(yq -r '.current_phase // "none"' "$STATE_FILE" 2>/dev/null || echo "none")
         yq -i ".current_phase = \"$NEW_PHASE\"" "$STATE_FILE" 2>/dev/null || true
         echo "Current phase set to: $NEW_PHASE"
+
+        # Write repair log.
+        NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        cat >> "$ROUND_DIR/repair-log.yaml" << YAMLREP
+- timestamp: "$NOW"
+  operator: "cr-step set-phase"
+  previous_phase: "$PREV_PHASE"
+  new_phase: "$NEW_PHASE"
+  reason: "Manual repair via CR_REPAIR_MODE=1"
+YAMLREP
+        echo "Repair recorded in repair-log.yaml"
         ;;
 
     *)

@@ -60,18 +60,12 @@ cr continue                      # Show next-round task prompt
 cr status                        # Show workspace and project status
 
 # Round lifecycle
-cr round my-topic --mode paper   # Open a new paper-mode round (14 phases)
+cr round my-topic --mode paper   # Open a new paper-mode round (37-phase strict state machine)
 cr step my-topic status          # Show current phase and missing outputs
 cr step my-topic advance         # Validate current phase and advance to next
 cr step my-topic validate        # Validate current phase without advancing
 cr close-round my-topic          # Validate and close the active round
 cr validate my-topic             # Run all project invariant checks
-
-# Research (paper mode: external search mandatory)
-cr research my-topic plan        # Review research plan and search queue
-cr research my-topic run         # Validate search coverage and raw sources
-cr research my-topic ingest      # Verify source integrity (sha256 hashes)
-cr research my-topic normalize   # Check evidence-ledger completeness
 
 # Automated phase runner (validates and advances, does not generate artifacts)
 cr run-round my-topic            # Auto-advance through all phases
@@ -84,11 +78,15 @@ cr run-round my-topic            # Auto-advance through all phases
 | **Triage** | Quick screening, idea feasibility | ≤3 | Internal knowledge only | No — triage only |
 | **Standard** | Regular research, design review | 4–10 | 1 search pass required | Yes |
 | **Deep** | Journal-grade review, full rebuttal | >10 | Deep search + concurrent | Yes |
-| **Paper** | Full paper round: 14 phases, external research mandatory | Any | Deep search + raw sources + evidence ledger + weakening evidence | Yes — requires all phases complete |
+| **Paper** | Full paper round: 37-phase strict state machine | Any | Deep search + raw sources + evidence ledger + weakening evidence | Yes — requires all phases complete |
 
-**Paper mode** is the primary workflow. Each round must complete 14 phases: reconstruct_paper_state → define_round_target → plan_research → run_retrieval → ingest_sources → normalize_evidence → update_literature_knowledge → adversarial_critique → generate_dispositions → generate_paper_patches → generate_experiment_obligations → apply_patches_to_draft → distill_knowledge → close_round.
+**Paper mode** is the only executable paper workflow. It uses a 37-phase strict state machine across 8 macro-stages:
 
-Paper mode enforces: ≥5 search queries across 5 mandatory query classes, ≥5 raw source snapshots with sha256 hashes, ≥5 normalized evidence items, ≥2 S/A-level evidence, and ≥1 weakening or contradicting evidence item.
+M0 Paper State → M1 Research Planning → M2 Research Execution → M3 Evidence Synthesis → M4 Critique → M5 Decision/Patch → M6 Writing → M7 Knowledge/Closure
+
+A paper round is a controlled paper transaction: paper state → research planning → retrieval → source reading → evidence normalization → evidence synthesis → multi-pass critique → disposition → patch → experiment obligation → writing → validation → knowledge distillation → closure.
+
+Paper mode enforces: ≥5 search queries across 5 mandatory query classes, ≥5 raw source snapshots with sha256 hashes, ≥5 normalized evidence items, ≥2 S/A-level evidence, ≥1 weakening or contradicting evidence, no skipped phases, no pending human decisions, and full transaction-chain integrity.
 
 `cr run-round` validates and advances phases; it does not generate artifacts. The agent/user must create required outputs for each phase.
 

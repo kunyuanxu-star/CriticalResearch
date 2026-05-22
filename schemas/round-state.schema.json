@@ -8,7 +8,7 @@
     "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
     "project_id": { "type": "string" },
     "round_id": { "type": "integer", "minimum": 1 },
-    "workflow_mode": { "type": "string", "enum": ["triage", "standard", "deep", "paper", "strict_paper"] },
+    "workflow_mode": { "type": "string", "enum": ["triage", "standard", "deep", "paper"] },
     "status": { "type": "string", "enum": ["open", "in_progress", "complete"] },
     "current_phase": { "type": "string" },
     "required_research": { "type": "boolean" },
