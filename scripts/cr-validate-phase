@@ -121,51 +121,594 @@ for output in $REQ; do
     esac
 done
 
-# Phase-specific validators — driven by state.yaml phase validators_hint where available.
+# Phase-specific semantic validators — every phase has a content check.
+# No phase falls through to file-existence-only validation.
+#
+# Validation principles:
+#   - Content quality: fields must be substantive, not placeholder text
+#   - Cross-references: linked IDs must resolve to existing artifacts
+#   - Minimum thresholds: counts, lengths, coverage requirements
+#   - Semantic constraints: phase-specific logical rules
+#   - No-op detection: empty artifacts must have explicit no-op justification
+
+# Helper: check that a YAML array has >= N items with non-empty key fields
+check_array_content() {
+  local file="$1" query="$2" min="${3:-1}" label="${4:-items}" field="${5:-}"
+  [ ! -f "$file" ] && { fail "$file not found"; ALL_PRESENT=false; return; }
+  local count
+  count=$(yq -r "$query | length // 0" "$file" 2>/dev/null || echo "0")
+  if [ "${count:-0}" -lt "$min" ]; then
+    fail "$label: $count found, need >= $min"
+    ALL_PRESENT=false
+  else
+    pass "$label: $count"
+  fi
+}
+
+# Helper: check a YAML field is non-empty and not just a placeholder
+check_field_substantive() {
+  local file="$1" field_path="$2" label="${3:-$field_path}"
+  local val
+  val=$(yq -r "$field_path // \"\"" "$file" 2>/dev/null || echo "")
+  if [ -z "$val" ] || [ "$val" = "null" ] || [ "$val" = "TBD" ] || [ "$val" = "TODO" ] || [ "$val" = "test" ] || [ "$val" = "Test" ]; then
+    fail "$label is empty or placeholder in $file"
+    ALL_PRESENT=false
+  else
+    pass "$label: ${val:0:80}"
+  fi
+}
+
 case "$PHASE" in
+    # ═══════════════════════════════════════════════════════════════
     # M0: Paper State
+    # ═══════════════════════════════════════════════════════════════
+
     snapshot_paper_state)
+        # Every core claim must have: scope, assumption, evidence_status
+        # Every fragile claim must have a fragility_reason
+        # Thesis statement must be substantive
+        check_field_substantive "$ROUND_DIR/paper-state.yaml" '.thesis.statement' "Thesis statement"
+        check_array_content "$ROUND_DIR/paper-state.yaml" '.core_claims' 1 "Core claims"
         if [ -f "$ROUND_DIR/paper-state.yaml" ]; then
             CLAIM_COUNT=$(yq -r '.core_claims | length // 0' "$ROUND_DIR/paper-state.yaml" 2>/dev/null || echo "0")
-            [ "$CLAIM_COUNT" -gt 0 ] && pass "Paper-state: $CLAIM_COUNT claims" || { fail "No core claims"; ALL_PRESENT=false; }
+            for i in $(seq 0 $((CLAIM_COUNT - 1))); do
+                scope=$(yq -r ".core_claims[$i].scope // \"\"" "$ROUND_DIR/paper-state.yaml" 2>/dev/null || echo "")
+                assumption=$(yq -r ".core_claims[$i].assumption // \"\"" "$ROUND_DIR/paper-state.yaml" 2>/dev/null || echo "")
+                evidence=$(yq -r ".core_claims[$i].evidence_status // \"\"" "$ROUND_DIR/paper-state.yaml" 2>/dev/null || echo "")
+                [ -z "$scope" ] && { fail "Claim $i missing scope"; ALL_PRESENT=false; }
+                [ -z "$assumption" ] && { fail "Claim $i missing assumption"; ALL_PRESENT=false; }
+                [ -z "$evidence" ] && { fail "Claim $i missing evidence_status"; ALL_PRESENT=false; }
+            done
+            # Fragile claims: at least one must exist with a non-empty reason
+            FRAGILE_COUNT=$(yq -r '.fragile_claims | length // 0' "$ROUND_DIR/paper-state.yaml" 2>/dev/null || echo "0")
+            [ "$FRAGILE_COUNT" -gt 0 ] && pass "Fragile claims: $FRAGILE_COUNT" || { fail "At least one fragile claim required"; ALL_PRESENT=false; }
+            HAS_SUBSTANTIVE=false
+            for i in $(seq 0 $((FRAGILE_COUNT - 1))); do
+                reason=$(yq -r ".fragile_claims[$i].fragility_reason // \"\"" "$ROUND_DIR/paper-state.yaml" 2>/dev/null || echo "")
+                [ -n "$reason" ] && [ ${#reason} -gt 10 ] && HAS_SUBSTANTIVE=true
+            done
+            [ "$HAS_SUBSTANTIVE" = true ] || { fail "Fragile claims need substantive reasons (>=10 chars)"; ALL_PRESENT=false; }
         fi
         ;;
+
+    load_project_knowledge)
+        check_field_substantive "$ROUND_DIR/loaded-knowledge.yaml" '.round_id' "Round ID"
+        # Each loaded card must have a usage justification; no new cards generated
+        if [ -f "$ROUND_DIR/loaded-knowledge.yaml" ]; then
+            CARD_COUNT=$(yq -r '.loaded_cards | length // 0' "$ROUND_DIR/loaded-knowledge.yaml" 2>/dev/null || echo "0")
+            if [ "$CARD_COUNT" -gt 0 ]; then
+                for i in $(seq 0 $((CARD_COUNT - 1))); do
+                    usage=$(yq -r ".loaded_cards[$i].used_for_this_round // \"\"" "$ROUND_DIR/loaded-knowledge.yaml" 2>/dev/null || echo "")
+                    [ -z "$usage" ] && { fail "Loaded card $i missing usage justification"; ALL_PRESENT=false; }
+                done
+            fi
+            pass "Loaded knowledge: $CARD_COUNT cards with usage contracts"
+        fi
+        ;;
+
     define_round_risk)
-        if [ -f "$ROUND_DIR/round-risk.yaml" ]; then
-            RISK=$(yq -r '.primary_risk.risk_type // ""' "$ROUND_DIR/round-risk.yaml" 2>/dev/null || echo "")
-            [ -n "$RISK" ] && pass "Round risk: $RISK" || { fail "No primary risk"; ALL_PRESENT=false; }
+        check_field_substantive "$ROUND_DIR/round-risk.yaml" '.primary_risk.risk_type' "Primary risk type"
+        check_field_substantive "$ROUND_DIR/round-risk.yaml" '.primary_risk.description' "Risk description"
+        check_field_substantive "$ROUND_DIR/round-risk.yaml" '.primary_risk.reviewer_impact' "Reviewer impact"
+        # Primary risk must bind to claim_id or section_anchor
+        RISK_CLAIM=$(yq -r '.primary_risk.linked_claim_id // ""' "$ROUND_DIR/round-risk.yaml" 2>/dev/null || echo "")
+        RISK_SECTION=$(yq -r '.primary_risk.linked_section_anchor // ""' "$ROUND_DIR/round-risk.yaml" 2>/dev/null || echo "")
+        [ -n "$RISK_CLAIM" ] || [ -n "$RISK_SECTION" ] || { fail "Primary risk must bind to a claim_id or section_anchor"; ALL_PRESENT=false; }
+        # Risk type must be from valid set
+        RISK_TYPE=$(yq -r '.primary_risk.risk_type // ""' "$ROUND_DIR/round-risk.yaml" 2>/dev/null || echo "")
+        case "$RISK_TYPE" in
+            novelty_risk|baseline_risk|evidence_risk|evaluation_risk|writing_risk|assumption_risk|scope_risk|thesis_risk) pass "Risk type valid: $RISK_TYPE" ;;
+            *) fail "Invalid risk_type: $RISK_TYPE"; ALL_PRESENT=false ;;
+        esac
+        ;;
+
+    freeze_round_scope)
+        check_array_content "$ROUND_DIR/round-scope.yaml" '.in_scope_claims' 1 "In-scope claims"
+        check_array_content "$ROUND_DIR/round-scope.yaml" '.forbidden_changes' 1 "Forbidden changes"
+        # Each in-scope claim must reference a claim from paper-state
+        if [ -f "$ROUND_DIR/round-scope.yaml" ] && [ -f "$ROUND_DIR/paper-state.yaml" ]; then
+            PAPER_CLAIMS=$(yq -r '.core_claims[].claim_id' "$ROUND_DIR/paper-state.yaml" 2>/dev/null || echo "")
+            IN_SCOPE=$(yq -r '.in_scope_claims[]' "$ROUND_DIR/round-scope.yaml" 2>/dev/null || echo "")
+            for isc in $IN_SCOPE; do
+                echo "$PAPER_CLAIMS" | grep -qw "$isc" || { fail "In-scope claim '$isc' not found in paper-state"; ALL_PRESENT=false; }
+            done
         fi
         ;;
-    execute_retrieval)
-        if [ -f "$ROUND_DIR/search-log.yaml" ]; then
-            Q_COUNT=$(yq -r '.searches | length // 0' "$ROUND_DIR/search-log.yaml" 2>/dev/null || echo "0")
-            [ "${Q_COUNT:-0}" -ge 5 ] && pass "search-log: $Q_COUNT queries" || { fail "search-log: $Q_COUNT queries (min 5)"; ALL_PRESENT=false; }
+
+    # ═══════════════════════════════════════════════════════════════
+    # M1: Research Planning
+    # ═══════════════════════════════════════════════════════════════
+
+    plan_research_questions)
+        check_array_content "$ROUND_DIR/research-questions.yaml" '.questions' 3 "Research questions"
+        if [ -f "$ROUND_DIR/research-questions.yaml" ]; then
+            Q_COUNT=$(yq -r '.questions | length // 0' "$ROUND_DIR/research-questions.yaml" 2>/dev/null || echo "0")
+            HAS_WEAKENING=false
+            for i in $(seq 0 $((Q_COUNT - 1))); do
+                q=$(yq -r ".questions[$i].question // \"\"" "$ROUND_DIR/research-questions.yaml" 2>/dev/null || echo "")
+                link=$(yq -r ".questions[$i].linked_claims // [] | length" "$ROUND_DIR/research-questions.yaml" 2>/dev/null || echo "0")
+                [ ${#q} -lt 10 ] && { fail "Question $i is too short (<10 chars)"; ALL_PRESENT=false; }
+                [ "$link" -eq 0 ] 2>/dev/null && { fail "Question $i has no linked_claims"; ALL_PRESENT=false; }
+                failure=$(yq -r ".questions[$i].failure_condition // \"\"" "$ROUND_DIR/research-questions.yaml" 2>/dev/null || echo "")
+                [ -n "$failure" ] && [ ${#failure} -gt 5 ] && HAS_WEAKENING=true
+            done
+            [ "$HAS_WEAKENING" = true ] || { fail "At least one question must target weakening/contradicting evidence"; ALL_PRESENT=false; }
         fi
+        ;;
+
+    generate_search_strategy)
+        check_array_content "$ROUND_DIR/search-plan.yaml" '.queries' 5 "Search queries"
+        if [ -f "$ROUND_DIR/search-plan.yaml" ]; then
+            CLASSES=$(yq -r '.queries[].query_class' "$ROUND_DIR/search-plan.yaml" 2>/dev/null | sort -u)
+            for req in core_problem strongest_baseline recent_top_conference production_or_real_world_case counterexample_or_failure; do
+                echo "$CLASSES" | grep -qw "$req" && pass "Query class: $req" || { fail "Missing query class: $req"; ALL_PRESENT=false; }
+            done
+            # Each query must bind to a question_id
+            for i in $(seq 0 4); do
+                qid=$(yq -r ".queries[$i].linked_question_id // \"\"" "$ROUND_DIR/search-plan.yaml" 2>/dev/null || echo "")
+                [ -z "$qid" ] && { fail "Query $i missing linked_question_id"; ALL_PRESENT=false; }
+            done
+        fi
+        ;;
+
+    # ═══════════════════════════════════════════════════════════════
+    # M2: Research Execution
+    # ═══════════════════════════════════════════════════════════════
+
+    execute_retrieval)
+        check_array_content "$ROUND_DIR/search-log.yaml" '.searches' 5 "Search log entries"
         if [ -d "$ROUND_DIR/raw-sources" ]; then
             SRC_COUNT=$(find "$ROUND_DIR/raw-sources" -type f 2>/dev/null | wc -l | tr -d ' ')
-            [ "${SRC_COUNT:-0}" -ge 5 ] && pass "raw-sources: $SRC_COUNT" || { fail "raw-sources: $SRC_COUNT (min 5)"; ALL_PRESENT=false; }
+            [ "${SRC_COUNT:-0}" -ge 5 ] && pass "raw-sources: $SRC_COUNT files" || { fail "raw-sources: $SRC_COUNT files (min 5)"; ALL_PRESENT=false; }
+            # Each raw source must have > 50 bytes of content
+            for f in "$ROUND_DIR/raw-sources"/*; do
+                [ -f "$f" ] || continue
+                sz=$(wc -c < "$f" 2>/dev/null | tr -d ' ')
+                [ "${sz:-0}" -lt 50 ] && { fail "Source $(basename "$f") is too small (${sz:-0} bytes, need >=50)"; ALL_PRESENT=false; }
+            done
+        fi
+        # Weakening query must be present
+        if [ -f "$ROUND_DIR/search-log.yaml" ]; then
+            grep -q 'counterexample_or_failure' "$ROUND_DIR/search-log.yaml" 2>/dev/null && pass "Weakening evidence query present" || { fail "Missing counterexample_or_failure query"; ALL_PRESENT=false; }
         fi
         ;;
+
+    triage_sources)
+        check_array_content "$ROUND_DIR/source-triage.yaml" '.triage' 5 "Triage decisions"
+        if [ -f "$ROUND_DIR/source-triage.yaml" ]; then
+            INCLUDE_COUNT=$(yq -r '[.triage[] | select(.decision=="include")] | length' "$ROUND_DIR/source-triage.yaml" 2>/dev/null || echo "0")
+            [ "$INCLUDE_COUNT" -ge 2 ] && pass "Included sources: $INCLUDE_COUNT" || { fail "Need >=2 include decisions, got $INCLUDE_COUNT"; ALL_PRESENT=false; }
+            # Check each triage has a reason
+            for i in $(seq 0 $(($(yq -r '.triage | length' "$ROUND_DIR/source-triage.yaml" 2>/dev/null || echo "0") - 1))); do
+                reason=$(yq -r ".triage[$i].reason // \"\"" "$ROUND_DIR/source-triage.yaml" 2>/dev/null || echo "")
+                [ ${#reason} -lt 5 ] && { fail "Triage $i has no substantive reason"; ALL_PRESENT=false; }
+            done
+        fi
+        ;;
+
+    ingest_sources)
+        check_array_content "$ROUND_DIR/source-index.yaml" '.sources' 5 "Indexed sources"
+        if [ -f "$ROUND_DIR/source-index.yaml" ]; then
+            for i in $(seq 0 $(($(yq -r '.sources | length' "$ROUND_DIR/source-index.yaml" 2>/dev/null || echo "0") - 1))); do
+                hash=$(yq -r ".sources[$i].sha256 // \"\"" "$ROUND_DIR/source-index.yaml" 2>/dev/null || echo "")
+                title=$(yq -r ".sources[$i].title // \"\"" "$ROUND_DIR/source-index.yaml" 2>/dev/null || echo "")
+                level=$(yq -r ".sources[$i].evidence_level // \"\"" "$ROUND_DIR/source-index.yaml" 2>/dev/null || echo "")
+                [ -z "$hash" ] && { fail "Source $i missing sha256"; ALL_PRESENT=false; }
+                [ -z "$title" ] && { fail "Source $i missing title"; ALL_PRESENT=false; }
+                [ ${#hash} -lt 6 ] && { fail "Source $i sha256 too short"; ALL_PRESENT=false; }
+            done
+            S_A_COUNT=$(yq -r '[.sources[] | select(.evidence_level=="A" or .evidence_level=="S")] | length' "$ROUND_DIR/source-index.yaml" 2>/dev/null || echo "0")
+            [ "$S_A_COUNT" -ge 2 ] && pass "S/A-level sources: $S_A_COUNT" || { fail "Need >=2 S/A-level sources, got $S_A_COUNT"; ALL_PRESENT=false; }
+        fi
+        ;;
+
     read_sources)
-        [ -x "$SCRIPT_DIR/cr-validate-source-notes" ] && "$SCRIPT_DIR/cr-validate-source-notes" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+        if [ -x "$SCRIPT_DIR/cr-validate-source-notes" ]; then
+            "$SCRIPT_DIR/cr-validate-source-notes" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+        fi
+        # Additional: each source note must have >= 50 chars in problem description
+        for note in "$ROUND_DIR/source-notes"/*.yaml; do
+            [ -f "$note" ] || continue
+            prob=$(yq -r '.problem // ""' "$note" 2>/dev/null || echo "")
+            [ ${#prob} -lt 50 ] && { fail "$(basename "$note"): problem description too short (${#prob} chars, need >=50)"; ALL_PRESENT=false; }
+            method=$(yq -r '.method_or_mechanism // ""' "$note" 2>/dev/null || echo "")
+            [ ${#method} -lt 20 ] && { fail "$(basename "$note"): method too short (${#method} chars, need >=20)"; ALL_PRESENT=false; }
+        done
         ;;
+
+    normalize_evidence)
+        if [ -x "$SCRIPT_DIR/cr-validate-evidence-claim-links" ]; then
+            "$SCRIPT_DIR/cr-validate-evidence-claim-links" "$ROUND_DIR" "$PROJECT_DIR" || ALL_PRESENT=false
+        fi
+        check_array_content "$ROUND_DIR/evidence-ledger.yaml" '.evidence' 5 "Evidence items"
+        if [ -f "$ROUND_DIR/evidence-ledger.yaml" ]; then
+            WEAKENING=$(yq -r '[.evidence[] | select(.direction=="weakens" or .direction=="contradicts")] | length' "$ROUND_DIR/evidence-ledger.yaml" 2>/dev/null || echo "0")
+            [ "$WEAKENING" -gt 0 ] && pass "Weakening/contradicting evidence: $WEAKENING" || { fail "Need >=1 weakening or contradicting evidence"; ALL_PRESENT=false; }
+            for i in $(seq 0 $(($(yq -r '.evidence | length' "$ROUND_DIR/evidence-ledger.yaml" 2>/dev/null || echo "0") - 1))); do
+                summary=$(yq -r ".evidence[$i].summary // \"\"" "$ROUND_DIR/evidence-ledger.yaml" 2>/dev/null || echo "")
+                [ ${#summary} -lt 20 ] && { fail "Evidence $i summary too short (${#summary} chars)"; ALL_PRESENT=false; }
+                limits=$(yq -r ".evidence[$i].limits // \"\"" "$ROUND_DIR/evidence-ledger.yaml" 2>/dev/null || echo "")
+                [ ${#limits} -lt 5 ] && { fail "Evidence $i missing limits"; ALL_PRESENT=false; }
+            done
+        fi
+        ;;
+
+    build_related_work_map)
+        check_field_substantive "$ROUND_DIR/related-work-map.yaml" '.closest_work[0].source_id' "Closest work reference"
+        check_field_substantive "$ROUND_DIR/related-work-map.yaml" '.closest_work[0].overlap' "Closest work overlap"
+        check_field_substantive "$ROUND_DIR/related-work-map.yaml" '.closest_work[0].difference' "Closest work difference"
+        if [ -f "$ROUND_DIR/related-work-map.yaml" ]; then
+            DANGER_COUNT=$(yq -r '.dangerous_prior_work | length // 0' "$ROUND_DIR/related-work-map.yaml" 2>/dev/null || echo "0")
+            [ "$DANGER_COUNT" -gt 0 ] || warn "No dangerous prior work identified"
+        fi
+        ;;
+
+    update_literature_knowledge)
+        if [ -f "$ROUND_DIR/literature-delta.yaml" ]; then
+            UPDATE_COUNT=$(yq -r '.updates | length // 0' "$ROUND_DIR/literature-delta.yaml" 2>/dev/null || echo "0")
+            if [ "$UPDATE_COUNT" -eq 0 ]; then
+                pass "Literature delta: no updates (valid no-op)"
+            else
+                for i in $(seq 0 $((UPDATE_COUNT - 1))); do
+                    source=$(yq -r ".updates[$i].source_id // \"\"" "$ROUND_DIR/literature-delta.yaml" 2>/dev/null || echo "")
+                    [ -z "$source" ] && { fail "Literature update $i missing source_id"; ALL_PRESENT=false; }
+                done
+                pass "Literature delta: $UPDATE_COUNT updates"
+            fi
+        fi
+        ;;
+
+    # ═══════════════════════════════════════════════════════════════
+    # M3: Evidence Synthesis
+    # ═══════════════════════════════════════════════════════════════
+
     synthesize_claim_evidence)
-        [ -x "$SCRIPT_DIR/cr-validate-claim-evidence-matrix" ] && "$SCRIPT_DIR/cr-validate-claim-evidence-matrix" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+        if [ -x "$SCRIPT_DIR/cr-validate-claim-evidence-matrix" ]; then
+            "$SCRIPT_DIR/cr-validate-claim-evidence-matrix" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+        fi
+        if [ -f "$ROUND_DIR/claim-evidence-matrix.yaml" ]; then
+            for i in $(seq 0 $(($(yq -r '.claim_rows | length' "$ROUND_DIR/claim-evidence-matrix.yaml" 2>/dev/null || echo "0") - 1))); do
+                sl=$(yq -r ".claim_rows[$i].current_support_level // \"\"" "$ROUND_DIR/claim-evidence-matrix.yaml" 2>/dev/null || echo "")
+                gap=$(yq -r ".claim_rows[$i].evidence_gap // \"\"" "$ROUND_DIR/claim-evidence-matrix.yaml" 2>/dev/null || echo "")
+                [ -z "$sl" ] && { fail "Claim row $i missing support_level"; ALL_PRESENT=false; }
+                [ -z "$gap" ] && [ "$sl" != "strong" ] && [ "$sl" != "conclusive" ] && { fail "Claim row $i with support_level=$sl must declare evidence_gap"; ALL_PRESENT=false; }
+            done
+        fi
         ;;
+
+    synthesize_baseline_positioning)
+        check_field_substantive "$ROUND_DIR/baseline-positioning.yaml" '.strongest_baseline.name' "Strongest baseline name"
+        check_field_substantive "$ROUND_DIR/baseline-positioning.yaml" '.novelty_threat' "Novelty threat level"
+        check_field_substantive "$ROUND_DIR/baseline-positioning.yaml" '.required_positioning_change' "Required positioning change"
+        if [ -f "$ROUND_DIR/baseline-positioning.yaml" ]; then
+            is_fair=$(yq -r '.strongest_baseline.comparison_is_fair // false' "$ROUND_DIR/baseline-positioning.yaml" 2>/dev/null || echo "false")
+            [ "$is_fair" = "true" ] || warn "Baseline comparison may not be fair"
+        fi
+        ;;
+
+    synthesize_evaluation_gaps)
+        check_array_content "$ROUND_DIR/evaluation-gap-map.yaml" '.gap_map' 1 "Evaluation gaps"
+        if [ -f "$ROUND_DIR/evaluation-gap-map.yaml" ]; then
+            for i in $(seq 0 $(($(yq -r '.gap_map | length' "$ROUND_DIR/evaluation-gap-map.yaml" 2>/dev/null || echo "0") - 1))); do
+                sc=$(yq -r ".gap_map[$i].support_condition // \"\"" "$ROUND_DIR/evaluation-gap-map.yaml" 2>/dev/null || echo "")
+                rc=$(yq -r ".gap_map[$i].refutation_condition // \"\"" "$ROUND_DIR/evaluation-gap-map.yaml" 2>/dev/null || echo "")
+                [ -z "$sc" ] && { fail "Gap $i missing support_condition"; ALL_PRESENT=false; }
+                [ -z "$rc" ] && { fail "Gap $i missing refutation_condition"; ALL_PRESENT=false; }
+            done
+        fi
+        ;;
+
+    # ═══════════════════════════════════════════════════════════════
+    # M4: Critique — all five passes must produce substantive findings
+    # ═══════════════════════════════════════════════════════════════
+
+    critique_claim_precision)
+        check_array_content "$ROUND_DIR/critique-claim-precision.yaml" '.assessments' 1 "Claim precision assessments"
+        if [ -f "$ROUND_DIR/critique-claim-precision.yaml" ]; then
+            for i in $(seq 0 $(($(yq -r '.assessments | length' "$ROUND_DIR/critique-claim-precision.yaml" 2>/dev/null || echo "0") - 1))); do
+                cid=$(yq -r ".assessments[$i].claim_id // \"\"" "$ROUND_DIR/critique-claim-precision.yaml" 2>/dev/null || echo "")
+                [ -z "$cid" ] && { fail "Assessment $i missing claim_id"; ALL_PRESENT=false; }
+            done
+            # At least one assessment must find an issue (not all true)
+            ALL_TRUE=$(yq -r '[.assessments[] | select(.claim_is_falsifiable==true and .scope_is_clear==true and .terms_are_defined==true and .assumptions_are_explicit==true and .claim_strength_matches_evidence==true)] | length' "$ROUND_DIR/critique-claim-precision.yaml" 2>/dev/null || echo "0")
+            TOTAL=$(yq -r '.assessments | length' "$ROUND_DIR/critique-claim-precision.yaml" 2>/dev/null || echo "0")
+            [ "$ALL_TRUE" -lt "$TOTAL" ] || warn "All precision assessments pass — may indicate insufficient critique"
+        fi
+        ;;
+
+    critique_novelty_and_baselines)
+        check_array_content "$ROUND_DIR/critique-novelty-baseline.yaml" '.baseline_assessments' 1 "Novelty/baseline assessments"
+        if [ -f "$ROUND_DIR/critique-novelty-baseline.yaml" ]; then
+            for i in $(seq 0 $(($(yq -r '.baseline_assessments | length' "$ROUND_DIR/critique-novelty-baseline.yaml" 2>/dev/null || echo "0") - 1))); do
+                bid=$(yq -r ".baseline_assessments[$i].baseline_id // \"\"" "$ROUND_DIR/critique-novelty-baseline.yaml" 2>/dev/null || echo "")
+                [ -z "$bid" ] && { fail "Assessment $i missing baseline_id"; ALL_PRESENT=false; }
+            done
+        fi
+        ;;
+
+    critique_evidence_sufficiency)
+        check_array_content "$ROUND_DIR/critique-evidence.yaml" '.evidence_judgments' 1 "Evidence judgments"
+        ;;
+
+    critique_evaluation_contract)
+        check_array_content "$ROUND_DIR/critique-evaluation.yaml" '.evaluation_assessments' 1 "Evaluation assessments"
+        ;;
+
+    critique_writing_argument)
+        check_array_content "$ROUND_DIR/critique-writing.yaml" '.argument_checks' 1 "Argument checks"
+        if [ -f "$ROUND_DIR/critique-writing.yaml" ]; then
+            HAS_SECTION=false
+            for i in $(seq 0 $(($(yq -r '.argument_checks | length' "$ROUND_DIR/critique-writing.yaml" 2>/dev/null || echo "0") - 1))); do
+                anchor=$(yq -r ".argument_checks[$i].section_anchor // \"\"" "$ROUND_DIR/critique-writing.yaml" 2>/dev/null || echo "")
+                [ -n "$anchor" ] && HAS_SECTION=true
+            done
+            [ "$HAS_SECTION" = true ] || { fail "Argument checks must reference section_anchors"; ALL_PRESENT=false; }
+        fi
+        ;;
+
     merge_critique_ledger)
-        [ -x "$SCRIPT_DIR/cr-validate-critique" ] && "$SCRIPT_DIR/cr-validate-critique" "$ROUND_DIR" || ALL_PRESENT=false
+        check_array_content "$ROUND_DIR/critique-ledger.yaml" '.critiques' 1 "Critiques"
+        if [ -x "$SCRIPT_DIR/cr-validate-critique" ]; then
+            "$SCRIPT_DIR/cr-validate-critique" "$ROUND_DIR" || ALL_PRESENT=false
+        fi
+        if [ -f "$ROUND_DIR/critique-ledger.yaml" ]; then
+            # Must have at least one medium+ critique
+            MED_PLUS=$(yq -r '[.critiques[] | select(.severity=="medium" or .severity=="high" or .severity=="fatal")] | length' "$ROUND_DIR/critique-ledger.yaml" 2>/dev/null || echo "0")
+            [ "$MED_PLUS" -gt 0 ] && pass "Medium+ critiques: $MED_PLUS" || { fail "At least one medium/high/fatal critique required"; ALL_PRESENT=false; }
+            # Check source_pass field references valid critique passes
+            for i in $(seq 0 $(($(yq -r '.critiques | length' "$ROUND_DIR/critique-ledger.yaml" 2>/dev/null || echo "0") - 1))); do
+                sp=$(yq -r ".critiques[$i].source_pass // \"\"" "$ROUND_DIR/critique-ledger.yaml" 2>/dev/null || echo "")
+                [ -z "$sp" ] && { fail "Critique $i missing source_pass"; ALL_PRESENT=false; }
+            done
+        fi
         ;;
+
+    # ═══════════════════════════════════════════════════════════════
+    # M5: Decision / Patch
+    # ═══════════════════════════════════════════════════════════════
+
+    generate_dispositions)
+        check_array_content "$ROUND_DIR/dispositions.yaml" '.dispositions' 1 "Dispositions"
+        if [ -f "$ROUND_DIR/dispositions.yaml" ] && [ -f "$ROUND_DIR/critique-ledger.yaml" ]; then
+            # Every critique must have a disposition
+            CRITIQUE_IDS=$(yq -r '.critiques[].critique_id' "$ROUND_DIR/critique-ledger.yaml" 2>/dev/null || echo "")
+            for cid in $CRITIQUE_IDS; do
+                HAS_DISP=$(yq -r ".dispositions[] | select(.critique_id==\"$cid\") | .critique_id" "$ROUND_DIR/dispositions.yaml" 2>/dev/null || echo "")
+                [ -z "$HAS_DISP" ] && { fail "Critique $cid has no disposition"; ALL_PRESENT=false; }
+            done
+            # No medium+ critique can be rejected without reason
+            for i in $(seq 0 $(($(yq -r '.dispositions | length' "$ROUND_DIR/dispositions.yaml" 2>/dev/null || echo "0") - 1))); do
+                dec=$(yq -r ".dispositions[$i].decision // \"\"" "$ROUND_DIR/dispositions.yaml" 2>/dev/null || echo "")
+                reason=$(yq -r ".dispositions[$i].reason // \"\"" "$ROUND_DIR/dispositions.yaml" 2>/dev/null || echo "")
+                [ ${#reason} -lt 10 ] && { fail "Disposition $i reason too short"; ALL_PRESENT=false; }
+                case "$dec" in
+                    accept_patch|weaken_claim|split_claim|add_evaluation|defer_with_reason|reject_with_reason|human_decision_required) ;;
+                    *) fail "Disposition $i has invalid decision: $dec"; ALL_PRESENT=false ;;
+                esac
+            done
+        fi
+        ;;
+
+    resolve_human_decisions)
+        if [ -f "$ROUND_DIR/human-decisions.yaml" ]; then
+            DEC_COUNT=$(yq -r '.decisions | length // 0' "$ROUND_DIR/human-decisions.yaml" 2>/dev/null || echo "0")
+            NO_REASON=$(yq -r '.no_human_decision_reason // ""' "$ROUND_DIR/human-decisions.yaml" 2>/dev/null || echo "")
+            if [ "$DEC_COUNT" -gt 0 ]; then
+                for i in $(seq 0 $((DEC_COUNT - 1))); do
+                    d=$(yq -r ".decisions[$i].decision // \"\"" "$ROUND_DIR/human-decisions.yaml" 2>/dev/null || echo "")
+                    [ -z "$d" ] && { fail "Human decision $i has no decision field"; ALL_PRESENT=false; }
+                done
+            elif [ -n "$NO_REASON" ] && [ ${#NO_REASON} -gt 20 ]; then
+                pass "No human decisions: justified ($(echo "$NO_REASON" | head -c 60)...)"
+            else
+                fail "Human decisions file has no decisions and no substantive no-op reason"
+                ALL_PRESENT=false
+            fi
+        fi
+        ;;
+
+    generate_paper_patches)
+        if [ -d "$ROUND_DIR/patches" ]; then
+            PATCH_COUNT=$(find "$ROUND_DIR/patches" -maxdepth 1 -name 'PP-*.yaml' -type f 2>/dev/null | wc -l | tr -d ' ')
+            if [ "${PATCH_COUNT:-0}" -gt 0 ]; then
+                for pp in "$ROUND_DIR/patches"/PP-*.yaml; do
+                    [ -f "$pp" ] || continue
+                    check_field_substantive "$pp" '.patch_id' "Patch ID in $(basename "$pp")"
+                    check_field_substantive "$pp" '.before_text_or_anchor' "Before anchor in $(basename "$pp")"
+                    check_field_substantive "$pp" '.after_text_or_structural_change' "After text in $(basename "$pp")"
+                    lc=$(yq -r '.lifecycle_status // ""' "$pp" 2>/dev/null || echo "")
+                    case "$lc" in
+                        proposed|applied|recorded|validated|rejected|superseded|blocked) pass "Patch lifecycle: $lc" ;;
+                        *) fail "Patch $(basename "$pp") has invalid lifecycle_status: $lc"; ALL_PRESENT=false ;;
+                    esac
+                done
+            else
+                NO_PATCH="$ROUND_DIR/patches/.no-patch.yaml"
+                if [ -f "$NO_PATCH" ]; then
+                    check_field_substantive "$NO_PATCH" '.no_patch_reason' "No-patch reason"
+                    check_field_substantive "$NO_PATCH" '.checked_critiques[0]' "Checked critique reference"
+                else
+                    fail "No PP-*.yaml files and no .no-patch.yaml"; ALL_PRESENT=false
+                fi
+            fi
+        fi
+        ;;
+
+    generate_experiment_obligations)
+        if [ -x "$SCRIPT_DIR/cr-validate-experiments" ]; then
+            "$SCRIPT_DIR/cr-validate-experiments" "$ROUND_DIR" || ALL_PRESENT=false
+        fi
+        if [ -f "$ROUND_DIR/experiment-obligations.yaml" ]; then
+            NO_EXP=$(yq -r '.no_experiment_needed_reason // ""' "$ROUND_DIR/experiment-obligations.yaml" 2>/dev/null || echo "")
+            OBL_COUNT=$(yq -r '.obligations | length // 0' "$ROUND_DIR/experiment-obligations.yaml" 2>/dev/null || echo "0")
+            [ "$OBL_COUNT" -gt 0 ] || [ ${#NO_EXP} -gt 20 ] || { fail "No experiment obligations and no substantive no-op reason"; ALL_PRESENT=false; }
+        fi
+        ;;
+
+    # ═══════════════════════════════════════════════════════════════
+    # M6: Writing
+    # ═══════════════════════════════════════════════════════════════
+
+    plan_writing_changes)
+        check_array_content "$ROUND_DIR/writing-plan.yaml" '.target_sections' 1 "Target sections"
+        check_array_content "$ROUND_DIR/writing-plan.yaml" '.patch_order' 1 "Patch order"
+        if [ -f "$ROUND_DIR/writing-plan.yaml" ]; then
+            for i in $(seq 0 $(($(yq -r '.target_sections | length' "$ROUND_DIR/writing-plan.yaml" 2>/dev/null || echo "0") - 1))); do
+                sec=$(yq -r ".target_sections[$i] // \"\"" "$ROUND_DIR/writing-plan.yaml" 2>/dev/null || echo "")
+                [ ${#sec} -lt 3 ] && { fail "Target section $i too short"; ALL_PRESENT=false; }
+            done
+        fi
+        ;;
+
+    apply_local_section_patches)
+        check_array_content "$ROUND_DIR/writing-diff.yaml" '.changes' 1 "Writing changes"
+        if [ -f "$ROUND_DIR/writing-diff.yaml" ]; then
+            for i in $(seq 0 $(($(yq -r '.changes | length' "$ROUND_DIR/writing-diff.yaml" 2>/dev/null || echo "0") - 1))); do
+                pid=$(yq -r ".changes[$i].patch_id // \"\"" "$ROUND_DIR/writing-diff.yaml" 2>/dev/null || echo "")
+                before=$(yq -r ".changes[$i].before_text // \"\"" "$ROUND_DIR/writing-diff.yaml" 2>/dev/null || echo "")
+                after=$(yq -r ".changes[$i].after_text // \"\"" "$ROUND_DIR/writing-diff.yaml" 2>/dev/null || echo "")
+                [ -z "$pid" ] && { fail "Change $i missing patch_id"; ALL_PRESENT=false; }
+                [ "$before" = "$after" ] && [ -n "$before" ] && { fail "Change $i: before==after (no actual change)"; ALL_PRESENT=false; }
+            done
+        fi
+        # Verify paper-draft.md actually changed
+        check_field_substantive "$PROJECT_DIR/writing/paper-draft.md" '.' "Paper draft content" 2>/dev/null || true
+        DRAFT_SIZE=$(wc -c < "$PROJECT_DIR/writing/paper-draft.md" 2>/dev/null | tr -d ' ' || echo "0")
+        [ "${DRAFT_SIZE:-0}" -gt 100 ] || { fail "Paper draft too small (${DRAFT_SIZE} bytes, need >100)"; ALL_PRESENT=false; }
+        ;;
+
+    validate_patch_application)
+        check_array_content "$ROUND_DIR/patch-application-report.yaml" '.verification' 1 "Patch verifications"
+        if [ -x "$SCRIPT_DIR/cr-validate-patch-application" ]; then
+            "$SCRIPT_DIR/cr-validate-patch-application" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+        fi
+        ;;
+
     global_argument_pass)
-        [ -x "$SCRIPT_DIR/cr-validate-argument-flow" ] && "$SCRIPT_DIR/cr-validate-argument-flow" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+        if [ -x "$SCRIPT_DIR/cr-validate-argument-flow" ]; then
+            "$SCRIPT_DIR/cr-validate-argument-flow" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+        fi
         ;;
+
     claim_evidence_alignment_pass)
-        [ -x "$SCRIPT_DIR/cr-validate-claim-paper-alignment" ] && "$SCRIPT_DIR/cr-validate-claim-paper-alignment" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+        check_array_content "$ROUND_DIR/claim-paper-matrix.yaml" '.mapping' 1 "Claim-paper mappings"
+        if [ -x "$SCRIPT_DIR/cr-validate-claim-paper-alignment" ]; then
+            "$SCRIPT_DIR/cr-validate-claim-paper-alignment" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+        fi
         ;;
+
     reviewer_readiness_pass)
-        [ -x "$SCRIPT_DIR/cr-validate-reviewer-readiness" ] && "$SCRIPT_DIR/cr-validate-reviewer-readiness" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+        check_array_content "$ROUND_DIR/reviewer-readiness.yaml" '.remaining_objections' 1 "Remaining objections"
+        if [ -x "$SCRIPT_DIR/cr-validate-reviewer-readiness" ]; then
+            "$SCRIPT_DIR/cr-validate-reviewer-readiness" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+        fi
+        # Every objection must have a valid status
+        if [ -f "$ROUND_DIR/reviewer-readiness.yaml" ]; then
+            for i in $(seq 0 $(($(yq -r '.remaining_objections | length' "$ROUND_DIR/reviewer-readiness.yaml" 2>/dev/null || echo "0") - 1))); do
+                st=$(yq -r ".remaining_objections[$i].status // \"\"" "$ROUND_DIR/reviewer-readiness.yaml" 2>/dev/null || echo "")
+                case "$st" in
+                    resolved|blocked|next_round_tracked) ;;
+                    *) fail "Objection $i has invalid status: $st (must be resolved/blocked/next_round_tracked)"; ALL_PRESENT=false ;;
+                esac
+            done
+        fi
         ;;
+
+    # ═══════════════════════════════════════════════════════════════
+    # M7: Knowledge / Closure
+    # ═══════════════════════════════════════════════════════════════
+
+    distill_literature_knowledge)
+        if [ -f "$ROUND_DIR/literature-knowledge-delta.yaml" ]; then
+            LIT_UPDATES=$(yq -r '.literature_updates | length // 0' "$ROUND_DIR/literature-knowledge-delta.yaml" 2>/dev/null || echo "0")
+            NO_REASON=$(yq -r '.no_literature_knowledge_reason // ""' "$ROUND_DIR/literature-knowledge-delta.yaml" 2>/dev/null || echo "")
+            if [ "$LIT_UPDATES" -eq 0 ]; then
+                [ ${#NO_REASON} -gt 20 ] && pass "No literature knowledge: justified" || { fail "No literature updates and no substantive no-op reason"; ALL_PRESENT=false; }
+            else
+                for i in $(seq 0 $((LIT_UPDATES - 1))); do
+                    sid=$(yq -r ".literature_updates[$i].source_id // \"\"" "$ROUND_DIR/literature-knowledge-delta.yaml" 2>/dev/null || echo "")
+                    [ -z "$sid" ] && { fail "Literature update $i missing source_id"; ALL_PRESENT=false; }
+                done
+                pass "Literature knowledge: $LIT_UPDATES updates"
+            fi
+        fi
+        ;;
+
+    distill_thinking_knowledge)
+        if [ -f "$ROUND_DIR/thinking-knowledge-delta.yaml" ]; then
+            THINK_RULES=$(yq -r '.thinking_rules | length // 0' "$ROUND_DIR/thinking-knowledge-delta.yaml" 2>/dev/null || echo "0")
+            NO_REASON=$(yq -r '.no_thinking_rule_reason // ""' "$ROUND_DIR/thinking-knowledge-delta.yaml" 2>/dev/null || echo "")
+            if [ "$THINK_RULES" -eq 0 ]; then
+                [ ${#NO_REASON} -gt 20 ] && pass "No thinking rules: justified" || { fail "No thinking rules and no substantive no-op reason"; ALL_PRESENT=false; }
+            else
+                for i in $(seq 0 $((THINK_RULES - 1))); do
+                    rule=$(yq -r ".thinking_rules[$i].learned_rule // \"\"" "$ROUND_DIR/thinking-knowledge-delta.yaml" 2>/dev/null || echo "")
+                    trigger=$(yq -r ".thinking_rules[$i].trigger // \"\"" "$ROUND_DIR/thinking-knowledge-delta.yaml" 2>/dev/null || echo "")
+                    [ ${#rule} -lt 20 ] && { fail "Thinking rule $i too short (${#rule} chars)"; ALL_PRESENT=false; }
+                    [ -z "$trigger" ] && { fail "Thinking rule $i missing trigger condition"; ALL_PRESENT=false; }
+                done
+                pass "Thinking rules: $THINK_RULES"
+            fi
+        fi
+        ;;
+
+    apply_knowledge_delta)
+        if [ -x "$SCRIPT_DIR/cr-validate-knowledge" ]; then
+            "$SCRIPT_DIR/cr-validate-knowledge" "$ROUND_DIR" || ALL_PRESENT=false
+        fi
+        check_field_substantive "$ROUND_DIR/knowledge-delta.yaml" '.deltas_reviewed[0]' "Reviewed deltas"
+        # knowledge-apply-log must have before/after hashes or no-op reason
+        if [ -f "$ROUND_DIR/knowledge-apply-log.yaml" ]; then
+            HAS_WRITEBACK=$(yq -r '.applied_updates | length // 0' "$ROUND_DIR/knowledge-apply-log.yaml" 2>/dev/null || echo "0")
+            NO_WRITEBACK=$(yq -r '.no_writeback_reason // ""' "$ROUND_DIR/knowledge-apply-log.yaml" 2>/dev/null || echo "")
+            [ "$HAS_WRITEBACK" -gt 0 ] || [ ${#NO_WRITEBACK} -gt 10 ] || { fail "No knowledge writeback and no no-writeback reason"; ALL_PRESENT=false; }
+        fi
+        ;;
+
+    prepare_next_round)
+        check_array_content "$ROUND_DIR/next-round-targets.yaml" '.candidate_risks' 1 "Candidate next-round risks"
+        check_field_substantive "$ROUND_DIR/next-round-targets.yaml" '.recommended_next_round' "Recommended next round"
+        ;;
+
     close_round)
-        [ -x "$SCRIPT_DIR/cr-validate-transaction-chain" ] && "$SCRIPT_DIR/cr-validate-transaction-chain" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+        # Transaction chain must be intact
+        if [ -x "$SCRIPT_DIR/cr-validate-transaction-chain" ]; then
+            "$SCRIPT_DIR/cr-validate-transaction-chain" "$PROJECT_DIR" "$ROUND_DIR" || ALL_PRESENT=false
+        fi
+        check_field_substantive "$ROUND_DIR/closure-report.yaml" '.summary' "Closure summary"
+        check_field_substantive "$ROUND_DIR/closure-report.yaml" '.remaining_risks[0]' "Remaining risks"
+        ;;
+
+    *)
+        # Any phase not explicitly handled gets a default semantic check:
+        # its primary output must be non-trivial.
+        warn "Phase '$PHASE' has no dedicated validator — checking outputs for substance"
+        for output in $ALL_OUTPUTS; do
+            f="$ROUND_DIR/$output"
+            [ -f "$f" ] || continue
+            size=$(wc -c < "$f" 2>/dev/null | tr -d ' ' || echo "0")
+            [ "${size:-0}" -lt 20 ] && { fail "Output '$output' is too small (${size} bytes) — may be empty or token"; ALL_PRESENT=false; }
+        done
         ;;
 esac
 
