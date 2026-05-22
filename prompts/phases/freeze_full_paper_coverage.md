@@ -1,86 +1,67 @@
-# Phase: freeze_round_scope
+# Phase: freeze_full_paper_coverage
 
 ## Mission
-Lock the scope boundary for this round. Every in-scope claim and section must be traceable to paper-state. Every forbidden change must be explicit. Out-of-scope items must be listed to prevent scope creep.
+Create a complete inventory of every element that every subsequent phase must cover. This phase does NOT limit scope — it documents what the full paper contains so that coverage can be verified. The user objective is a weighting lens, not a scope limiter.
 
 ## Inputs
-- `round-risk.yaml` — primary risk definition
+- `round-objective.yaml` — user's primary focus for this round
 - `paper-state.yaml` — frozen paper snapshot
 
 ## Outputs
-- `round-scope.yaml` — frozen scope boundary
+- `full-paper-coverage-plan.yaml` — complete paper inventory
 
 ## Allowed Actions
-- Read round-risk and paper-state.
-- Declare in-scope claims, sections, baselines.
-- Declare out-of-scope claims, sections.
-- List allowed and forbidden changes.
+- Read round-objective and paper-state.
+- Inventory ALL sections in the paper draft.
+- Inventory ALL core claims, assumptions, baselines, and evaluation obligations.
+- Write full-paper-coverage-plan.yaml.
 
 ## Forbidden Actions
-- Do not modify paper-state or round-risk.
-- Do not search for external sources.
-- Do not generate critique or patches.
+- Do NOT limit paper scope. Every section, claim, assumption, baseline, and evaluation must be listed.
+- Do NOT exclude any section or claim — even if it seems unrelated to the objective.
+- Do not search, critique, or edit the paper draft.
 
 ## Procedure
-1. Map the primary risk to specific claims and sections that need attention.
-2. List these as in_scope_claims and in_scope_sections.
-3. List baselines that are in scope for comparison.
-4. Explicitly list what is out of scope (prevent mission creep).
-5. Define allowed_changes and forbidden_changes as concrete constraints.
+1. Read `writing/paper-draft.md` and extract every section with section_id and title.
+2. From `paper-state.yaml`, extract every core claim, assumption, baseline, and evaluation item.
+3. List all items in the paper_inventory.
+4. Set coverage_policy: all items required.
+5. Document objective_focus alongside the full inventory.
+6. Define non_focus_policy: issues in non-focus areas are recorded, not ignored.
 
 ## Output Contract
 ```yaml
-in_scope_claims: [claim_id, ...] (>=1 item, each must exist in paper-state)
-in_scope_sections: [section_anchor, ...] (>=1 item)
-in_scope_baselines: [baseline_id, ...]
-out_of_scope_claims: [claim_id, ...]
-out_of_scope_sections: [section_anchor, ...]
-allowed_changes: [string, ...]
-forbidden_changes: [string, ...] (>=1 item)
+paper_inventory:
+  sections: [{section_id, title, required: true}, ...]
+  claims: [{claim_id, appears_in, required_full_pass: true}, ...]
+  assumptions: [{assumption_id, linked_claims}, ...]
+  baselines: [{baseline_id, linked_claims}, ...]
+  evaluation_items: [{eval_id, linked_claims}, ...]
+coverage_policy:
+  all_sections_required: true
+  all_claims_required: true
+  all_assumptions_required: true
+  all_baselines_required: true
+  all_evaluation_items_required: true
+objective_focus:
+  objective_id: current
+  focus_type: ""
+  priority_weight: high
+non_focus_policy:
+  if_issue_found: record_as_secondary_finding
+  if_severe: create_patch_or_human_decision
 ```
 
 ## Failure Conditions
-- in_scope_claims empty.
-- forbidden_changes empty.
-- in-scope claim_id not found in paper-state.
-- Scope boundary is vague (e.g., "improve paper").
-
-## Completion Checklist
-- [ ] All in-scope claims traceable to paper-state.
-- [ ] Forbidden changes are concrete and explicit.
-- [ ] Out-of-scope items documented.
-- [ ] round-scope.yaml is valid YAML.
-
-## Knowledge Use
-Before executing: inspect loaded-knowledge.yaml for cards with intended_use including `freeze_round_scope`. Cite relevant card_ids.
-
+- paper_inventory.sections is empty.
+- Any section from the paper draft is missing from the inventory.
+- The inventory suggests limiting scope to only objective-related items.
 
 ## Full-Paper Coverage Requirement
 
-This phase must operate over the entire paper, not only over the current round objective.
+This phase documents the full paper inventory. Every subsequent phase must cover all items listed here. The `cr-validate-full-paper-coverage` validator checks this.
 
-You must inspect all required sections, claims, assumptions, baselines, and evaluation items listed in `full-paper-coverage-plan.yaml`.
-
-The current round objective determines priority and emphasis, but it must not narrow coverage.
-
-Your output artifact must include:
-
-```yaml
-full_paper_coverage:
-  sections_checked: []
-  claims_checked: []
-  assumptions_checked: []
-  baselines_checked: []
-  evaluation_items_checked: []
-  omissions: []
-
-objective_relevance:
-  level: direct | indirect
-  explanation: ""
-  objective_specific_findings: []
-```
-
-If any required item is not checked, this phase must not be marked complete.
+Your output must include `full_paper_coverage` and `objective_relevance`.
 
 ## Handoff
-Research planning phases will use this scope to design targeted research questions.
+Every subsequent phase uses this inventory to verify full-paper coverage.
