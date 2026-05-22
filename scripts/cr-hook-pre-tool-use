@@ -65,6 +65,13 @@ case "$TOOL_NAME" in
                 ALLOW) ;;
                 *) deny "$RESULT" ;;
             esac
+
+            # Per-phase write boundary check (Inv3-Inv6 enforcement).
+            PHASE_RESULT=$("$SCOPE_CLI" phase-check "$file_path" 2>/dev/null || echo "DENY:phase check failed")
+            case "$PHASE_RESULT" in
+                ALLOW*) ;;
+                *) deny "$PHASE_RESULT" ;;
+            esac
         done <<< "$PATHS"
         allow
         ;;

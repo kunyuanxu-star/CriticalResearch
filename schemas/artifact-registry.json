@@ -632,48 +632,54 @@
       },
       {
         "order": 19,
+        "name": "cr-validate-knowledge-closure",
+        "gate": "hard",
+        "checks": "Knowledge loop: load\u2192use\u2192feedback\u2192delta\u2192apply\u2192reuse. Checks intended_use, applies_when/does_not_apply_when, before/after hashes."
+      },
+      {
+        "order": 20,
         "name": "cr-validate-human-gates",
         "gate": "hard",
         "checks": "No pending thesis-level decisions in human-review-queue.yaml"
       },
       {
-        "order": 20,
+        "order": 21,
         "name": "cr-validate-paper-completeness",
         "gate": "hard",
         "checks": "Paper draft contains all required sections and anchors"
       },
       {
-        "order": 21,
+        "order": 22,
         "name": "cr-validate-source-notes",
         "gate": "hard",
         "checks": "Every source note has does_not_prove, linked claims, affected sections"
       },
       {
-        "order": 22,
+        "order": 23,
         "name": "cr-validate-claim-evidence-matrix",
         "gate": "hard",
         "checks": "Every core claim in matrix, support levels assigned, evidence gaps flagged"
       },
       {
-        "order": 23,
+        "order": 24,
         "name": "cr-validate-argument-flow",
         "gate": "hard",
         "checks": "Upstream/downstream section consistency after patch application"
       },
       {
-        "order": 24,
+        "order": 25,
         "name": "cr-validate-claim-paper-alignment",
         "gate": "hard",
         "checks": "Paper claim strength does not exceed evidence support level"
       },
       {
-        "order": 25,
+        "order": 26,
         "name": "cr-validate-reviewer-readiness",
         "gate": "hard",
         "checks": "High/fatal critiques resolved or tracked; remaining objections documented"
       },
       {
-        "order": 26,
+        "order": 27,
         "name": "cr-validate-transaction-chain",
         "gate": "hard",
         "checks": "Full S01-S37 causal chain: source->note->evidence->matrix->critique->disposition->patch->diff->knowledge"

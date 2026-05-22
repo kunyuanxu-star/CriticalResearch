@@ -1,5 +1,5 @@
 # Search Queue
-# Queries to execute during the run_retrieval phase.
+# Queries to execute during the execute_retrieval phase.
 # Each query must have a class and the actual search string.
 
 queries:

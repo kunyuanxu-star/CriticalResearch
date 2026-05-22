@@ -548,6 +548,108 @@ YAML
         fi
         ;;
 
+    phase-check)
+        # Check if a file path is allowed for the current active phase.
+        # Reads state.yaml to get current_phase, then checks allowed/forbidden paths.
+        PATH_ARG="${1:-}"
+        [ -z "$PATH_ARG" ] && { echo "DENY:no path for phase-check"; exit 1; }
+
+        # Find active project and round.
+        ACTIVE_PROJ_FILE="$WORKSPACE_ROOT/_cr/active-project"
+        ACTIVE_PROJ=""
+        if [ -f "$ACTIVE_PROJ_FILE" ]; then
+            ACTIVE_PROJ=$(cat "$ACTIVE_PROJ_FILE")
+        fi
+        [ -z "$ACTIVE_PROJ" ] && { echo "ALLOW:no active project"; exit 0; }
+
+        PROJECT_DIR="$WORKSPACE_ROOT/$ACTIVE_PROJ"
+        STATE_JSON="$PROJECT_DIR/state/project-state.json"
+        [ ! -f "$STATE_JSON" ] && { echo "ALLOW:no project state"; exit 0; }
+
+        ACTIVE_RND=$(jq -r '.active_round // 0' "$STATE_JSON" 2>/dev/null || echo "0")
+        [ "$ACTIVE_RND" = "null" ] || [ "$ACTIVE_RND" -eq 0 ] 2>/dev/null && { echo "ALLOW:no active round"; exit 0; }
+
+        RND_NUM=$(printf "%03d" "$ACTIVE_RND")
+        STATE_FILE="$PROJECT_DIR/rounds/round-$RND_NUM/state.yaml"
+        [ ! -f "$STATE_FILE" ] && { echo "ALLOW:no state.yaml for round $RND_NUM"; exit 0; }
+
+        CURRENT_PHASE=$(yq -r '.current_phase // ""' "$STATE_FILE" 2>/dev/null || echo "")
+        [ -z "$CURRENT_PHASE" ] && { echo "ALLOW:no current phase"; exit 0; }
+
+        # Normalize the path relative to workspace.
+        REL_PATH="${PATH_ARG#$WORKSPACE_ROOT/}"
+        if [ "$REL_PATH" = "$PATH_ARG" ]; then
+            # Path is outside workspace — allow via normal scope check.
+            echo "ALLOW"
+            exit 0
+        fi
+
+        # Read forbidden paths for current phase.
+        FORBIDDEN=$(yq -r ".phases.\"$CURRENT_PHASE\".forbidden_actions[]? // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
+        for fb in $FORBIDDEN; do
+            [ -z "$fb" ] && continue
+            case "$fb" in
+                *_draft|*paper-draft*|edit_draft)
+                    case "$REL_PATH" in
+                        */writing/paper-draft.md|*/paper-draft.md)
+                            echo "DENY:Phase '$CURRENT_PHASE' forbids draft editing. Use the writing phases (S27-S32) to modify paper-draft.md."
+                            exit 1
+                            ;;
+                    esac
+                    ;;
+                write_paper_patch|generate_patch|*patch*)
+                    case "$REL_PATH" in
+                        */patches/*|*patches/PP-*)
+                            echo "DENY:Phase '$CURRENT_PHASE' forbids patch creation. Use S25 (generate_paper_patches) to write patches."
+                            exit 1
+                            ;;
+                    esac
+                    ;;
+                generate_critique|write_critique*|*critique_ledger*)
+                    case "$REL_PATH" in
+                        */critique-ledger.yaml|*/critique-*.yaml)
+                            echo "DENY:Phase '$CURRENT_PHASE' forbids critique generation. Use M4 phases (S17-S22) for critique."
+                            exit 1
+                            ;;
+                    esac
+                    ;;
+                write_evidence*|*evidence_ledger*|add_evidence*)
+                    case "$REL_PATH" in
+                        */evidence-ledger.yaml|*/evidence*.yaml)
+                            echo "DENY:Phase '$CURRENT_PHASE' forbids evidence writing. Use S11 (normalize_evidence) to write evidence."
+                            exit 1
+                            ;;
+                    esac
+                    ;;
+                *experiment*|fabricate*)
+                    case "$REL_PATH" in
+                        */experiment-obligations.yaml|*/experiments/*)
+                            echo "DENY:Phase '$CURRENT_PHASE' forbids experiment obligation creation. Use S26 to generate experiment obligations."
+                            exit 1
+                            ;;
+                    esac
+                    ;;
+                external_research|execute_search|*search*)
+                    case "$REL_PATH" in
+                        */search-log.yaml|*/raw-sources/*|*/search-queue.yaml)
+                            echo "DENY:Phase '$CURRENT_PHASE' forbids external research/search. Use M2 phases (S07-S13) for research."
+                            exit 1
+                            ;;
+                    esac
+                    ;;
+                *knowledge*|write_knowledge|modify_knowledge*)
+                    case "$REL_PATH" in
+                        */knowledge-delta.yaml|*/knowledge-apply-log.yaml|*/literature-knowledge-delta.yaml|*/thinking-knowledge-delta.yaml)
+                            echo "DENY:Phase '$CURRENT_PHASE' forbids knowledge writeback. Use M7 phases (S33-S37) for knowledge."
+                            exit 1
+                            ;;
+                    esac
+                    ;;
+            esac
+        done
+        echo "ALLOW"
+        ;;
+
     revert-last)
         if command -v git >/dev/null 2>&1 && git rev-parse --show-toplevel >/dev/null 2>&1; then
             if [ -f "/tmp/cr-scope-violations.txt" ]; then
