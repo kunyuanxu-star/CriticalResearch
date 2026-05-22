@@ -118,11 +118,14 @@ if [ "$WORKFLOW_MODE" = "paper" ]; then
     mkdir -p "$ROUND_DIR/raw-sources"
 
     # Create dispositions.yaml template.
-    cat > "$ROUND_DIR/dispositions.yaml" << 'YAML'
+    cat > "$ROUND_DIR/dispositions.yaml" << YAML
 # Critique Disposition Records
-# One entry per medium+ critique.
-
+# Each entry links a critique to a patch or decision.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
 dispositions: []
+# no_disposition_reason: ""
+# validated_critiques: []
 YAML
 
     # Create questions.md template.
@@ -336,6 +339,15 @@ YAML
     else
         echo "  Warning: round-state.yaml template not found -- skipping state.yaml"
     fi
+
+    cat > "$ROUND_DIR/patches/.no-patch.yaml" << YAML
+# Patch No-Op Record
+# Fill this if no paper patches were generated this round.
+schema_version: "1.0.0"
+round_id: $NEXT_ROUND
+no_patch_reason: ""
+validated_dispositions: []
+YAML
 
     echo "  Paper mode: patches/, experiments/, raw-sources/, state.yaml, dispositions.yaml, questions.md"
 fi

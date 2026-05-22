@@ -64,7 +64,7 @@ if [ -d "$PATCHES_DIR" ]; then
     for patch_file in "$PATCHES_DIR"/PP-*.yaml; do
         [ ! -f "$patch_file" ] && continue
         PP_ID=$(basename "$patch_file" .yaml)
-        LINKED_CRT=$(grep -E '^linked_critique:' "$patch_file" 2>/dev/null | sed 's/^linked_critique:\s*//' | xargs || echo "")
+        LINKED_CRT=$(yq -r '.created_from.critique_id // ""' "$patch_file" 2>/dev/null || echo "")
         if [ -n "$LINKED_CRT" ]; then
             if echo "$ALL_CRT_IDS" | grep -q "$LINKED_CRT" 2>/dev/null; then
                 pass "$PP_ID → $LINKED_CRT (resolved)"
@@ -115,7 +115,7 @@ if [ -d "$EXPERIMENTS_DIR" ]; then
             if echo "$ALL_CLM_IDS" | grep -q "$TARGET_CLAIM" 2>/dev/null; then
                 pass "$EXP_ID → $TARGET_CLAIM (claim resolved)"
             else
-                warn "$EXP_ID → $TARGET_CLAIM: claim ID not found in claim-graph.md"
+                warn "$EXP_ID → $TARGET_CLAIM: claim ID not found in claim-ledger.yaml or claim-graph.md"
             fi
         fi
     done

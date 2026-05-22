@@ -22,6 +22,7 @@
       "items": {
         "type": "object",
         "required": [
+          "disposition_id",
           "critique_id",
           "disposition_type",
           "justification",
@@ -68,6 +69,10 @@
               "high",
               "medium"
             ]
+          },
+          "disposition_id": {
+            "type": "string",
+            "pattern": "^DSP-[0-9]{3}$"
           }
         }
       }

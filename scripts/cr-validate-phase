@@ -178,21 +178,20 @@ case "$PHASE" in
         ;;
     generate_paper_patches)
         if [ -d "$ROUND_DIR/patches" ]; then
-            PATCH_COUNT=$(find "$ROUND_DIR/patches" -name 'PP-*.yaml' -type f 2>/dev/null | wc -l | tr -d ' ')
-            NO_PATCH=$(yq -r '.no_patch_reason // ""' "$ROUND_DIR/patches/.no-patch.yaml" 2>/dev/null || echo "")
+            PATCH_COUNT=$(find "$ROUND_DIR/patches" -maxdepth 1 -name 'PP-*.yaml' -type f 2>/dev/null | wc -l | tr -d ' ')
+            NO_PATCH_FILE="$ROUND_DIR/patches/.no-patch.yaml"
             if [ "${PATCH_COUNT:-0}" -gt 0 ]; then
                 pass "Paper patches: $PATCH_COUNT file(s)"
-            elif [ -f "$ROUND_DIR/dispositions.yaml" ]; then
-                # Check if all dispositions were deferred/rejected (no paper_patch type).
-                PAPER_PATCH_DISPS=$(yq -r '[.dispositions[]? | select(.disposition_type == "paper_patch")] | length' "$ROUND_DIR/dispositions.yaml" 2>/dev/null || echo "0")
-                if [ "${PAPER_PATCH_DISPS:-0}" -eq 0 ]; then
-                    pass "No paper patches needed — no paper_patch dispositions"
+            elif [ -f "$NO_PATCH_FILE" ]; then
+                NO_PATCH_REASON=$(yq -r '.no_patch_reason // ""' "$NO_PATCH_FILE" 2>/dev/null || echo "")
+                if [ -n "$NO_PATCH_REASON" ] && [ "$NO_PATCH_REASON" != "null" ]; then
+                    pass "No patches with explicit reason: ${NO_PATCH_REASON:0:80}..."
                 else
-                    fail "No PP-*.yaml files but dispositions require patches"
+                    fail "patches/.no-patch.yaml exists but no_patch_reason is empty"
                     ALL_PRESENT=false
                 fi
             else
-                fail "No PP-*.yaml files in patches/"
+                fail "No PP-*.yaml files and no patches/.no-patch.yaml"
                 ALL_PRESENT=false
             fi
         fi

@@ -129,6 +129,22 @@ else
     ALL_PASSED=false
 fi
 
+# 4b. Provenance: search-log.selected_sources must appear in source-index.
+if [ -f "$ROUND_DIR/search-log.yaml" ] && [ -f "$ROUND_DIR/source-index.yaml" ]; then
+    SELECTED=$(yq -r '.searches[]?.selected_sources[]? // ""' "$ROUND_DIR/search-log.yaml" 2>/dev/null | sort -u || echo "")
+    INDEXED=$(yq -r '.sources[]?.source_id // ""' "$ROUND_DIR/source-index.yaml" 2>/dev/null | sort -u || echo "")
+    PROV_FAIL=0
+    for sid in $SELECTED; do
+        [ -z "$sid" ] && continue
+        if ! echo "$INDEXED" | grep -qw "$sid"; then
+            fail "  selected source $sid not found in source-index.yaml"
+            PROV_FAIL=$((PROV_FAIL + 1))
+            ALL_PASSED=false
+        fi
+    done
+    [ "$PROV_FAIL" -eq 0 ] && pass "  All selected_sources appear in source-index.yaml"
+fi
+
 # 5. Evidence ledger.
 if [ -f "$ROUND_DIR/evidence-ledger.yaml" ]; then
     EVID_COUNT=$(yq -r '.evidence | length // 0' "$ROUND_DIR/evidence-ledger.yaml" 2>/dev/null || echo "0")
