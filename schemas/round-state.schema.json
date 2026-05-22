@@ -21,6 +21,12 @@
         "allow_c_only_as_lead": { "type": "boolean" }
       }
     },
+    "phase_order": {
+      "type": "array",
+      "minItems": 14,
+      "maxItems": 14,
+      "items": { "type": "string" }
+    },
     "phases": {
       "type": "object",
       "properties": {

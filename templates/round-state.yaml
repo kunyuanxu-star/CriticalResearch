@@ -12,6 +12,22 @@ required_source_levels:
   allow_b: true
   allow_c_only_as_lead: true
 
+phase_order:
+  - reconstruct_paper_state
+  - define_round_target
+  - plan_research
+  - run_retrieval
+  - ingest_sources
+  - normalize_evidence
+  - update_literature_knowledge
+  - adversarial_critique
+  - generate_dispositions
+  - generate_paper_patches
+  - generate_experiment_obligations
+  - apply_patches_to_draft
+  - distill_knowledge
+  - close_round
+
 phases:
   reconstruct_paper_state:
     status: open

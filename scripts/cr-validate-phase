@@ -43,6 +43,30 @@ for dep in $DEPS; do
     fi
 done
 
+    # Check required inputs exist.
+    INPUTS=$(yq -r ".phases.$PHASE.required_inputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
+    for input in $INPUTS; do
+        [ -z "$input" ] && continue
+        case "$input" in
+            writing/*|state/*)
+                if [ -f "$PROJECT_DIR/$input" ]; then
+                    pass "Input '$input' exists"
+                else
+                    warn "Input '$input' not found"
+                fi
+                ;;
+            *)
+                if [ -f "$ROUND_DIR/$input" ]; then
+                    pass "Input '$input' exists"
+                elif [ -d "$ROUND_DIR/$input" ]; then
+                    pass "Input '$input/' exists"
+                else
+                    warn "Input '$input' not found"
+                fi
+                ;;
+        esac
+    done
+
 # Check required outputs exist.
 REQ=$(yq -r ".phases.$PHASE.required_outputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
 ALL_PRESENT=true

@@ -115,6 +115,12 @@ YAML
 }
 JSON
 
+                # Create initial claim ledger.
+        cat > "$PROJECT_DIR/state/claim-ledger.yaml" << YAML
+schema_version: "1.0.0"
+claims: []
+YAML
+
         # Create initial paper draft with complete structure.
         cat > "$PROJECT_DIR/writing/paper-draft.md" << MD
 # $PROJECT_ID — Research Paper Draft

@@ -68,7 +68,7 @@ for phase in "${EXPECTED_PHASES[@]}"; do
 done
 
 # Verify all 13 pre-close phases are present (close_round is the 14th).
-ACTUAL_COUNT=$(yq -r '.phases | keys | length' "$STATE_FILE" 2>/dev/null || echo "0")
+ACTUAL_COUNT=$(yq -r '.phase_order | length // (.phases | keys | length)' "$STATE_FILE" 2>/dev/null || echo "0")
 EXPECTED_COUNT=${#EXPECTED_PHASES[@]}
 
 if [ "$ACTUAL_COUNT" -lt "$EXPECTED_COUNT" ]; then

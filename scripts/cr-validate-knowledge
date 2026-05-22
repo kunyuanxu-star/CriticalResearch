@@ -26,6 +26,7 @@ ALL_PASSED=true
 # ── knowledge-delta.yaml (L1 authoritative) ──────────────────────
 
 DELTA_FILE="$ROUND_DIR/knowledge-delta.yaml"
+APPLY_FILE="$ROUND_DIR/knowledge-apply-log.yaml"
 if [ -f "$DELTA_FILE" ]; then
     pass "knowledge-delta.yaml exists"
 
@@ -105,7 +106,6 @@ fi
 
 # ── knowledge-apply-log.yaml (L1 authoritative) ──────────────────
 
-APPLY_FILE="$ROUND_DIR/knowledge-apply-log.yaml"
 if [ -f "$APPLY_FILE" ]; then
     APPLY_COUNT=$(yq -r '.applied_updates | length // 0' "$APPLY_FILE" 2>/dev/null || echo "0")
     IDX_COUNT=$(yq -r '.index_updates | length // 0' "$APPLY_FILE" 2>/dev/null || echo "0")

@@ -75,7 +75,11 @@ get_next_phase() {
     local current="$1"
     local found=false
     local phases
-    phases=$(yq -r '.phases | keys | .[]' "$STATE_FILE" 2>/dev/null)
+    phases=$(yq -r '.phase_order // [] | .[]' "$STATE_FILE" 2>/dev/null)
+    # Fallback to map keys if phase_order not present (backward compat).
+    if [ -z "$phases" ]; then
+        phases=$(yq -r '.phases | keys | .[]' "$STATE_FILE" 2>/dev/null)
+    fi
     for p in $phases; do
         [ -z "$p" ] && continue
         if [ "$found" = true ]; then
@@ -86,7 +90,6 @@ get_next_phase() {
             found=true
         fi
     done
-    # No next phase — at the end.
     echo ""
 }
 
@@ -129,7 +132,7 @@ case "$SUBCMD" in
         MISSING=$(echo "$MISSING" | xargs)
 
         # Count completed phases.
-        TOTAL_PHASES=$(yq -r '.phases | keys | length' "$STATE_FILE" 2>/dev/null || echo "14")
+        TOTAL_PHASES=$(yq -r '.phase_order | length // (.phases | keys | length)' "$STATE_FILE" 2>/dev/null || echo "14")
         COMPLETED=$(yq -r '.phases | to_entries | map(select(.value.status == "complete")) | length' "$STATE_FILE" 2>/dev/null || echo "0")
 
         if [ "$MACHINE_MODE" = true ]; then

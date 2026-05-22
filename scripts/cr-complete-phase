@@ -91,7 +91,9 @@ echo "Phase '$PHASE' marked complete at $NOW"
 
 # ── Auto-unblock next phases whose dependencies are now satisfied ──
 
-ALL_PHASES=$(yq -r '.phases | keys | .[]' "$STATE_FILE" 2>/dev/null)
+ALL_PHASES=$(yq -r '.phase_order // [] | .[]' "$STATE_FILE" 2>/dev/null)
+# Fallback to map keys if phase_order not present.
+[ -z "$ALL_PHASES" ] && ALL_PHASES=$(yq -r '.phases | keys | .[]' "$STATE_FILE" 2>/dev/null)
 for p in $ALL_PHASES; do
     [ -z "$p" ] && continue
     p_status=$(yq -r ".phases.$p.status // \"\"" "$STATE_FILE" 2>/dev/null)
