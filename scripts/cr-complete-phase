@@ -42,8 +42,94 @@ if [ "$PHASE" != "$CURRENT_PHASE" ]; then
     exit 2
 fi
 
+# ── Helper: check module review ──────────────────────────────────
+
+check_module_review() {
+    local phase="$1"
+    local round_dir="$2"
+    local mod=""
+    case "$phase" in
+        freeze_full_paper_coverage)       mod="M0" ;;
+        generate_search_strategy)         mod="M1" ;;
+        update_literature_knowledge)      mod="M2" ;;
+        synthesize_evaluation_gaps)       mod="M3" ;;
+        merge_critique_ledger)            mod="M4" ;;
+        generate_experiment_obligations)  mod="M5" ;;
+        reviewer_readiness_pass)          mod="M6" ;;
+        prepare_next_round)               mod="M7" ;;
+    esac
+    [ -z "$mod" ] && return 0
+
+    local review_file="$round_dir/phase-reviews/${mod}-review.yaml"
+    if [ -f "$review_file" ]; then
+        local review_status
+        review_status=$(yq -r '.status // ""' "$review_file" 2>/dev/null || echo "")
+        local review_blocking
+        review_blocking=$(yq -r '.blocking_findings | length // 0' "$review_file" 2>/dev/null || echo 0)
+        if [ "$review_status" = "pass" ] && [ "$review_blocking" -eq 0 ] 2>/dev/null; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+# ── Helper: auto-unblock next phases ─────────────────────────────
+
+auto_unblock() {
+    local state_file="$1"
+    local all_phases
+    all_phases=$(yq -r '.phase_order // [] | .[]' "$state_file" 2>/dev/null)
+    [ -z "$all_phases" ] && all_phases=$(yq -r '.phases | keys | .[]' "$state_file" 2>/dev/null)
+    for p in $all_phases; do
+        [ -z "$p" ] && continue
+        local p_status
+        p_status=$(yq -r ".phases.$p.status // \"\"" "$state_file" 2>/dev/null)
+        [ "$p_status" != "blocked" ] && continue
+
+        local all_deps_met=true
+        local deps
+        deps=$(yq -r ".phases.$p.depends_on // [] | .[]" "$state_file" 2>/dev/null)
+        for dep in $deps; do
+            [ -z "$dep" ] && continue
+            local dep_status
+            dep_status=$(yq -r ".phases.$dep.status // \"\"" "$state_file" 2>/dev/null)
+            if [ "$dep_status" != "complete" ]; then
+                all_deps_met=false
+                break
+            fi
+        done
+
+        if [ "$all_deps_met" = true ]; then
+            yq -i ".phases.$p.status = \"open\"" "$state_file" 2>/dev/null
+            echo "  Unblocked: $p"
+        fi
+    done
+
+    # Set current_phase to the first open phase.
+    for p in $all_phases; do
+        [ -z "$p" ] && continue
+        local p_status
+        p_status=$(yq -r ".phases.$p.status // \"\"" "$state_file" 2>/dev/null)
+        if [ "$p_status" = "open" ]; then
+            yq -i ".current_phase = \"$p\"" "$state_file" 2>/dev/null
+            echo "Current phase: $p"
+            break
+        fi
+    done
+}
+
+# ── Already complete: check review and unblock if possible ───────
+
 if [ "$PHASE_STATUS" = "complete" ]; then
     echo "Phase '$PHASE' is already complete."
+
+    if ! check_module_review "$PHASE" "$ROUND_DIR"; then
+        echo "Module review still pending. Cannot advance."
+        exit 0
+    fi
+
+    # Review OK — auto-unblock and exit.
+    auto_unblock "$STATE_FILE"
     exit 0
 fi
 
@@ -131,7 +217,7 @@ echo "Phase '$PHASE' marked complete at $NOW"
 
 # ── Record phase-run-log (execution proof) ────────────────────────
 
-PHASE_ORDER=$(yq -r ".phase_order | index(\"$PHASE\") // 0" "$STATE_FILE" 2>/dev/null || echo "0")
+PHASE_ORDER=$(yq -r ".phase_order | to_entries | .[] | select(.value == \"$PHASE\") | .key // 0" "$STATE_FILE" 2>/dev/null || echo "0")
 PHASE_ORDER=$((PHASE_ORDER + 1))
 RUN_LOG="$ROUND_DIR/phase-run-log.yaml"
 
@@ -180,7 +266,7 @@ fi
             h=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
             echo "      \"$out\": \"$h\""
         elif [ -d "$f" ]; then
-            h=$(find "$f" -type f -exec shasum -a 256 {} \; 2>/dev/null | sort | shasum -a 256 | cut -d' ' -f1 || echo "unknown")
+            h=$(find "$f" -type f -exec shasum -a 256 {} \; 2>/dev/null | awk '{print $1}' | sort | shasum -a 256 | cut -d' ' -f1 || echo "unknown")
             echo "      \"$out\": \"$h\""
         fi
     done
@@ -188,40 +274,22 @@ fi
 } >> "$RUN_LOG"
 echo "  Phase execution recorded in phase-run-log.yaml"
 
+# ── Module review checkpoint ─────────────────────────────────────
+# If this phase is the last in a module, the module review must exist
+# and have status=pass before the next module's phases can unblock.
+
+if ! check_module_review "$PHASE" "$ROUND_DIR"; then
+    echo ""
+    echo "══ Module Review Checkpoint ══"
+    echo "Phase '$PHASE' completes a module."
+    echo "Module review is required before proceeding to the next module."
+    echo ""
+    echo "Run: cr review-module $(basename "$PROJECT_DIR") <module>"
+    echo ""
+    echo "Phase '$PHASE' is COMPLETE. The next module is BLOCKED pending review."
+    exit 0
+fi
+
 # ── Auto-unblock next phases whose dependencies are now satisfied ──
 
-ALL_PHASES=$(yq -r '.phase_order // [] | .[]' "$STATE_FILE" 2>/dev/null)
-# Fallback to map keys if phase_order not present.
-[ -z "$ALL_PHASES" ] && ALL_PHASES=$(yq -r '.phases | keys | .[]' "$STATE_FILE" 2>/dev/null)
-for p in $ALL_PHASES; do
-    [ -z "$p" ] && continue
-    p_status=$(yq -r ".phases.$p.status // \"\"" "$STATE_FILE" 2>/dev/null)
-    [ "$p_status" != "blocked" ] && continue
-
-    all_deps_met=true
-    deps=$(yq -r ".phases.$p.depends_on // [] | .[]" "$STATE_FILE" 2>/dev/null)
-    for dep in $deps; do
-        [ -z "$dep" ] && continue
-        dep_status=$(yq -r ".phases.$dep.status // \"\"" "$STATE_FILE" 2>/dev/null)
-        if [ "$dep_status" != "complete" ]; then
-            all_deps_met=false
-            break
-        fi
-    done
-
-    if [ "$all_deps_met" = true ]; then
-        yq -i ".phases.$p.status = \"open\"" "$STATE_FILE" 2>/dev/null
-        echo "  Unblocked: $p"
-    fi
-done
-
-# Set current_phase to the first open phase.
-for p in $ALL_PHASES; do
-    [ -z "$p" ] && continue
-    p_status=$(yq -r ".phases.$p.status // \"\"" "$STATE_FILE" 2>/dev/null)
-    if [ "$p_status" = "open" ]; then
-        yq -i ".current_phase = \"$p\"" "$STATE_FILE" 2>/dev/null
-        echo "Current phase: $p"
-        break
-    fi
-done
+auto_unblock "$STATE_FILE"

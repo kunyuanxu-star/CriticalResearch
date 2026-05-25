@@ -23,6 +23,13 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# ── Paper mode is FORBIDDEN via cr-new-round ──
+if [ "$WORKFLOW_MODE" = "paper" ]; then
+    echo "Error: paper mode must be started via cr-start-paper-round." >&2
+    echo "  Use: cr round <project> --mode paper \"<objective>\"" >&2
+    exit 1
+fi
+
 if [ -z "$PROJECT_DIR" ]; then
     echo "Usage: cr-new-round <project_dir> [round_type] [--mode paper|triage|standard|deep]" >&2
     echo "  round_type: discovery, validation, re_search, rebuttal, writing, repair, finalization, setup" >&2

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # cr-validate-phase-run-log — Hard gate: every completed phase must have execution proof.
 # Validates the phase-run-log.yaml against the state.yaml and actual artifacts.
+# Enforces paired started+completed events with matching order, phase, timestamps,
+# input hashes, and output hashes.
 #
 # Usage: cr-validate-phase-run-log <project_dir> <round_dir>
 
@@ -61,7 +63,7 @@ if [ "$PHASE_COUNT" -eq 0 ]; then
     cr_exit_summary
 fi
 
-# ── 3. Check each completed phase ────────────────────────────────
+# ── 3. Check each completed phase has paired started+completed ───
 
 ERRORS=0
 COMPLETED_PHASES=()
@@ -78,44 +80,81 @@ for ((i=0; i<PHASE_COUNT; i++)); do
         continue
     fi
 
-    # Phase is complete in state.yaml — must have run-log proof.
+    # Phase is complete in state.yaml — must have BOTH started and completed events.
+    started_event=$(yq -r ".events[] | select(.event==\"phase_started\" and .phase==\"$phase\")" "$RUN_LOG" 2>/dev/null || echo "")
     completed_event=$(yq -r ".events[] | select(.event==\"phase_completed\" and .phase==\"$phase\")" "$RUN_LOG" 2>/dev/null || echo "")
+
+    if [ -z "$started_event" ] || [ "$started_event" = "null" ]; then
+        fail "Phase '$phase': complete in state.yaml but NO phase_started event in run-log"
+        ERRORS=$((ERRORS + 1))
+        continue
+    fi
+
     if [ -z "$completed_event" ] || [ "$completed_event" = "null" ]; then
-        fail "Phase '$phase' is complete in state.yaml but has NO phase_completed event in run-log"
+        fail "Phase '$phase': complete in state.yaml but NO phase_completed event in run-log"
         ERRORS=$((ERRORS + 1))
         continue
     fi
 
     COMPLETED_PHASES+=("$phase")
 
-    # Check order matches.
-    actual_order=$(yq -r ".events[] | select(.event==\"phase_completed\" and .phase==\"$phase\") | .order" "$RUN_LOG" 2>/dev/null || echo "0")
-    if [ "$actual_order" != "$expected_order" ]; then
-        fail "Phase '$phase' completed event has order=$actual_order (expected $expected_order)"
+    # 3a. Check started.order == completed.order == expected_order.
+    started_order=$(yq -r ".events[] | select(.event==\"phase_started\" and .phase==\"$phase\") | .order" "$RUN_LOG" 2>/dev/null || echo "0")
+    completed_order=$(yq -r ".events[] | select(.event==\"phase_completed\" and .phase==\"$phase\") | .order" "$RUN_LOG" 2>/dev/null || echo "0")
+
+    if [ "$started_order" != "$expected_order" ]; then
+        fail "Phase '$phase' started event has order=$started_order (expected $expected_order)"
+        ERRORS=$((ERRORS + 1))
+    fi
+    if [ "$completed_order" != "$expected_order" ]; then
+        fail "Phase '$phase' completed event has order=$completed_order (expected $expected_order)"
         ERRORS=$((ERRORS + 1))
     fi
 
-    # Check validator.exit_code == 0.
+    # 3b. Check completed.at >= started.at.
+    started_at=$(yq -r ".events[] | select(.event==\"phase_started\" and .phase==\"$phase\") | .at" "$RUN_LOG" 2>/dev/null || echo "")
+    completed_at=$(yq -r ".events[] | select(.event==\"phase_completed\" and .phase==\"$phase\") | .at" "$RUN_LOG" 2>/dev/null || echo "")
+    if [ -n "$started_at" ] && [ -n "$completed_at" ] && [ "$started_at" != "null" ] && [ "$completed_at" != "null" ]; then
+        # Simple string comparison works for ISO8601 timestamps.
+        if [ "$completed_at" \< "$started_at" ]; then
+            fail "Phase '$phase' completed_at ($completed_at) < started_at ($started_at)"
+            ERRORS=$((ERRORS + 1))
+        fi
+    fi
+
+    # 3c. Check validator.exit_code == 0.
     exit_code=$(yq -r ".events[] | select(.event==\"phase_completed\" and .phase==\"$phase\") | .validator.exit_code // -1" "$RUN_LOG" 2>/dev/null || echo "-1")
     if [ "$exit_code" != "0" ]; then
         fail "Phase '$phase' validator exit_code=$exit_code (expected 0)"
         ERRORS=$((ERRORS + 1))
     fi
 
-    # Check output hashes still match.
+    # 3d. Check required_outputs non-empty → output_hashes non-empty.
+    req_outputs=$(yq -r ".phases.\"$phase\".required_outputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
+    has_req_outputs=false
+    for ro in $req_outputs; do
+        [ -z "$ro" ] && continue
+        has_req_outputs=true
+        break
+    done
     output_hashes=$(yq -r ".events[] | select(.event==\"phase_completed\" and .phase==\"$phase\") | .output_hashes // {}" "$RUN_LOG" 2>/dev/null || echo "{}")
+    hash_keys=$(echo "$output_hashes" | yq -r 'keys | length' 2>/dev/null || echo "0")
+    if [ "$has_req_outputs" = true ] && [ "$hash_keys" -eq 0 ]; then
+        fail "Phase '$phase' has required_outputs but output_hashes is empty"
+        ERRORS=$((ERRORS + 1))
+    fi
+
+    # 3e. Check output hashes still match current files.
     if [ "$output_hashes" != "{}" ] && [ -n "$output_hashes" ]; then
-        # Extract keys from output_hashes.
         keys=$(echo "$output_hashes" | yq -r 'keys | .[]' 2>/dev/null || echo "")
         for key in $keys; do
             [ -z "$key" ] && continue
             stored_hash=$(echo "$output_hashes" | yq -r ".[\"$key\"]" 2>/dev/null || echo "")
-            # Resolve path: round-level by default.
             f="$ROUND_DIR/$key"
             if [ -f "$f" ]; then
                 current_hash=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || echo "")
             elif [ -d "$f" ]; then
-                current_hash=$(find "$f" -type f -exec shasum -a 256 {} \; 2>/dev/null | sort | shasum -a 256 | cut -d' ' -f1 || echo "")
+                current_hash=$(find "$f" -type f -exec shasum -a 256 {} \; 2>/dev/null | awk '{print $1}' | sort | shasum -a 256 | cut -d' ' -f1 || echo "")
             else
                 current_hash=""
             fi
@@ -125,31 +164,60 @@ for ((i=0; i<PHASE_COUNT; i++)); do
             fi
         done
     fi
+
+    # 3f. Check input_hashes present and match current files.
+    input_hashes=$(yq -r ".events[] | select(.event==\"phase_started\" and .phase==\"$phase\") | .input_hashes // {}" "$RUN_LOG" 2>/dev/null || echo "{}")
+    if [ "$input_hashes" != "{}" ] && [ -n "$input_hashes" ]; then
+        keys=$(echo "$input_hashes" | yq -r 'keys | .[]' 2>/dev/null || echo "")
+        for key in $keys; do
+            [ -z "$key" ] && continue
+            stored_hash=$(echo "$input_hashes" | yq -r ".[\"$key\"]" 2>/dev/null || echo "")
+            f="$ROUND_DIR/$key"
+            [ -f "$f" ] || f="$PROJECT_DIR/$key"
+            if [ -f "$f" ]; then
+                current_hash=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || echo "")
+                if [ "$stored_hash" != "$current_hash" ]; then
+                    fail "Phase '$phase' input '$key' hash mismatch: stored=$stored_hash current=$current_hash"
+                    ERRORS=$((ERRORS + 1))
+                fi
+            fi
+        done
+    fi
 done
 
-# ── 4. Check no duplicate completed events ───────────────────────
+# ── 4. Check no duplicate events per phase ───────────────────────
 
 for phase in "${PHASE_ORDER[@]}"; do
-    count=$(yq -r "[.events[] | select(.event==\"phase_completed\" and .phase==\"$phase\")] | length" "$RUN_LOG" 2>/dev/null || echo 0)
-    if [ "$count" -gt 1 ]; then
-        fail "Phase '$phase' has $count completed events (expected 0 or 1)"
+    started_count=$(yq -r "[.events[] | select(.event==\"phase_started\" and .phase==\"$phase\")] | length" "$RUN_LOG" 2>/dev/null || echo 0)
+    completed_count=$(yq -r "[.events[] | select(.event==\"phase_completed\" and .phase==\"$phase\")] | length" "$RUN_LOG" 2>/dev/null || echo 0)
+    if [ "$started_count" -gt 1 ]; then
+        fail "Phase '$phase' has $started_count started events (expected 0 or 1)"
+        ERRORS=$((ERRORS + 1))
+    fi
+    if [ "$completed_count" -gt 1 ]; then
+        fail "Phase '$phase' has $completed_count completed events (expected 0 or 1)"
         ERRORS=$((ERRORS + 1))
     fi
 done
 
-# ── 5. Check close_round has completed event ─────────────────────
+# ── 5. Check close_round has started+completed events ────────────
 
-CLOSE_EVENT=$(yq -r ".events[] | select(.event==\"phase_completed\" and .phase==\"close_round\")" "$RUN_LOG" 2>/dev/null || echo "")
-if [ -n "$CLOSE_EVENT" ] && [ "$CLOSE_EVENT" != "null" ]; then
-    pass "close_round has completed event"
+CLOSE_STARTED=$(yq -r ".events[] | select(.event==\"phase_started\" and .phase==\"close_round\")" "$RUN_LOG" 2>/dev/null || echo "")
+CLOSE_COMPLETED=$(yq -r ".events[] | select(.event==\"phase_completed\" and .phase==\"close_round\")" "$RUN_LOG" 2>/dev/null || echo "")
+if [ -n "$CLOSE_STARTED" ] && [ "$CLOSE_STARTED" != "null" ] && [ -n "$CLOSE_COMPLETED" ] && [ "$CLOSE_COMPLETED" != "null" ]; then
+    pass "close_round has started + completed events"
+elif [ -n "$CLOSE_COMPLETED" ] && [ "$CLOSE_COMPLETED" != "null" ] && [ -z "$CLOSE_STARTED" ]; then
+    fail "close_round has completed event but NO started event"
+    ERRORS=$((ERRORS + 1))
 else
-    # close_round may not be complete yet — only warn, don't fail.
+    # close_round may not be complete yet — only warn.
     warn "close_round has no completed event (round may not be closed yet)"
 fi
 
 # ── 6. Check state.yaml complete count matches run-log ───────────
 
 STATE_COMPLETE=$(yq -r '[.phases | to_entries[] | select(.value.status=="complete")] | length' "$STATE_FILE" 2>/dev/null || echo 0)
+RUNLOG_STARTED=$(yq -r '[.events[] | select(.event=="phase_started")] | length' "$RUN_LOG" 2>/dev/null || echo 0)
 RUNLOG_COMPLETE=$(yq -r '[.events[] | select(.event=="phase_completed")] | length' "$RUN_LOG" 2>/dev/null || echo 0)
 
 if [ "$STATE_COMPLETE" != "$RUNLOG_COMPLETE" ]; then
@@ -157,6 +225,11 @@ if [ "$STATE_COMPLETE" != "$RUNLOG_COMPLETE" ]; then
     ERRORS=$((ERRORS + 1))
 else
     pass "Complete phase count matches: $STATE_COMPLETE/$RUNLOG_COMPLETE"
+fi
+
+if [ "$RUNLOG_STARTED" != "$RUNLOG_COMPLETE" ]; then
+    fail "run-log has $RUNLOG_STARTED started events but $RUNLOG_COMPLETE completed events (must be equal)"
+    ERRORS=$((ERRORS + 1))
 fi
 
 # ── 7. Check repair-log consistency ──────────────────────────────

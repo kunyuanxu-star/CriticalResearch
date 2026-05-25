@@ -83,6 +83,36 @@ fi
 CURRENT_PHASE=$(yq -r '.current_phase // ""' "$STATE_FILE" 2>/dev/null || echo "")
 PHASE_STATUS=$(yq -r ".phases.\"$CURRENT_PHASE\".status // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
 
+# ── Force stop (user explicitly requested) ──────────────────────
+# Force stop takes priority over ALL other checks. It only interrupts
+# the session. It does NOT complete the round, does NOT clear active_round,
+# and does NOT modify state.yaml or round.yaml.
+# It writes an interruption-log.yaml for audit and recovery.
+
+if [ "$FORCE_STOP" = true ]; then
+    NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    # Count completed phases.
+    COMPLETED_COUNT=$(yq -r '[.phases[] | select(.status=="complete")] | length' "$STATE_FILE" 2>/dev/null || echo "0")
+
+    # Write interruption log.
+    INTERRUPTION_LOG="$ROUND_DIR/interruption-log.yaml"
+    cat > "$INTERRUPTION_LOG" << EOF
+schema_version: "1.0.0"
+interrupted_at: $NOW
+current_phase: $CURRENT_PHASE
+completed_phases: $COMPLETED_COUNT
+reason: user_forced_stop
+round_status: incomplete
+active_round_preserved: true
+EOF
+
+    cat << EOF
+{"decision":"approve","reason":"User explicitly requested stop. Active round $ROUND_NUM interrupted (not completed). Interruption logged at $INTERRUPTION_LOG. Session may be resumed.","systemMessage":"Stop approved via force flag. Round $ROUND_NUM is INTERRUPTED (not complete).\n\nTo resume: cr step $(basename "$PROJECT_DIR") status\nTo close: complete all phases, generate reviews, then cr close-round $(basename "$PROJECT_DIR")"}
+EOF
+    exit 0
+fi
+
 # ── Current phase incomplete → block ────────────────────────────
 
 if [ -n "$CURRENT_PHASE" ] && [ "$PHASE_STATUS" != "complete" ] && [ "$CURRENT_PHASE" != "close_round" ]; then
@@ -120,15 +150,6 @@ if [ "$ROUND_STATUS" = "complete" ]; then
         fi
     fi
     echo '{"decision":"approve"}'
-    exit 0
-fi
-
-# ── Force stop (user explicitly requested) ──────────────────────
-
-if [ "$FORCE_STOP" = true ]; then
-    cat << EOF
-{"decision":"approve","reason":"User explicitly requested stop. Active round $ROUND_NUM (status: ${ROUND_STATUS:-unknown}) not complete. Session summary required.","systemMessage":"Stop approved via force flag. Round $ROUND_NUM is not complete."}
-EOF
     exit 0
 fi
 

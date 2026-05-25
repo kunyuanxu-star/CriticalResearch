@@ -237,12 +237,32 @@ MD
 
     round)
         PROJECT="${1:-}"
+        shift 2>/dev/null || true
+
         MODE_FLAG=""
-        if [ "${2:-}" = "--mode" ]; then
-            MODE_FLAG="--mode ${3:-}"
-        fi
+        OBJECTIVE=""
+
+        # Parse --mode flag and capture remaining args as objective.
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --mode)
+                    MODE_FLAG="${2:-}"
+                    shift 2
+                    ;;
+                *)
+                    # Remaining args form the objective.
+                    if [ -z "$OBJECTIVE" ]; then
+                        OBJECTIVE="$1"
+                    else
+                        OBJECTIVE="$OBJECTIVE $1"
+                    fi
+                    shift
+                    ;;
+            esac
+        done
+
         if [ -z "$PROJECT" ]; then
-            echo "Usage: cr round <project> [--mode paper|deep|standard|triage]" >&2
+            echo "Usage: cr round <project> [--mode paper|deep|standard|triage] [objective]" >&2
             exit 2
         fi
 
@@ -250,6 +270,20 @@ MD
         if [ ! -d "$PROJECT_DIR" ]; then
             echo "Project directory not found: $PROJECT_DIR" >&2
             exit 1
+        fi
+
+        # ── Paper mode: ONLY via cr-start-paper-round ──
+        if [ "$MODE_FLAG" = "paper" ]; then
+            if [ -z "$OBJECTIVE" ]; then
+                echo "Usage: cr round <project> --mode paper \"<objective>\"" >&2
+                exit 2
+            fi
+            # Check prerequisites.
+            if [ ! -f "$PROJECT_DIR/writing/paper-draft.md" ]; then
+                echo "Error: writing/paper-draft.md not found. Paper rounds require a draft." >&2
+                exit 1
+            fi
+            exec "$SCRIPT_DIR/cr-start-paper-round" "$PROJECT" "$OBJECTIVE"
         fi
 
         # Validate project manifest first.
@@ -267,7 +301,7 @@ MD
             ROUND_TYPE="discovery"
         fi
 
-        "$SCRIPT_DIR/cr-new-round" "$PROJECT_DIR" "$ROUND_TYPE" $MODE_FLAG
+        "$SCRIPT_DIR/cr-new-round" "$PROJECT_DIR" "$ROUND_TYPE" ${MODE_FLAG:+--mode "$MODE_FLAG"}
         echo ""
         echo "Round ready. Begin research execution."
         ;;
