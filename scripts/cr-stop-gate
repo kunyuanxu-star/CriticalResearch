@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+# cr-stop-gate — Master stop scheduler. Decides whether a session may stop.
+# Extracted from cr-validate-stop with manifest-driven checks.
+#
+# Checks:
+#   1. Active round exists
+#   2. Manifest snapshot exists
+#   3. Current phase completeness
+#   4. Round closure status
+#   5. Validator pipeline (if round claims complete)
+#
+# Output (stdout): JSON
+#   {"decision":"approve"} or
+#   {"decision":"block","reason":"...","systemMessage":"..."}
+#
+# Exit codes:
+#   0 — allow stop
+#   1 — block stop
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+FORCE_STOP=false
+[ "${2:-}" = "--force" ] && FORCE_STOP=true
+
+if [ -z "$PROJECT_DIR" ]; then
+    echo '{"decision":"approve"}'
+    exit 0
+fi
+
+# ── No active project → allow stop ──────────────────────────────
+
+if [ ! -d "$PROJECT_DIR" ]; then
+    echo '{"decision":"approve"}'
+    exit 0
+fi
+
+# ── No project state → allow stop ───────────────────────────────
+
+STATE_FILE="$PROJECT_DIR/state/project-state.json"
+if [ ! -f "$STATE_FILE" ]; then
+    echo '{"decision":"approve"}'
+    exit 0
+fi
+
+# ── No active round → allow stop ────────────────────────────────
+
+ACTIVE_ROUND=$(jq -r '.active_round // empty' "$STATE_FILE" 2>/dev/null || echo "")
+if [ -z "$ACTIVE_ROUND" ] || [ "$ACTIVE_ROUND" = "null" ]; then
+    echo '{"decision":"approve"}'
+    exit 0
+fi
+
+ROUND_NUM=$(printf "%03d" "$ACTIVE_ROUND")
+ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
+
+# ── No round directory → allow stop ─────────────────────────────
+
+if [ ! -d "$ROUND_DIR" ]; then
+    echo '{"decision":"approve"}'
+    exit 0
+fi
+
+# ── Manifest snapshot check ─────────────────────────────────────
+
+MANIFEST="$ROUND_DIR/phase-manifest.snapshot.yaml"
+if [ ! -f "$MANIFEST" ]; then
+    echo '{"decision":"block","reason":"phase-manifest.snapshot.yaml missing — round was not started via cr-start-paper-round","systemMessage":"Round is missing its manifest snapshot. This round may have been created with an old setup script."}'
+    exit 1
+fi
+
+# ── State.yaml check ────────────────────────────────────────────
+
+STATE_FILE="$ROUND_DIR/state.yaml"
+if [ ! -f "$STATE_FILE" ]; then
+    echo '{"decision":"block","reason":"state.yaml missing","systemMessage":"Round state file is missing. Cannot determine phase completion."}'
+    exit 1
+fi
+
+CURRENT_PHASE=$(yq -r '.current_phase // ""' "$STATE_FILE" 2>/dev/null || echo "")
+PHASE_STATUS=$(yq -r ".phases.\"$CURRENT_PHASE\".status // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
+
+# ── Current phase incomplete → block ────────────────────────────
+
+if [ -n "$CURRENT_PHASE" ] && [ "$PHASE_STATUS" != "complete" ] && [ "$CURRENT_PHASE" != "close_round" ]; then
+    PHASE_VALIDATOR="$SCRIPT_DIR/cr-validate-phase"
+    if [ -x "$PHASE_VALIDATOR" ]; then
+        if ! "$PHASE_VALIDATOR" "$PROJECT_DIR" "$ROUND_DIR" "$CURRENT_PHASE" >/tmp/cr-stop-phase.out 2>&1; then
+            REASON=$(head -c 3000 /tmp/cr-stop-phase.out 2>/dev/null || echo "Phase $CURRENT_PHASE validation failed")
+            PROJECT_NAME=$(basename "$PROJECT_DIR")
+            cat << EOF
+{"decision":"block","reason":"$REASON","systemMessage":"Phase '$CURRENT_PHASE' is incomplete. Complete required outputs and run: cr step $PROJECT_NAME advance\n\n$REASON"}
+EOF
+            exit 1
+        fi
+    fi
+fi
+
+# ── Check round status ──────────────────────────────────────────
+
+ROUND_STATUS=""
+if [ -f "$ROUND_DIR/round.yaml" ]; then
+    ROUND_STATUS=$(grep -E '^status:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^status:\s*//' | xargs || echo "")
+fi
+
+# Round claims complete → run validator pipeline for confirmation.
+if [ "$ROUND_STATUS" = "complete" ]; then
+    PIPELINE="$SCRIPT_DIR/cr-run-validator-pipeline"
+    if [ -x "$PIPELINE" ]; then
+        if "$PIPELINE" "$PROJECT_DIR" "$ROUND_DIR" 2>/dev/null; then
+            echo '{"decision":"approve"}'
+            exit 0
+        else
+            REASON="Round marked complete but validator pipeline failed. Run 'cr validate' to see failures."
+            echo "{\"decision\":\"block\",\"reason\":\"$REASON\",\"systemMessage\":\"$REASON\"}"
+            exit 1
+        fi
+    fi
+    echo '{"decision":"approve"}'
+    exit 0
+fi
+
+# ── Force stop (user explicitly requested) ──────────────────────
+
+if [ "$FORCE_STOP" = true ]; then
+    cat << EOF
+{"decision":"approve","reason":"User explicitly requested stop. Active round $ROUND_NUM (status: ${ROUND_STATUS:-unknown}) not complete. Session summary required.","systemMessage":"Stop approved via force flag. Round $ROUND_NUM is not complete."}
+EOF
+    exit 0
+fi
+
+# ── Block: round incomplete ─────────────────────────────────────
+
+FULL_ROUND=$(yq -r '.execution_policy.full_round_required' "$STATE_FILE" 2>/dev/null || echo "false")
+[ -z "$FULL_ROUND" ] || [ "$FULL_ROUND" = "null" ] && FULL_ROUND="false"
+ALLOW_PARTIAL=$(yq -r '.execution_policy.allow_partial_stop' "$STATE_FILE" 2>/dev/null || echo "true")
+[ -z "$ALLOW_PARTIAL" ] || [ "$ALLOW_PARTIAL" = "null" ] && ALLOW_PARTIAL="true"
+
+if [ "$FULL_ROUND" = "true" ] && [ "$ALLOW_PARTIAL" != "true" ]; then
+    PHASE_TOTAL=$(yq -r '.phase_order | length' "$STATE_FILE" 2>/dev/null || echo "0")
+    PHASE_COMPLETE=$(yq -r '[.phases[] | select(.status=="complete")] | length' "$STATE_FILE" 2>/dev/null || echo "0")
+
+    if [ "$PHASE_COMPLETE" -lt "$PHASE_TOTAL" ]; then
+        REMAINING=$((PHASE_TOTAL - PHASE_COMPLETE))
+        PROJECT_NAME=$(basename "$PROJECT_DIR")
+        REASON="Full CriticalResearch round is not closed. ($PHASE_COMPLETE/$PHASE_TOTAL phases complete, $REMAINING remaining. Current phase: $CURRENT_PHASE)"
+        cat << EOF
+{"decision":"block","reason":"$REASON","systemMessage":"$REASON\n\nContinue executing remaining phases. The round must complete all $PHASE_TOTAL phases before stopping.\n\nRun 'cr step $PROJECT_NAME status' to see current progress.\nSet execution_policy.allow_partial_stop=true only for human decisions or unrecoverable errors."}
+EOF
+        exit 1
+    fi
+
+    # All phases complete but round not closed — must run close_round.
+    ROUND_STATUS=$(yq -r '.status // ""' "$STATE_FILE" 2>/dev/null || echo "")
+    if [ "$ROUND_STATUS" != "complete" ] && [ "$ROUND_STATUS" != "closed" ]; then
+        PROJECT_NAME=$(basename "$PROJECT_DIR")
+        REASON="All $PHASE_TOTAL phases complete but round has not been closed. Run 'cr close-round $PROJECT_NAME' first."
+        echo "{\"decision\":\"block\",\"reason\":\"$REASON\",\"systemMessage\":\"$REASON\"}"
+        exit 1
+    fi
+fi
+
+# ── Default block ───────────────────────────────────────────────
+
+REASON="Round $ROUND_NUM is incomplete (status: ${ROUND_STATUS:-unknown}). Complete required outputs or explicitly request stop to override."
+echo "{\"decision\":\"block\",\"reason\":\"$REASON\",\"systemMessage\":\"$REASON\"}"
+exit 1

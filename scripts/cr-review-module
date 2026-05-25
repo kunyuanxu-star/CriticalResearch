@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# cr-review-module — Trigger module-level review checkpoint.
+# Generates a review artifact for all completed phases in a module.
+#
+# Usage: cr-review-module <project_dir> <round_dir> <module>
+#   module: M0-M7
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+ROUND_DIR="${2:-}"
+MODULE="${3:-}"
+
+if [ -z "$PROJECT_DIR" ] || [ -z "$ROUND_DIR" ] || [ -z "$MODULE" ]; then
+    echo "Usage: cr-review-module <project_dir> <round_dir> <module>" >&2
+    exit 2
+fi
+
+STATE_FILE="$ROUND_DIR/state.yaml"
+MANIFEST="$ROUND_DIR/phase-manifest.snapshot.yaml"
+
+if [ ! -f "$STATE_FILE" ]; then
+    echo "Error: state.yaml not found" >&2
+    exit 1
+fi
+
+if [ ! -f "$MANIFEST" ]; then
+    echo "Error: phase-manifest.snapshot.yaml not found" >&2
+    exit 1
+fi
+
+# Map module to phase index ranges.
+case "$MODULE" in
+    M0) START=0;  END=3  ;;
+    M1) START=4;  END=5  ;;
+    M2) START=6;  END=12 ;;
+    M3) START=13; END=15 ;;
+    M4) START=16; END=21 ;;
+    M5) START=22; END=25 ;;
+    M6) START=26; END=31 ;;
+    M7) START=32; END=36 ;;
+    *)
+        echo "Error: invalid module '$MODULE'. Use M0-M7." >&2
+        exit 2
+        ;;
+esac
+
+REVIEW_DIR="$ROUND_DIR/phase-reviews"
+mkdir -p "$REVIEW_DIR"
+
+REVIEW_FILE="$REVIEW_DIR/${MODULE}-review.yaml"
+NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Collect phase statuses and artifacts for this module.
+PHASES_JSON=""
+for i in $(seq "$START" "$END"); do
+    pid=$(yq -r ".phases[$i].id // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+    [ -z "$pid" ] && continue
+
+    pstatus=$(yq -r ".phases.\"$pid\".status // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
+    porder=$(yq -r ".phases[$i].order // $((i+1))" "$MANIFEST" 2>/dev/null || echo "$((i+1))")
+
+    # Find primary artifact (first non-directory required_output).
+    artifact=""
+    out_count=$(yq -r ".phases[$i].required_outputs | length" "$MANIFEST" 2>/dev/null || echo 0)
+    for j in $(seq 0 $((out_count - 1))); do
+        otype=$(yq -r ".phases[$i].required_outputs[$j].type // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+        opath=$(yq -r ".phases[$i].required_outputs[$j].path // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+        if [ "$otype" != "directory" ] && [ -n "$opath" ]; then
+            artifact="$opath"
+            break
+        fi
+    done
+
+    artifact_exists="false"
+    if [ -n "$artifact" ]; then
+        resolved=$("$SCRIPT_DIR/cr-resolve-artifact-path" "$PROJECT_DIR" "$ROUND_DIR" "$artifact" 2>/dev/null || echo "")
+        if [ -n "$resolved" ]; then
+            abs=$(echo "$resolved" | jq -r '.absolute_path // ""' 2>/dev/null || echo "")
+            [ -n "$abs" ] && [ -f "$abs" ] && artifact_exists="true"
+        fi
+    fi
+
+    if [ -n "$PHASES_JSON" ]; then
+        PHASES_JSON="${PHASES_JSON},"
+    fi
+    PHASES_JSON="${PHASES_JSON}{\"id\":\"$pid\",\"order\":$porder,\"status\":\"$pstatus\",\"artifact\":\"$artifact\",\"artifact_exists\":$artifact_exists}"
+done
+
+# Determine review status.
+ALL_COMPLETE="true"
+ALL_ARTIFACTS="true"
+for i in $(seq "$START" "$END"); do
+    pid=$(yq -r ".phases[$i].id // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+    [ -z "$pid" ] && continue
+    pstatus=$(yq -r ".phases.\"$pid\".status // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
+    if [ "$pstatus" != "complete" ]; then
+        ALL_COMPLETE="false"
+    fi
+    # Check artifact exists.
+    out_count=$(yq -r ".phases[$i].required_outputs | length" "$MANIFEST" 2>/dev/null || echo 0)
+    for j in $(seq 0 $((out_count - 1))); do
+        otype=$(yq -r ".phases[$i].required_outputs[$j].type // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+        opath=$(yq -r ".phases[$i].required_outputs[$j].path // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+        if [ "$otype" != "directory" ] && [ -n "$opath" ]; then
+            resolved=$("$SCRIPT_DIR/cr-resolve-artifact-path" "$PROJECT_DIR" "$ROUND_DIR" "$opath" 2>/dev/null || echo "")
+            abs=$(echo "$resolved" | jq -r '.absolute_path // ""' 2>/dev/null || echo "")
+            if [ -z "$abs" ] || [ ! -f "$abs" ]; then
+                ALL_ARTIFACTS="false"
+            fi
+            break
+        fi
+    done
+done
+
+if [ "$ALL_COMPLETE" = "true" ] && [ "$ALL_ARTIFACTS" = "true" ]; then
+    REVIEW_STATUS="pass"
+else
+    REVIEW_STATUS="pending"
+fi
+
+# Write review file.
+cat > "$REVIEW_FILE" << YAML
+schema_version: "1.0.0"
+module: $MODULE
+reviewed_at: $NOW
+reviewer: module_checkpoint
+status: $REVIEW_STATUS
+phase_count: $((END - START + 1))
+phases_complete: $([ "$ALL_COMPLETE" = "true" ] && echo "all" || echo "partial")
+artifacts_complete: $([ "$ALL_ARTIFACTS" = "true" ] && echo "all" || echo "partial")
+phases:
+YAML
+
+# Append phase details.
+echo "$PHASES_JSON" | jq -r '.[] | "  - id: \(.id)\n    order: \(.order)\n    status: \(.status)\n    artifact: \(.artifact)\n    artifact_exists: \(.artifact_exists)"' >> "$REVIEW_FILE"
+
+cat >> "$REVIEW_FILE" << YAML
+
+findings: []
+blocking_findings: []
+YAML
+
+echo "Generated $REVIEW_FILE (status: $REVIEW_STATUS)"

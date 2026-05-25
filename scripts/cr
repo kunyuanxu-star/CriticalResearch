@@ -312,58 +312,133 @@ MD
             exit 1
         fi
 
-        # Phase 2: Complete close_round as the 37th phase.
+        # Phase 2: Generate closure-report.yaml draft BEFORE completing close_round.
         echo ""
-        echo "── Phase 2: Completing close_round (37th phase) ──"
-        if ! "$SCRIPT_DIR/cr-complete-phase" "$PROJECT_DIR" "$ROUND_DIR" close_round; then
-            echo ""
-            echo "Failed to complete close_round phase. Fix required outputs and retry."
+        echo "── Phase 2: Generating closure-report draft ──"
+        CLOSURE="$ROUND_DIR/closure-report.yaml"
+        NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+        # If closure-report already exists, preserve its content; otherwise create template.
+        if [ ! -f "$CLOSURE" ]; then
+            cat > "$CLOSURE" << YAML
+schema_version: "1.0.0"
+round_id: $ACTIVE_RND
+closed_at: null
+
+summary: ""
+remaining_risks:
+  - risk_id: RISK-001
+    description: ""
+    next_action: ""
+
+phase_closure:
+  pre_close_phases_complete: true
+  close_round_completed: false
+
+validator_summary:
+  preclose_status: pass
+  postclose_status: pending
+
+artifact_summary:
+  phase_count: 37
+  completed_preclose_phases: 36
+YAML
+            echo "  Created closure-report.yaml template. Fill in summary and remaining_risks."
+            echo "  Then re-run: cr close-round $PROJECT"
             exit 1
         fi
 
-        # Phase 3: Post-close — validate all 37 phases.
+        # Validate closure-report has required fields.
+        CLOSURE_SUMMARY=$(yq -r '.summary // ""' "$CLOSURE" 2>/dev/null || echo "")
+        if [ -z "$CLOSURE_SUMMARY" ] || [ "$CLOSURE_SUMMARY" = "null" ]; then
+            fail "closure-report.yaml missing summary"
+            echo "  Fill in the summary field in $CLOSURE and retry."
+            exit 1
+        fi
+
+        CLOSURE_RISKS=$(yq -r '.remaining_risks | length // 0' "$CLOSURE" 2>/dev/null || echo 0)
+        NO_RISKS_REASON=$(yq -r '.no_remaining_risks_reason // ""' "$CLOSURE" 2>/dev/null || echo "")
+        if [ "$CLOSURE_RISKS" -eq 0 ] && [ -z "$NO_RISKS_REASON" ]; then
+            fail "closure-report.yaml missing remaining_risks (or no_remaining_risks_reason)"
+            echo "  Add at least one remaining risk or provide no_remaining_risks_reason."
+            exit 1
+        fi
+
+        echo "  closure-report.yaml valid."
+
+        # Phase 3: Start and complete close_round (37th phase).
         echo ""
-        echo "── Phase 3: Post-close validation (37/37 phases) ──"
+        echo "── Phase 3: Completing close_round (37th phase) ──"
+
+        # Ensure close_round is the current phase and started.
+        CURRENT_PHASE=$(yq -r '.current_phase // ""' "$STATE_FILE" 2>/dev/null || echo "")
+        if [ "$CURRENT_PHASE" != "close_round" ]; then
+            echo "  Setting current_phase to close_round..."
+            yq -i '.current_phase = "close_round"' "$STATE_FILE" 2>/dev/null || true
+        fi
+
+        CLOSE_STATUS=$(yq -r '.phases.close_round.status // ""' "$STATE_FILE" 2>/dev/null || echo "")
+        if [ "$CLOSE_STATUS" = "open" ]; then
+            echo "  Starting close_round phase..."
+            "$SCRIPT_DIR/cr-step" "$PROJECT" start || {
+                echo "Failed to start close_round phase."
+                exit 1
+            }
+        elif [ "$CLOSE_STATUS" != "running" ] && [ "$CLOSE_STATUS" != "complete" ]; then
+            echo "Error: close_round has unexpected status: $CLOSE_STATUS" >&2
+            exit 1
+        fi
+
+        if [ "$CLOSE_STATUS" != "complete" ]; then
+            if ! "$SCRIPT_DIR/cr-complete-phase" "$PROJECT_DIR" "$ROUND_DIR" close_round; then
+                echo ""
+                echo "Failed to complete close_round phase. Fix required outputs and retry."
+                exit 1
+            fi
+        fi
+
+        # Phase 4: Post-close — validate all 37 phases.
+        echo ""
+        echo "── Phase 4: Post-close validation (37/37 phases) ──"
         if ! "$SCRIPT_DIR/cr-validate-all-phases" "$PROJECT_DIR" "$ROUND_DIR" postclose; then
             echo ""
             echo "Post-close validation failed."
             exit 1
         fi
 
-        # Phase 4: Run full validator pipeline.
+        # Phase 5: Run full validator pipeline.
         echo ""
+        echo "── Phase 5: Validator pipeline ──"
         if ! "$PIPELINE" "$PROJECT_DIR" "$ROUND_DIR"; then
             echo ""
             echo "Round cannot close. Fix the failures listed above and re-run 'cr close-round $PROJECT'."
             exit 1
         fi
 
-        NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        # Phase 6: Validate phase-run-log.
+        echo ""
+        echo "── Phase 6: Phase run log validation ──"
+        if [ -x "$SCRIPT_DIR/cr-validate-phase-run-log" ]; then
+            if ! "$SCRIPT_DIR/cr-validate-phase-run-log" "$PROJECT_DIR" "$ROUND_DIR"; then
+                echo ""
+                echo "Phase run log validation failed."
+                exit 1
+            fi
+        else
+            echo "  Warning: cr-validate-phase-run-log not found — skipping"
+        fi
+
+        # Update closure-report with final timestamps.
+        if [ -f "$CLOSURE" ]; then
+            yq -i ".closed_at = \"$NOW\"" "$CLOSURE" 2>/dev/null || true
+            yq -i ".phase_closure.close_round_completed = true" "$CLOSURE" 2>/dev/null || true
+            yq -i ".validator_summary.postclose_status = \"pass\"" "$CLOSURE" 2>/dev/null || true
+        fi
 
         # Mark round as closed.
         if [ -f "$STATE_FILE" ]; then
             yq -i ".current_phase = \"close_round\" | .status = \"complete\"" "$STATE_FILE" 2>/dev/null || true
         fi
-
-        # Generate closure-report.yaml.
-        CLOSURE="$ROUND_DIR/closure-report.yaml"
-        cat > "$CLOSURE" << YAML
-schema_version: "1.0.0"
-round_id: $ACTIVE_RND
-closed_at: "$NOW"
-phase_closure:
-  pre_close_phases_complete: true
-  close_round_completed: true
-validator_summary:
-  source: cr-run-validator-pipeline
-artifacts_committed:
-  paper_state: paper-state.yaml
-  evidence_ledger: evidence-ledger.yaml
-  critique_ledger: critique-ledger.yaml
-  writing_diff: writing-diff.yaml
-  knowledge_delta: knowledge-delta.yaml
-  knowledge_apply_log: knowledge-apply-log.yaml
-YAML
 
         # Mark round complete.
         if [ -f "$ROUND_DIR/round.yaml" ]; then

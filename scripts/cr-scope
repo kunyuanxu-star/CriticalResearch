@@ -602,7 +602,62 @@ YAML
             exit 0
         fi
 
-        # Read forbidden paths for current phase.
+        # ── Protected files: always deny direct write ──────────────────
+        case "$REL_PATH" in
+            */rounds/*/state.yaml|*/rounds/*/phase-run-log.yaml|*/rounds/*/round.yaml|*/state/project-state.json|*/rounds/*/phase-manifest.snapshot.yaml)
+                echo "DENY:protected runtime file — use cr step advance or cr close-round to modify state"
+                exit 1
+                ;;
+        esac
+
+        # ── Manifest-driven allowed_write_scopes check ─────────────────
+        # Read allowed_write_scopes from state.yaml (generated from manifest snapshot).
+        ROUND_DIR="$PROJECT_DIR/rounds/round-$RND_NUM"
+        AWSCOPES=$(yq -r ".phases.\"$CURRENT_PHASE\".allowed_write_scopes[]? // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
+        if [ -n "$AWSCOPES" ]; then
+            # Convert REL_PATH to be relative to the round directory for comparison.
+            # REL_PATH is like: project-id/rounds/round-001/paper-state.yaml
+            # We need: paper-state.yaml
+            REL_TO_ROUND="${REL_PATH#*/rounds/round-*/}"
+            # Also handle paths under the round directory that don't match the pattern.
+            if [ "$REL_TO_ROUND" = "$REL_PATH" ]; then
+                # Try stripping just the project name prefix.
+                REL_TO_ROUND="${REL_PATH#*/}"
+            fi
+
+            MATCHED=false
+            for scope in $AWSCOPES; do
+                [ -z "$scope" ] && continue
+                # scope may be a file path or a directory path ending with /
+                case "$scope" in
+                    */)
+                        # Directory scope: match if path starts with scope directory.
+                        case "$REL_TO_ROUND" in
+                            "$scope"*) MATCHED=true; break ;;
+                        esac
+                        ;;
+                    *)
+                        # File scope: exact match.
+                        if [ "$REL_TO_ROUND" = "$scope" ]; then
+                            MATCHED=true
+                            break
+                        fi
+                        # Also try matching the full REL_PATH for project-level scopes.
+                        if [ "$REL_PATH" = "$scope" ]; then
+                            MATCHED=true
+                            break
+                        fi
+                        ;;
+                esac
+            done
+
+            if [ "$MATCHED" = false ]; then
+                echo "DENY:Phase '$CURRENT_PHASE' allowed_write_scopes does not include '$REL_TO_ROUND'. Allowed: $(echo "$AWSCOPES" | tr '\n' ' ')"
+                exit 1
+            fi
+        fi
+
+        # ── Forbidden actions check (negative boundaries) ──────────────
         FORBIDDEN=$(yq -r ".phases.\"$CURRENT_PHASE\".forbidden_actions[]? // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
         for fb in $FORBIDDEN; do
             [ -z "$fb" ] && continue

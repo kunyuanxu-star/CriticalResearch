@@ -23,8 +23,8 @@ CRIT_IDS=$(yq -r '.critiques[]?.critique_id // ""' "$ROUND_DIR/critique-ledger.y
 # Evidence → source links
 if [ -f "$ROUND_DIR/evidence-ledger.yaml" ] && [ -n "$SRC_IDS" ]; then
   for i in $(seq 0 $(($(yq -r '.evidence|length//0' "$ROUND_DIR/evidence-ledger.yaml" 2>/dev/null||echo 0)-1))); do
-    eid=$(yq -r ".evidence[$i].evidence_id//\"\"" "$ROUND_DIR/evidence-ledger.yaml" 2>/dev/null||echo "")
-    sid=$(yq -r ".evidence[$i].source_id//\"\"" "$ROUND_DIR/evidence-ledger.yaml" 2>/dev/null||echo "")
+    eid=$(yq -r ".evidence[$i].evidence_id // \"\"" "$ROUND_DIR/evidence-ledger.yaml" 2>/dev/null||echo "")
+    sid=$(yq -r ".evidence[$i].source_id // \"\"" "$ROUND_DIR/evidence-ledger.yaml" 2>/dev/null||echo "")
     [ -z "$sid" ] && { fail "Evidence $eid missing source_id"; FAILS=$((FAILS+1)); }
     echo "$SRC_IDS" | grep -qw "$sid" 2>/dev/null || { fail "Evidence $eid refs unknown source $sid"; FAILS=$((FAILS+1)); }
   done
@@ -33,8 +33,8 @@ fi
 # Critique → evidence links
 if [ -f "$ROUND_DIR/critique-ledger.yaml" ] && [ -n "$EVID_IDS" ]; then
   for i in $(seq 0 $(($(yq -r '.critiques|length//0' "$ROUND_DIR/critique-ledger.yaml" 2>/dev/null||echo 0)-1))); do
-    cid=$(yq -r ".critiques[$i].critique_id//\"\"" "$ROUND_DIR/critique-ledger.yaml" 2>/dev/null||echo "")
-    refs=$(yq -r ".critiques[$i].evidence_refs[]?//\"\"" "$ROUND_DIR/critique-ledger.yaml" 2>/dev/null||echo "")
+    cid=$(yq -r ".critiques[$i].critique_id // \"\"" "$ROUND_DIR/critique-ledger.yaml" 2>/dev/null||echo "")
+    refs=$(yq -r ".critiques[$i].evidence_refs[]? // \"\"" "$ROUND_DIR/critique-ledger.yaml" 2>/dev/null||echo "")
     for r in $refs; do [ -z "$r" ] && continue; echo "$EVID_IDS" | grep -qw "$r" 2>/dev/null || { fail "Critique $cid refs unknown evidence $r"; FAILS=$((FAILS+1)); }; done
   done
 fi
@@ -42,7 +42,7 @@ fi
 # Disposition → critique links
 if [ -f "$ROUND_DIR/dispositions.yaml" ] && [ -n "$CRIT_IDS" ]; then
   for i in $(seq 0 $(($(yq -r '.dispositions|length//0' "$ROUND_DIR/dispositions.yaml" 2>/dev/null||echo 0)-1))); do
-    did=$(yq -r ".dispositions[$i].critique_id//\"\"" "$ROUND_DIR/dispositions.yaml" 2>/dev/null||echo "")
+    did=$(yq -r ".dispositions[$i].critique_id // \"\"" "$ROUND_DIR/dispositions.yaml" 2>/dev/null||echo "")
     [ -z "$did" ] && continue
     echo "$CRIT_IDS" | grep -qw "$did" 2>/dev/null || { fail "Disposition refs unknown critique $did"; FAILS=$((FAILS+1)); }
   done
@@ -52,18 +52,81 @@ fi
 PATCH_IDS=""
 for pp in "$ROUND_DIR/patches"/PP-*.yaml; do
   [ -f "$pp" ] || continue
-  pid=$(yq -r '.patch_id//""' "$pp" 2>/dev/null||echo "")
+  pid=$(yq -r '.patch_id // ""' "$pp" 2>/dev/null||echo "")
   [ -n "$pid" ] && PATCH_IDS="$PATCH_IDS $pid"
 done
 if [ -f "$ROUND_DIR/writing-diff.yaml" ] && [ -n "$PATCH_IDS" ]; then
   for i in $(seq 0 $(($(yq -r '.changes|length//0' "$ROUND_DIR/writing-diff.yaml" 2>/dev/null||echo 0)-1))); do
-    wpid=$(yq -r ".changes[$i].patch_id//\"\"" "$ROUND_DIR/writing-diff.yaml" 2>/dev/null||echo "")
+    wpid=$(yq -r ".changes[$i].patch_id // \"\"" "$ROUND_DIR/writing-diff.yaml" 2>/dev/null||echo "")
     [ -z "$wpid" ] && { fail "Writing-diff $i missing patch_id"; FAILS=$((FAILS+1)); continue; }
     echo "$PATCH_IDS" | grep -qw "$wpid" 2>/dev/null || { fail "Writing-diff refs unknown patch $wpid"; FAILS=$((FAILS+1)); }
-    bt=$(yq -r ".changes[$i].before_text//\"\"" "$ROUND_DIR/writing-diff.yaml" 2>/dev/null||echo "")
-    at=$(yq -r ".changes[$i].after_text//\"\"" "$ROUND_DIR/writing-diff.yaml" 2>/dev/null||echo "")
+    bt=$(yq -r ".changes[$i].before_text // \"\"" "$ROUND_DIR/writing-diff.yaml" 2>/dev/null||echo "")
+    at=$(yq -r ".changes[$i].after_text // \"\"" "$ROUND_DIR/writing-diff.yaml" 2>/dev/null||echo "")
     [ "$bt" = "$at" ] && [ -n "$bt" ] && { fail "Change $wpid: before==after (no change)"; FAILS=$((FAILS+1)); }
   done
+fi
+
+# Level 3: Source → Note → Evidence → Claim chain
+# 3a. Every included source must have a source note.
+SOURCE_INDEX="$ROUND_DIR/source-index.yaml"
+SOURCE_NOTES_DIR="$ROUND_DIR/source-notes"
+
+if [ -f "$SOURCE_INDEX" ]; then
+  INCLUDED_SRCS=$(yq -r '.sources[]? | select(.triage_decision=="include") | .source_id' "$SOURCE_INDEX" 2>/dev/null || echo "")
+  if [ -n "$INCLUDED_SRCS" ]; then
+    for sid in $INCLUDED_SRCS; do
+      NOTE_FILE="$SOURCE_NOTES_DIR/${sid}.yaml"
+      if [ ! -f "$NOTE_FILE" ]; then
+        fail "Source→Note chain broken: included source $sid has no source note"
+        FAILS=$((FAILS+1))
+      fi
+    done
+    [ -n "$INCLUDED_SRCS" ] && pass "Source→Note: all included sources have notes"
+  fi
+fi
+
+# 3b. Every source note must link to at least one claim (affected_claims).
+if [ -d "$SOURCE_NOTES_DIR" ]; then
+  for note_file in "$SOURCE_NOTES_DIR"/*.yaml; do
+    [ -f "$note_file" ] || continue
+    sid=$(basename "$note_file" .yaml)
+    # Skip non-source-note files
+    [[ "$sid" =~ ^S[0-9]{3}$ ]] || continue
+    affected=$(yq -r '.affected_claims[]? // ""' "$note_file" 2>/dev/null || echo "")
+    if [ -z "$affected" ]; then
+      fail "Note→Claim chain broken: source note $sid has no affected_claims"
+      FAILS=$((FAILS+1))
+    fi
+  done
+  [ -d "$SOURCE_NOTES_DIR" ] && [ "$(ls "$SOURCE_NOTES_DIR"/*.yaml 2>/dev/null | wc -l)" -gt 0 ] && pass "Note→Claim: all notes link to claims"
+fi
+
+# 3c. Every evidence must link to a claim.
+if [ -f "$ROUND_DIR/evidence-ledger.yaml" ]; then
+  EVID_COUNT=$(yq -r '.evidence|length//0' "$ROUND_DIR/evidence-ledger.yaml" 2>/dev/null || echo 0)
+  for i in $(seq 0 $((EVID_COUNT - 1))); do
+    eid=$(yq -r ".evidence[$i].evidence_id // \"\"" "$ROUND_DIR/evidence-ledger.yaml" 2>/dev/null || echo "")
+    claim_id=$(yq -r ".evidence[$i].claim_id // \"\"" "$ROUND_DIR/evidence-ledger.yaml" 2>/dev/null || echo "")
+    affected_claims=$(yq -r ".evidence[$i].affected_claims[]? // \"\"" "$ROUND_DIR/evidence-ledger.yaml" 2>/dev/null || echo "")
+    if [ -z "$claim_id" ] && [ -z "$affected_claims" ]; then
+      fail "Evidence→Claim chain broken: evidence $eid has no claim_id or affected_claims"
+      FAILS=$((FAILS+1))
+    fi
+  done
+  [ "$EVID_COUNT" -gt 0 ] && pass "Evidence→Claim: all evidence links to claims"
+fi
+
+# 3d. Every included source must have at least one evidence referencing it.
+if [ -f "$SOURCE_INDEX" ] && [ -f "$ROUND_DIR/evidence-ledger.yaml" ]; then
+  for sid in $INCLUDED_SRCS; do
+    [ -z "$sid" ] && continue
+    refs=$(yq -r ".evidence[]? | select(.source_id==\"$sid\") | .evidence_id" "$ROUND_DIR/evidence-ledger.yaml" 2>/dev/null || echo "")
+    if [ -z "$refs" ]; then
+      fail "Source→Evidence chain broken: included source $sid has no evidence referencing it"
+      FAILS=$((FAILS+1))
+    fi
+  done
+  [ -n "$INCLUDED_SRCS" ] && pass "Source→Evidence: all included sources referenced by evidence"
 fi
 
 [ "$FAILS" -gt 0 ] && { fail "$FAILS chain failure(s)"; cr_exit_summary; }

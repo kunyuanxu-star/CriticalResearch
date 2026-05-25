@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+# cr-resolve-artifact-path — Unified path resolver for scoped artifact paths.
+#
+# Supports four scopes:
+#   project:writing/paper-draft.md    → relative to project dir
+#   project:state/claim-ledger.yaml   → relative to project dir
+#   round:paper-state.yaml            → relative to round dir
+#   round:source-notes/               → relative to round dir
+#   workspace:_cr/knowledge/          → relative to workspace root
+#   glob:round:patches/*.yaml         → glob pattern relative to round dir
+#
+# Usage: cr-resolve-artifact-path <project_dir> <round_dir> <scoped_path>
+#
+# Output (stdout): JSON
+#   {
+#     "scope": "round",
+#     "path": "paper-state.yaml",
+#     "absolute_path": "/.../rounds/round-003/paper-state.yaml",
+#     "kind": "file",
+#     "exists": true
+#   }
+#
+# Exit codes:
+#   0 — resolved successfully
+#   1 — unresolvable scope or path
+#   2 — usage error
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+ROUND_DIR="${2:-}"
+SCOPED_PATH="${3:-}"
+
+if [ -z "$PROJECT_DIR" ] || [ -z "$ROUND_DIR" ] || [ -z "$SCOPED_PATH" ]; then
+    echo '{"error":"Usage: cr-resolve-artifact-path <project_dir> <round_dir> <scoped_path>"}' >&2
+    exit 2
+fi
+
+# Normalize project/round dirs to absolute paths.
+PROJECT_DIR="$(cd "$PROJECT_DIR" 2>/dev/null && pwd || echo "$PROJECT_DIR")"
+ROUND_DIR="$(cd "$ROUND_DIR" 2>/dev/null && pwd || echo "$ROUND_DIR")"
+
+WORKSPACE_ROOT="$(cr_workspace_root)"
+
+# Parse scope and path.
+SCOPE=""
+RAW_PATH=""
+
+# Handle glob: prefix specially.
+if [[ "$SCOPED_PATH" == glob:* ]]; then
+    GLOB_SPEC="${SCOPED_PATH#glob:}"
+    # glob:round:patches/*.yaml → scope=round, pattern=patches/*.yaml
+    SCOPE="${GLOB_SPEC%%:*}"
+    RAW_PATH="${GLOB_SPEC#*:}"
+else
+    # project:writing/paper-draft.md → scope=project, path=writing/paper-draft.md
+    SCOPE="${SCOPED_PATH%%:*}"
+    RAW_PATH="${SCOPED_PATH#*:}"
+fi
+
+# Trim leading slash from RAW_PATH if present.
+RAW_PATH="${RAW_PATH#/}"
+
+# Determine base directory and resolve.
+BASE_DIR=""
+case "$SCOPE" in
+    project)
+        BASE_DIR="$PROJECT_DIR"
+        ;;
+    round)
+        BASE_DIR="$ROUND_DIR"
+        ;;
+    workspace)
+        BASE_DIR="$WORKSPACE_ROOT"
+        ;;
+    glob)
+        case "$SCOPE" in
+            round)
+                BASE_DIR="$ROUND_DIR"
+                ;;
+            project)
+                BASE_DIR="$PROJECT_DIR"
+                ;;
+            workspace)
+                BASE_DIR="$WORKSPACE_ROOT"
+                ;;
+            *)
+                echo "{\"error\":\"Unknown glob scope: $SCOPE\"}" >&2
+                exit 1
+                ;;
+        esac
+        ;;
+    *)
+        echo "{\"error\":\"Unknown scope: $SCOPE\"}" >&2
+        exit 1
+        ;;
+esac
+
+# For glob scope, we need to handle the glob pattern.
+if [[ "$SCOPED_PATH" == glob:* ]]; then
+    # Re-extract correctly for glob.
+    GLOB_SPEC="${SCOPED_PATH#glob:}"
+    GLOB_SCOPE="${GLOB_SPEC%%:*}"
+    GLOB_PATTERN="${GLOB_SPEC#*:}"
+    GLOB_PATTERN="${GLOB_PATTERN#/}"
+
+    case "$GLOB_SCOPE" in
+        project)
+            BASE_DIR="$PROJECT_DIR"
+            ;;
+        round)
+            BASE_DIR="$ROUND_DIR"
+            ;;
+        workspace)
+            BASE_DIR="$WORKSPACE_ROOT"
+            ;;
+        *)
+            echo "{\"error\":\"Unknown glob scope: $GLOB_SCOPE\"}" >&2
+            exit 1
+            ;;
+    esac
+
+    # Resolve glob matches.
+    cd "$BASE_DIR" 2>/dev/null || {
+        echo "{\"error\":\"Cannot cd to base directory: $BASE_DIR\"}" >&2
+        exit 1
+    }
+
+    MATCHES=()
+    for match in $GLOB_PATTERN; do
+        [ -e "$match" ] && MATCHES+=("$match")
+    done
+
+    # Build JSON array of matches.
+    MATCH_JSON=""
+    for m in "${MATCHES[@]}"; do
+        abs_path="$BASE_DIR/$m"
+        if [ -d "$abs_path" ]; then
+            kind="directory"
+        else
+            kind="file"
+        fi
+        if [ -n "$MATCH_JSON" ]; then
+            MATCH_JSON="$MATCH_JSON,"
+        fi
+        MATCH_JSON="$MATCH_JSON{\"path\":\"$m\",\"absolute_path\":\"$abs_path\",\"kind\":\"$kind\",\"exists\":true}"
+    done
+
+    cat << EOF
+{"scope":"$GLOB_SCOPE","pattern":"$GLOB_PATTERN","base":"$BASE_DIR","matches":[$MATCH_JSON]}
+EOF
+    exit 0
+fi
+
+# Regular (non-glob) resolution.
+ABS_PATH="$BASE_DIR/$RAW_PATH"
+
+# Determine kind and existence.
+if [ -d "$ABS_PATH" ]; then
+    KIND="directory"
+    EXISTS=true
+elif [ -e "$ABS_PATH" ]; then
+    KIND="file"
+    EXISTS=true
+else
+    KIND="file"
+    EXISTS=false
+fi
+
+# Escape backslashes and quotes for JSON.
+SAFE_ABS_PATH="${ABS_PATH//\\/\\\\}"
+SAFE_ABS_PATH="${SAFE_ABS_PATH//\"/\\\"}"
+SAFE_RAW_PATH="${RAW_PATH//\\/\\\\}"
+SAFE_RAW_PATH="${SAFE_RAW_PATH//\"/\\\"}"
+
+cat << EOF
+{"scope":"$SCOPE","path":"$SAFE_RAW_PATH","absolute_path":"$SAFE_ABS_PATH","kind":"$KIND","exists":$EXISTS}
+EOF

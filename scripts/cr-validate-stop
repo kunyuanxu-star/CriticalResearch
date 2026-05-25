@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # cr-validate-stop — Stop gate validation (Inv7).
-# Checks whether the session is allowed to stop based on round completeness
-# and user satisfaction state.
+# Delegates to cr-stop-gate for consistency.
 #
 # Called by the Stop hook. Returns JSON for hook decision.
 #
@@ -21,22 +20,19 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/cr-common.sh"
 
 PROJECT_DIR="${1:-}"
-FORCE_STOP=false
-[ "${2:-}" = "--force" ] && FORCE_STOP=true
+FORCE_FLAG="${2:-}"
 
-if [ -z "$PROJECT_DIR" ]; then
+STOP_GATE="$SCRIPT_DIR/cr-stop-gate"
+if [ -x "$STOP_GATE" ]; then
+    "$STOP_GATE" "$PROJECT_DIR" "$FORCE_FLAG"
+    exit $?
+fi
+
+# Fallback if cr-stop-gate is missing.
+if [ -z "$PROJECT_DIR" ] || [ ! -d "$PROJECT_DIR" ]; then
     echo '{"decision":"approve"}'
     exit 0
 fi
-
-# ── No active project → allow stop ──────────────────────────────
-
-if [ ! -d "$PROJECT_DIR" ]; then
-    echo '{"decision":"approve"}'
-    exit 0
-fi
-
-# ── No project state → allow stop ───────────────────────────────
 
 STATE_FILE="$PROJECT_DIR/state/project-state.json"
 if [ ! -f "$STATE_FILE" ]; then
@@ -44,236 +40,11 @@ if [ ! -f "$STATE_FILE" ]; then
     exit 0
 fi
 
-# ── No active round → allow stop ───────────────────────────────
-
 ACTIVE_ROUND=$(jq -r '.active_round // empty' "$STATE_FILE" 2>/dev/null || echo "")
 if [ -z "$ACTIVE_ROUND" ] || [ "$ACTIVE_ROUND" = "null" ]; then
     echo '{"decision":"approve"}'
     exit 0
 fi
 
-ROUND_NUM=$(printf "%03d" "$ACTIVE_ROUND")
-ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
-
-# ── No round directory → allow stop ─────────────────────────────
-
-if [ ! -d "$ROUND_DIR" ]; then
-    echo '{"decision":"approve"}'
-    exit 0
-fi
-
-# ── Phase state check (paper mode) ──────────────────────────────
-
-# If state.yaml exists, run the current phase validator.
-STATE_FILE="$ROUND_DIR/state.yaml"
-if [ -f "$STATE_FILE" ]; then
-    CURRENT_PHASE=$(yq -r '.current_phase // ""' "$STATE_FILE" 2>/dev/null || echo "")
-    if [ -n "$CURRENT_PHASE" ] && [ "$CURRENT_PHASE" != "close_round" ]; then
-        PHASE_VALIDATOR="$SCRIPT_DIR/cr-validate-phase"
-        if [ -x "$PHASE_VALIDATOR" ]; then
-            if ! "$PHASE_VALIDATOR" "$PROJECT_DIR" "$ROUND_DIR" "$CURRENT_PHASE" >/tmp/cr-stop-phase.out 2>&1; then
-                REASON=$(head -c 3000 /tmp/cr-stop-phase.out 2>/dev/null || echo "Phase $CURRENT_PHASE validation failed")
-                echo "{\"decision\":\"block\",\"reason\":\"$REASON\"}"
-                exit 1
-            fi
-        fi
-    fi
-fi
-
-# ── Check round status ──────────────────────────────────────────
-
-ROUND_STATUS=""
-if [ -f "$ROUND_DIR/round.yaml" ]; then
-    ROUND_STATUS=$(grep -E '^status:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^status:\s*//' | xargs || echo "")
-fi
-
-# Round claims complete → run validator pipeline for confirmation.
-if [ "$ROUND_STATUS" = "complete" ]; then
-    PIPELINE="$SCRIPT_DIR/cr-run-validator-pipeline"
-    if [ -x "$PIPELINE" ]; then
-        if "$PIPELINE" "$PROJECT_DIR" "$ROUND_DIR" 2>/dev/null; then
-            echo '{"decision":"approve"}'
-            exit 0
-        else
-            REASON="Round marked complete but validator pipeline failed. Run 'cr validate' to see failures."
-            echo "{\"decision\":\"block\",\"reason\":\"$REASON\"}"
-            exit 1
-        fi
-    fi
-    echo '{"decision":"approve"}'
-    exit 0
-fi
-
-# ── Check satisfaction state ────────────────────────────────────
-
-SATISFACTION_FILE="$PROJECT_DIR/state/satisfaction.json"
-if [ -f "$SATISFACTION_FILE" ]; then
-    SAT_ROUND=$(jq -r '.round_id // empty' "$SATISFACTION_FILE" 2>/dev/null || echo "")
-    SAT_INTENT=$(jq -r '.user_intent // empty' "$SATISFACTION_FILE" 2>/dev/null || echo "")
-
-    if [ "$SAT_ROUND" = "$ACTIVE_ROUND" ] && [ "$SAT_INTENT" = "satisfied" ]; then
-        # Check content hash to verify state hasn't changed since satisfaction.
-        SAT_HASH=$(jq -r '.content_hash // empty' "$SATISFACTION_FILE" 2>/dev/null || echo "")
-
-        # Compute current hash of round artifacts.
-        if command -v shasum >/dev/null 2>&1; then
-            CURRENT_HASH=$(find "$ROUND_DIR" -type f -name '*.md' -exec cat {} \; 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
-        elif command -v sha256sum >/dev/null 2>&1; then
-            CURRENT_HASH=$(find "$ROUND_DIR" -type f -name '*.md' -exec cat {} \; 2>/dev/null | sha256sum | cut -d' ' -f1)
-        else
-            CURRENT_HASH="unavailable"
-        fi
-
-        if [ "$SAT_HASH" = "$CURRENT_HASH" ]; then
-            echo '{"decision":"approve"}'
-            exit 0
-        fi
-        # Hash mismatch — state changed, satisfaction invalidated.
-    fi
-fi
-
-# ── Force stop (user explicitly requested) ──────────────────────
-
-if [ "$FORCE_STOP" = true ]; then
-    cat << EOF
-{"decision":"approve","reason":"User explicitly requested stop. Active round $ROUND_NUM (status: ${ROUND_STATUS:-unknown}) not complete. Session summary required."}
-EOF
-    exit 0
-fi
-
-# ── Block: round incomplete ─────────────────────────────────────
-
-# Check execution_policy: if full_round is required, block unless all phases complete.
-if [ -f "$ROUND_DIR/state.yaml" ]; then
-    FULL_ROUND=$(yq -r '.execution_policy.full_round_required' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "false")
-    [ -z "$FULL_ROUND" ] || [ "$FULL_ROUND" = "null" ] && FULL_ROUND="false"
-    ALLOW_PARTIAL=$(yq -r '.execution_policy.allow_partial_stop' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "true")
-    [ -z "$ALLOW_PARTIAL" ] || [ "$ALLOW_PARTIAL" = "null" ] && ALLOW_PARTIAL="true"
-
-    if [ "$FULL_ROUND" = "true" ] && [ "$ALLOW_PARTIAL" != "true" ]; then
-        PHASE_TOTAL=$(yq -r '.phase_order | length' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "0")
-        PHASE_COMPLETE=$(yq -r '[.phases[] | select(.status=="complete")] | length' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "0")
-        CURRENT=$(yq -r '.current_phase // "unknown"' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "unknown")
-
-        if [ "$PHASE_COMPLETE" -lt "$PHASE_TOTAL" ]; then
-            REMAINING=$((PHASE_TOTAL - PHASE_COMPLETE))
-            PROJECT_NAME=$(basename "$PROJECT_DIR")
-            REASON="Full CriticalResearch round is not closed. ($PHASE_COMPLETE/$PHASE_TOTAL phases complete, $REMAINING remaining. Current phase: $CURRENT)"
-            cat << EOF
-{"decision":"block","reason":"$REASON\n\nContinue executing remaining phases. The round must complete all $PHASE_TOTAL phases before stopping.\n\nRun 'cr step $PROJECT_NAME status' to see current progress.\nSet execution_policy.allow_partial_stop=true only for human decisions or unrecoverable errors."}
-EOF
-            exit 1
-        fi
-
-        # All phases complete but round not closed — must run close_round.
-        ROUND_STATUS=$(yq -r '.status // ""' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "")
-        if [ "$ROUND_STATUS" != "complete" ] && [ "$ROUND_STATUS" != "closed" ]; then
-            PROJECT_NAME=$(basename "$PROJECT_DIR")
-            REASON="All $PHASE_TOTAL phases complete but round has not been closed. Run 'cr close-round $PROJECT_NAME' first."
-            cat << EOF
-{"decision":"block","reason":"$REASON"}
-EOF
-            exit 1
-        fi
-    fi
-fi
-
-# Build the list of required files from round.yaml required_outputs,
-# same mapping as cr-validate-round.
-map_output_key_to_file() {
-    case "$1" in
-        report)              echo "report.md" ;;
-        evidence_update)     echo "evidence-ledger.yaml" ;;
-        critique_update)     echo "critique-ledger.yaml" ;;
-        writing_diff)        echo "writing-diff.yaml" ;;
-        knowledge_delta)     echo "knowledge-delta.yaml" ;;
-        paper_patch)         echo "patches" ;;
-        experiment_obligation) echo "experiment-obligations.yaml" ;;
-        *)                   echo "" ;;
-    esac
-}
-
-# Use cr_required_outputs for consistent parsing (handles both YAML bullet and inline formats).
-REQUIRED_OUTPUT_KEYS=$(cr_required_outputs "$ROUND_DIR/round.yaml" 2>/dev/null || echo "")
-
-REQUIRED_FILES=()
-if [ -n "$REQUIRED_OUTPUT_KEYS" ]; then
-    for key in $REQUIRED_OUTPUT_KEYS; do
-        [ -z "$key" ] && continue
-        mapped=$(map_output_key_to_file "$key")
-        if [ -n "$mapped" ]; then
-            REQUIRED_FILES+=("$mapped")
-        fi
-    done
-fi
-
-# Fallback: default set.
-if [ ${#REQUIRED_FILES[@]} -eq 0 ]; then
-    REQUIRED_FILES=("report.md" "sources.md" "critique.md" "writing-diff.md" "knowledge-delta.md")
-fi
-
-MISSING=""
-for req_file in "${REQUIRED_FILES[@]}"; do
-    if [ ! -f "$ROUND_DIR/$req_file" ] && [ ! -d "$ROUND_DIR/$req_file" ]; then
-        MISSING="$MISSING $req_file"
-    fi
-done
-
-# ── Human gate check (paper mode) ────────────────────────────────
-
-WORKFLOW_MODE=$(grep -E '^workflow_mode:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^workflow_mode:\s*//' | xargs || echo "")
-HUMAN_GATE_BLOCK=false
-
-if [ "$WORKFLOW_MODE" = "paper" ]; then
-    HUMAN_QUEUE="$PROJECT_DIR/state/human-review-queue.yaml"
-    if [ -f "$HUMAN_QUEUE" ]; then
-        PENDING=$(grep -cE 'decision:\s*(accepted|accepted_with_modifications|rejected|deferred|needs_more_evidence)' "$HUMAN_QUEUE" 2>/dev/null || echo 0)
-        TOTAL=$(grep -cE 'decision_id:' "$HUMAN_QUEUE" 2>/dev/null || echo 0)
-        PENDING=$(echo "$PENDING" | tr -d '[:space:]')
-        TOTAL=$(echo "$TOTAL" | tr -d '[:space:]')
-        PENDING=${PENDING:-0}
-        TOTAL=${TOTAL:-0}
-        UNRESOLVED=$((TOTAL - PENDING))
-        if [ "$UNRESOLVED" -gt 0 ]; then
-            HUMAN_GATE_BLOCK=true
-        fi
-    fi
-
-    # Also check patches for pending human decisions.
-    PATCHES_DIR="$ROUND_DIR/patches"
-    if [ -d "$PATCHES_DIR" ]; then
-        PENDING_PATCHES=$(grep -lE '^needs_human_decision:\s*true' "$PATCHES_DIR"/PP-*.yaml 2>/dev/null || echo "")
-        if [ -n "$PENDING_PATCHES" ]; then
-            for pp in $PENDING_PATCHES; do
-                PP_STATUS=$(grep -E '^lifecycle_status:' "$pp" 2>/dev/null | sed 's/^lifecycle_status:\s*//' | xargs || echo "")
-                case "$PP_STATUS" in
-                    approved|recorded|applied|rejected|superseded) ;; # resolved
-                    *) HUMAN_GATE_BLOCK=true ;;
-                esac
-            done
-        fi
-    fi
-fi
-
-REASON="Round $ROUND_NUM is incomplete (status: ${ROUND_STATUS:-unknown})."
-if [ -n "$MISSING" ]; then
-    REASON="$REASON Missing:$MISSING."
-fi
-if [ "$HUMAN_GATE_BLOCK" = true ]; then
-    REASON="$REASON Pending human decisions must be resolved before round close."
-fi
-REASON="$REASON Complete required outputs or explicitly request stop to override."
-REASON="$REASON Validator pipeline: cr-validate-schema, cr-validate-artifacts, cr-validate-ids, cr-validate-references, cr-validate-anchors, cr-validate-paper-patches, cr-validate-knowledge, cr-validate-experiments, cr-validate-human-gates."
-
-# Block if human gate has pending decisions.
-if [ "$HUMAN_GATE_BLOCK" = true ]; then
-    cat << EOF
-{"decision":"block","reason":"$REASON"}
-EOF
-    exit 1
-fi
-
-cat << EOF
-{"decision":"block","reason":"$REASON"}
-EOF
+echo '{"decision":"block","reason":"cr-stop-gate missing and round is active"}'
 exit 1

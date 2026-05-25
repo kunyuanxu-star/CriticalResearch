@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # cr-validate-source-notes — Hard gate: every included source must have a deep-reading note.
-# Forbids .no-sources.yaml when source-index has included sources.
+# Uses triage_decision (include/exclude/maybe), not legacy .included boolean.
 # Usage: cr-validate-source-notes <project_dir> <round_dir>
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -11,13 +11,13 @@ echo "── Source Notes Validation ──"
 NOTES_DIR="$ROUND_DIR/source-notes"
 SOURCE_INDEX="$ROUND_DIR/source-index.yaml"
 
-# Check if we have included sources
+# Check if we have included sources (using triage_decision)
 INCLUDED_COUNT=0
 if [ -f "$SOURCE_INDEX" ]; then
-  INCLUDED_COUNT=$(yq -r '[.sources[] | select(.included==true)] | length' "$SOURCE_INDEX" 2>/dev/null || echo "0")
+  INCLUDED_COUNT=$(yq -r '[.sources[] | select(.triage_decision=="include")] | length' "$SOURCE_INDEX" 2>/dev/null || echo "0")
 fi
 
-# If sources exist, .no-sources.yaml is FORBIDDEN
+# If include sources exist, .no-sources.yaml is FORBIDDEN
 NO_SOURCES="$ROUND_DIR/source-notes/.no-sources.yaml"
 if [ "${INCLUDED_COUNT:-0}" -gt 0 ]; then
   if [ -f "$NO_SOURCES" ]; then
@@ -26,7 +26,7 @@ if [ "${INCLUDED_COUNT:-0}" -gt 0 ]; then
   fi
   # Check every included source has a note
   ERR=0
-  for sid in $(yq -r '.sources[] | select(.included==true) | .source_id' "$SOURCE_INDEX" 2>/dev/null); do
+  for sid in $(yq -r '.sources[] | select(.triage_decision=="include") | .source_id' "$SOURCE_INDEX" 2>/dev/null); do
     [ -z "$sid" ] && continue
     NOTE="$NOTES_DIR/${sid}.yaml"
     if [ ! -f "$NOTE" ]; then
@@ -34,12 +34,27 @@ if [ "${INCLUDED_COUNT:-0}" -gt 0 ]; then
       ERR=$((ERR+1))
       continue
     fi
-    dnp=$(yq -r '.does_not_prove // ""' "$NOTE" 2>/dev/null || echo "")
+    # Required fields per plan
+    for field in problem method_or_mechanism key_claims evidence_for evidence_against does_not_prove affected_claims affected_sections; do
+      val=$(yq -r ".${field} // \"\"" "$NOTE" 2>/dev/null || echo "")
+      if [ -z "$val" ] || [ "$val" = "null" ] || [ "$val" = "[]" ]; then
+        fail "Source note $sid missing or empty field: $field"
+        ERR=$((ERR+1))
+      fi
+    done
+    # Length checks
     prob=$(yq -r '.problem // ""' "$NOTE" 2>/dev/null || echo "")
-    claims=$(yq -r '.affected_claims | length // 0' "$NOTE" 2>/dev/null || echo "0")
+    [ ${#prob} -lt 50 ] && { fail "Source note $sid problem too short (${#prob} chars, need >=50)"; ERR=$((ERR+1)); }
+    dnp=$(yq -r '.does_not_prove // ""' "$NOTE" 2>/dev/null || echo "")
     [ -z "$dnp" ] && { fail "Source note $sid missing does_not_prove"; ERR=$((ERR+1)); }
-    [ ${#prob} -lt 50 ] && { fail "Source note $sid problem too short (${#prob} chars)"; ERR=$((ERR+1)); }
+    claims=$(yq -r '.affected_claims | length // 0' "$NOTE" 2>/dev/null || echo "0")
     [ "$claims" -eq 0 ] 2>/dev/null && { fail "Source note $sid has no affected_claims"; ERR=$((ERR+1)); }
+  done
+  # Check exclude sources have exclude_reason
+  for sid in $(yq -r '.sources[] | select(.triage_decision=="exclude") | .source_id' "$SOURCE_INDEX" 2>/dev/null); do
+    [ -z "$sid" ] && continue
+    reason=$(yq -r ".sources[] | select(.source_id==\"$sid\") | .exclude_reason // \"\"" "$SOURCE_INDEX" 2>/dev/null || echo "")
+    [ -z "$reason" ] && { fail "Excluded source $sid missing exclude_reason"; ERR=$((ERR+1)); }
   done
   [ "$ERR" -gt 0 ] && { fail "$ERR source note failure(s)"; cr_exit_summary; }
   pass "All $INCLUDED_COUNT included sources have deep-reading notes"

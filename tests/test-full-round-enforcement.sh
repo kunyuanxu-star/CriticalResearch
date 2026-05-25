@@ -13,6 +13,7 @@ fail() { echo -e "  ${RED}[FAIL]${NC} $1"; FAILS=$((FAILS + 1)); }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 export PATH="$SCRIPT_DIR/../scripts:$PATH"
+export CR_SKILL_HOME="$SCRIPT_DIR/.."
 TEST_DIR=$(mktemp -d /tmp/cr-e2e-XXXXXX)
 cd "$TEST_DIR"
 
@@ -38,14 +39,15 @@ CURRENT=$(yq -r '.current_phase' e2e-test/rounds/round-002/state.yaml 2>/dev/nul
 EXEC_FULL=$(yq -r '.execution_policy.full_round_required // false' e2e-test/rounds/round-002/state.yaml 2>/dev/null || echo "false")
 [ "$EXEC_FULL" = "true" ] && pass "execution_policy.full_round_required = true" || fail "execution_policy.full_round_required = $EXEC_FULL"
 
-EXEC_PARTIAL=$(yq -r '.execution_policy.allow_partial_stop // true' e2e-test/rounds/round-002/state.yaml 2>/dev/null || echo "true")
+EXEC_PARTIAL=$(yq -r '.execution_policy.allow_partial_stop' e2e-test/rounds/round-002/state.yaml 2>/dev/null || echo "true")
 [ "$EXEC_PARTIAL" = "false" ] && pass "execution_policy.allow_partial_stop = false" || fail "execution_policy.allow_partial_stop = $EXEC_PARTIAL"
 
 echo ""
 
 # ── Test 2: Cannot skip phases ──
 echo "── Test 2: Skip prevention ──"
-cr-complete-phase e2e-test e2e-test/rounds/round-002 read_sources 2>&1 | grep -q "Cannot complete\|current_phase" && pass "Skip blocked: read_sources" || fail "Skip NOT blocked for read_sources"
+SKIP_OUT=$(cr-complete-phase e2e-test e2e-test/rounds/round-002 read_sources 2>&1 || true)
+echo "$SKIP_OUT" | grep -qE "Cannot complete|current_phase" && pass "Skip blocked: read_sources" || fail "Skip NOT blocked for read_sources"
 echo ""
 
 # ── Test 3: Stop gate blocks incomplete round ──
@@ -92,12 +94,18 @@ changes:
     after_text: "new"
     status: "applied"
 YAML
+# Create a valid patch so patch ID checking is triggered
+cat > e2e-test/rounds/round-002/patches/PP-001.yaml << 'PATCH'
+schema_version: "1.0.0"
+patch_id: PP-001
+lifecycle_status: proposed
+PATCH
 # Create minimal chain files so file-existence passes
 for f in source-index.yaml evidence-ledger.yaml critique-ledger.yaml dispositions.yaml knowledge-delta.yaml knowledge-apply-log.yaml; do
   echo "schema_version: '1.0.0'" > "e2e-test/rounds/round-002/$f"
 done
 CHAIN_OUT=$(cr-validate-transaction-chain e2e-test e2e-test/rounds/round-002 2>&1 || true)
-echo "$CHAIN_OUT" | grep -q "unknown patch\|BLOCKED" && pass "Chain detects broken patch reference" || fail "Chain did NOT detect broken patch reference"
+echo "$CHAIN_OUT" | grep -qE "unknown patch|BLOCKED" && pass "Chain detects broken patch reference" || fail "Chain did NOT detect broken patch reference"
 echo ""
 
 # ── Cleanup ──

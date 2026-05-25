@@ -49,7 +49,7 @@
       "validator": "cr-validate-critique",
       "gate": "hard",
       "tier": "L1",
-      "description": "Structured critique entries \u2014 authoritative. critique.md is a human-readable report.",
+      "description": "Structured critique entries — authoritative. critique.md is a human-readable report.",
       "modes": [
         "paper"
       ]
@@ -104,7 +104,7 @@
       "validator": "cr-validate-knowledge",
       "gate": "hard",
       "tier": "L1",
-      "description": "Structured YAML knowledge transaction \u2014 authoritative. knowledge-delta.md is a report."
+      "description": "Structured YAML knowledge transaction — authoritative. knowledge-delta.md is a report."
     },
     "knowledge_apply_log": {
       "path_template": "rounds/round-{round_num}/knowledge-apply-log.yaml",
@@ -123,7 +123,7 @@
       "validator": "cr-validate-patch-application",
       "gate": "hard",
       "tier": "L1",
-      "description": "Structured YAML record of draft changes \u2014 authoritative. writing-diff.md is a report.",
+      "description": "Structured YAML record of draft changes — authoritative. writing-diff.md is a report.",
       "modes": [
         "paper"
       ]
@@ -192,7 +192,7 @@
       "validator": null,
       "gate": "hard",
       "tier": "L2",
-      "description": "Round report \u2014 human-readable, not authoritative"
+      "description": "Round report — human-readable, not authoritative"
     },
     "sources": {
       "path_template": "rounds/round-{round_num}/sources.md",
@@ -200,7 +200,7 @@
       "validator": null,
       "gate": "soft",
       "tier": "L2",
-      "description": "Human-readable sources report \u2014 evidence-ledger.yaml is authoritative"
+      "description": "Human-readable sources report — evidence-ledger.yaml is authoritative"
     },
     "writing_diff": {
       "path_template": "rounds/round-{round_num}/writing-diff.md",
@@ -208,7 +208,7 @@
       "validator": null,
       "gate": "soft",
       "tier": "L2",
-      "description": "Human-readable diff report \u2014 writing-diff.yaml is authoritative"
+      "description": "Human-readable diff report — writing-diff.yaml is authoritative"
     },
     "search_log": {
       "path_template": "rounds/round-{round_num}/search-log.yaml",
@@ -238,7 +238,7 @@
       "validator": "cr-validate-evidence-claim-links",
       "gate": "hard",
       "tier": "L1",
-      "description": "Authoritative structured evidence \u2014 each item links source and claim",
+      "description": "Authoritative structured evidence — each item links source and claim",
       "modes": [
         "paper"
       ]
@@ -572,123 +572,135 @@
       },
       {
         "order": 9,
+        "name": "cr-validate-phase-run-log",
+        "gate": "hard",
+        "checks": "Every completed phase has execution proof and matching output hashes"
+      },
+      {
+        "order": 11,
         "name": "cr-validate-ids",
         "gate": "hard",
         "checks": "ID uniqueness within scope, pattern compliance, no dangling references"
       },
       {
-        "order": 10,
+        "order": 11,
         "name": "cr-validate-research",
         "gate": "hard",
         "checks": "Research enforcement: queries, sources, evidence, weakening evidence required"
       },
       {
-        "order": 11,
+        "order": 12,
         "name": "cr-validate-source-integrity",
         "gate": "hard",
         "checks": "Source snapshot hashes match source-index.yaml records"
       },
       {
-        "order": 12,
+        "order": 13,
         "name": "cr-validate-evidence-claim-links",
         "gate": "hard",
         "checks": "Every evidence item links to valid source and claim"
       },
       {
-        "order": 13,
+        "order": 14,
         "name": "cr-validate-critique",
         "gate": "hard",
         "checks": "Critique ledger structure: medium+ critiques have evidence_refs, high/fatal require patch"
       },
       {
-        "order": 14,
+        "order": 15,
         "name": "cr-validate-references",
         "gate": "hard",
         "checks": "Bidirectional links: critique->disposition->patch->anchor->experiment"
       },
       {
-        "order": 15,
+        "order": 16,
         "name": "cr-validate-anchors",
         "gate": "hard",
         "checks": "Patch targets resolve to draft sections"
       },
       {
-        "order": 16,
+        "order": 17,
         "name": "cr-validate-paper-patches",
         "gate": "hard",
         "checks": "Dispositions present, lifecycle transitions valid, Knowledge Implication fields present"
       },
       {
-        "order": 17,
+        "order": 18,
         "name": "cr-validate-experiments",
         "gate": "hard",
         "checks": "Experiment obligation completeness or explicit no-op record"
       },
       {
-        "order": 18,
+        "order": 19,
         "name": "cr-validate-patch-application",
         "gate": "hard",
         "checks": "Applied/recorded patches have after_text in draft and writing-diff references"
       },
       {
-        "order": 19,
+        "order": 20,
         "name": "cr-validate-knowledge",
         "gate": "hard",
         "checks": "knowledge-delta.yaml content quality and apply-log writeback"
       },
       {
-        "order": 20,
+        "order": 21,
         "name": "cr-validate-knowledge-closure",
         "gate": "hard",
-        "checks": "Knowledge loop: load\u2192use\u2192feedback\u2192delta\u2192apply\u2192reuse. Checks intended_use, applies_when/does_not_apply_when, before/after hashes."
+        "checks": "Knowledge loop: load→use→feedback→delta→apply→reuse. Checks intended_use, applies_when/does_not_apply_when, before/after hashes."
       },
       {
-        "order": 21,
+        "order": 22,
         "name": "cr-validate-human-gates",
         "gate": "hard",
         "checks": "No pending thesis-level decisions in human-review-queue.yaml"
       },
       {
-        "order": 22,
+        "order": 23,
         "name": "cr-validate-paper-completeness",
         "gate": "hard",
         "checks": "Paper draft contains all required sections and anchors"
       },
       {
-        "order": 23,
+        "order": 24,
         "name": "cr-validate-source-notes",
         "gate": "hard",
         "checks": "Every source note has does_not_prove, linked claims, affected sections"
       },
       {
-        "order": 24,
+        "order": 25,
         "name": "cr-validate-claim-evidence-matrix",
         "gate": "hard",
         "checks": "Every core claim in matrix, support levels assigned, evidence gaps flagged"
       },
       {
-        "order": 25,
+        "order": 26,
         "name": "cr-validate-argument-flow",
         "gate": "hard",
         "checks": "Upstream/downstream section consistency after patch application"
       },
       {
-        "order": 26,
+        "order": 27,
         "name": "cr-validate-claim-paper-alignment",
         "gate": "hard",
         "checks": "Paper claim strength does not exceed evidence support level"
       },
       {
-        "order": 27,
+        "order": 28,
         "name": "cr-validate-reviewer-readiness",
         "gate": "hard",
         "checks": "High/fatal critiques resolved or tracked; remaining objections documented"
       },
       {
-        "order": 28,
+        "order": 29,
         "name": "cr-validate-transaction-chain",
         "gate": "hard",
         "checks": "Full S01-S37 causal chain: source->note->evidence->matrix->critique->disposition->patch->diff->knowledge"
+      },
+      {
+        "order": 30,
+        "name": "cr-validate-module-review",
+        "gate": "hard",
+        "checks": "All M0-M7 module reviews exist and pass with no blocking findings"
       }
     ]
   }

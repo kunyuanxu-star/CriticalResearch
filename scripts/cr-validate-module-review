@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# cr-validate-module-review — Hard gate: module-level reviews must exist and pass.
+# Checks phase-reviews/M0-review.yaml through M7-review.yaml.
+#
+# Usage: cr-validate-module-review <project_dir> <round_dir>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+ROUND_DIR="${2:-}"
+
+if [ -z "$PROJECT_DIR" ] || [ -z "$ROUND_DIR" ]; then
+    echo "Usage: cr-validate-module-review <project_dir> <round_dir>" >&2
+    exit 2
+fi
+
+echo "── Module Review Validation ──"
+
+REVIEW_DIR="$ROUND_DIR/phase-reviews"
+FAILS=0
+
+for mod in M0 M1 M2 M3 M4 M5 M6 M7; do
+    review_file="$REVIEW_DIR/${mod}-review.yaml"
+    if [ ! -f "$review_file" ]; then
+        fail "Missing module review: ${mod}-review.yaml"
+        FAILS=$((FAILS + 1))
+        continue
+    fi
+
+    status=$(yq -r '.status // ""' "$review_file" 2>/dev/null || echo "")
+    if [ "$status" != "pass" ]; then
+        fail "Module review $mod status='$status' (expected 'pass')"
+        FAILS=$((FAILS + 1))
+        continue
+    fi
+
+    blocking=$(yq -r '.blocking_findings | length // 0' "$review_file" 2>/dev/null || echo "0")
+    if [ "$blocking" -gt 0 ] 2>/dev/null; then
+        fail "Module review $mod has $blocking blocking finding(s)"
+        FAILS=$((FAILS + 1))
+        continue
+    fi
+
+    pass "Module review $mod: $status"
+done
+
+[ "$FAILS" -gt 0 ] && { fail "$FAILS module review failure(s)"; cr_exit_summary; }
+
+cr_exit_summary

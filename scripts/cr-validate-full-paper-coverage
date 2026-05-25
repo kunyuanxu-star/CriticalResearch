@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# cr-validate-full-paper-coverage — Hard gate: every phase must cover the full paper.
-# Checks full-paper-coverage-plan.yaml coverage against every completed phase artifact.
-# The user objective is a weighting lens, not a scope limiter.
-#
-# InvFull0-InvFull5 enforcement.
+# cr-validate-full-paper-coverage — Hard gate: every completed phase with
+# full_paper_coverage_required must demonstrate coverage.
+# Reads phase list from phase-manifest.snapshot.yaml (single source of truth).
 #
 # Usage: cr-validate-full-paper-coverage <project_dir> <round_dir>
 
@@ -23,6 +21,7 @@ fi
 STATE_FILE="$ROUND_DIR/state.yaml"
 COVERAGE_PLAN="$ROUND_DIR/full-paper-coverage-plan.yaml"
 OBJECTIVE="$ROUND_DIR/round-objective.yaml"
+MANIFEST="$ROUND_DIR/phase-manifest.snapshot.yaml"
 
 if [ ! -f "$STATE_FILE" ]; then
     fail "state.yaml not found"
@@ -37,7 +36,13 @@ if [ ! -f "$COVERAGE_PLAN" ]; then
     cr_exit_summary
 fi
 
-# 2. Read the full paper inventory from the coverage plan.
+# 2. Manifest snapshot must exist.
+if [ ! -f "$MANIFEST" ]; then
+    fail "phase-manifest.snapshot.yaml not found"
+    cr_exit_summary
+fi
+
+# 3. Read the full paper inventory from the coverage plan.
 REQUIRED_SECTIONS=$(yq -r '.paper_inventory.sections[]? | select(.required==true) | .section_id' "$COVERAGE_PLAN" 2>/dev/null || echo "")
 REQUIRED_CLAIMS=$(yq -r '.paper_inventory.claims[]? | select(.required_full_pass==true) | .claim_id' "$COVERAGE_PLAN" 2>/dev/null || echo "")
 REQUIRED_BASELINES=$(yq -r '.paper_inventory.baselines[]? | .baseline_id' "$COVERAGE_PLAN" 2>/dev/null || echo "")
@@ -51,96 +56,129 @@ SEC_COUNT=$(echo "$REQUIRED_SECTIONS" | wc -l | tr -d ' ')
 CLAIM_COUNT=$(echo "$REQUIRED_CLAIMS" | wc -l | tr -d ' ')
 pass "Inventory: $SEC_COUNT sections, $CLAIM_COUNT claims"
 
-# 3. Objective scope policy check.
+# 4. Objective scope policy check.
 if [ -f "$OBJECTIVE" ]; then
     MAY_LIMIT=$(yq -r '.scope_policy.objective_may_limit_scope' "$OBJECTIVE" 2>/dev/null || echo "true")
     [ -z "$MAY_LIMIT" ] || [ "$MAY_LIMIT" = "null" ] && MAY_LIMIT="true"
     [ "$MAY_LIMIT" = "false" ] && pass "Objective may NOT limit scope" || { fail "objective_may_limit_scope must be false"; }
 fi
 
-# 4. Per-phase coverage verification.
-# Phases that must demonstrate full-paper coverage:
-ANALYSIS_PHASES=(
-    "snapshot_paper_state:paper-state.yaml:sections,claims"
-    "load_project_knowledge:loaded-knowledge.yaml:sections,claims"
-    "critique_claim_precision:critique-claim-precision.yaml:claims"
-    "critique_novelty_and_baselines:critique-novelty-baseline.yaml:baselines"
-    "critique_evidence_sufficiency:critique-evidence.yaml:claims"
-    "critique_evaluation_contract:critique-evaluation.yaml:claims"
-    "critique_writing_argument:critique-writing.yaml:sections"
-    "merge_critique_ledger:critique-ledger.yaml:claims"
-    "global_argument_pass:argument-flow-report.yaml:sections"
-    "claim_evidence_alignment_pass:claim-paper-matrix.yaml:claims"
-    "reviewer_readiness_pass:reviewer-readiness.yaml:sections"
-)
-
+# 5. Manifest-driven per-phase coverage verification.
+# Find all phases with full_paper_coverage_required=true in the manifest.
 COVERAGE_FAILS=0
-for entry in "${ANALYSIS_PHASES[@]}"; do
-    IFS=':' read -r phase artifact coverage_types <<< "$entry"
-    PHASE_STATUS=$(yq -r ".phases.$phase.status // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
 
-    if [ "$PHASE_STATUS" = "complete" ]; then
-        AF="$ROUND_DIR/$artifact"
-        if [ ! -f "$AF" ]; then
-            fail "Phase '$phase' complete but $artifact missing"
-            COVERAGE_FAILS=$((COVERAGE_FAILS + 1))
-            continue
+for i in $(seq 0 36); do
+    pid=$(yq -r ".phases[$i].id // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+    [ -z "$pid" ] && continue
+
+    fpcr=$(yq -r ".phases[$i].full_paper_coverage_required // false" "$MANIFEST" 2>/dev/null || echo "false")
+    [ "$fpcr" != "true" ] && continue
+
+    PHASE_STATUS=$(yq -r ".phases.$pid.status // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
+    [ "$PHASE_STATUS" != "complete" ] && continue
+
+    # Find the primary artifact: first required_output that is not a directory.
+    PRIMARY_ARTIFACT=""
+    out_count=$(yq -r ".phases[$i].required_outputs | length" "$MANIFEST" 2>/dev/null || echo 0)
+    for j in $(seq 0 $((out_count - 1))); do
+        otype=$(yq -r ".phases[$i].required_outputs[$j].type // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+        opath=$(yq -r ".phases[$i].required_outputs[$j].path // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+        if [ "$otype" != "directory" ] && [ -n "$opath" ]; then
+            PRIMARY_ARTIFACT="$opath"
+            break
         fi
+    done
 
-        # Check full_paper_coverage field exists.
-        HAS_COV=$(yq -r '.full_paper_coverage // ""' "$AF" 2>/dev/null || echo "")
-        if [ -z "$HAS_COV" ] || [ "$HAS_COV" = "null" ]; then
-            fail "Phase '$phase': $artifact has no full_paper_coverage field"
-            COVERAGE_FAILS=$((COVERAGE_FAILS + 1))
-            continue
-        fi
+    if [ -z "$PRIMARY_ARTIFACT" ]; then
+        warn "Phase '$pid': no non-directory primary artifact to check coverage"
+        continue
+    fi
 
-        # Check sections_checked if this phase requires section coverage.
-        if echo "$coverage_types" | grep -q "sections"; then
-            CHECKED_SECS=$(yq -r '.full_paper_coverage.sections_checked[]? // ""' "$AF" 2>/dev/null || echo "")
+    # Resolve scoped path to absolute path.
+    RESOLVED=$("$SCRIPT_DIR/cr-resolve-artifact-path" "$PROJECT_DIR" "$ROUND_DIR" "$PRIMARY_ARTIFACT" 2>/dev/null || echo "")
+    if [ -z "$RESOLVED" ]; then
+        fail "Phase '$pid': cannot resolve artifact path '$PRIMARY_ARTIFACT'"
+        COVERAGE_FAILS=$((COVERAGE_FAILS + 1))
+        continue
+    fi
+
+    AF=$(echo "$RESOLVED" | jq -r '.absolute_path // ""' 2>/dev/null || echo "")
+    if [ -z "$AF" ] || [ ! -f "$AF" ]; then
+        fail "Phase '$pid' complete but primary artifact '$PRIMARY_ARTIFACT' missing"
+        COVERAGE_FAILS=$((COVERAGE_FAILS + 1))
+        continue
+    fi
+
+    # Check full_paper_coverage field exists.
+    HAS_COV=$(yq -r '.full_paper_coverage // ""' "$AF" 2>/dev/null || echo "")
+    if [ -z "$HAS_COV" ] || [ "$HAS_COV" = "null" ]; then
+        fail "Phase '$pid': $PRIMARY_ARTIFACT has no full_paper_coverage field"
+        COVERAGE_FAILS=$((COVERAGE_FAILS + 1))
+        continue
+    fi
+
+    # Check sections_checked if required sections exist in inventory.
+    if [ -n "$REQUIRED_SECTIONS" ]; then
+        CHECKED_SECS=$(yq -r '.full_paper_coverage.sections_checked[]? // ""' "$AF" 2>/dev/null || echo "")
+        if [ -n "$CHECKED_SECS" ]; then
             for sec in $REQUIRED_SECTIONS; do
                 if ! echo "$CHECKED_SECS" | grep -qw "$sec"; then
-                    fail "Phase '$phase': section '$sec' not in sections_checked"
+                    fail "Phase '$pid': section '$sec' not in sections_checked"
                     COVERAGE_FAILS=$((COVERAGE_FAILS + 1))
                 fi
             done
         fi
+    fi
 
-        # Check claims_checked if this phase requires claim coverage.
-        if echo "$coverage_types" | grep -q "claims" && [ -n "$REQUIRED_CLAIMS" ]; then
-            CHECKED_CLMS=$(yq -r '.full_paper_coverage.claims_checked[]? // ""' "$AF" 2>/dev/null || echo "")
+    # Check claims_checked if required claims exist in inventory.
+    if [ -n "$REQUIRED_CLAIMS" ]; then
+        CHECKED_CLMS=$(yq -r '.full_paper_coverage.claims_checked[]? // ""' "$AF" 2>/dev/null || echo "")
+        if [ -n "$CHECKED_CLMS" ]; then
             for clm in $REQUIRED_CLAIMS; do
                 if ! echo "$CHECKED_CLMS" | grep -qw "$clm"; then
-                    fail "Phase '$phase': claim '$clm' not in claims_checked"
+                    fail "Phase '$pid': claim '$clm' not in claims_checked"
                     COVERAGE_FAILS=$((COVERAGE_FAILS + 1))
                 fi
             done
         fi
+    fi
 
-        # Check omissions must be empty.
-        OMISSIONS=$(yq -r '.full_paper_coverage.omissions | length // 0' "$AF" 2>/dev/null || echo "0")
-        if [ "${OMISSIONS:-0}" -gt 0 ]; then
-            OM_REASON=$(yq -r '.full_paper_coverage.omissions[0].reason // ""' "$AF" 2>/dev/null || echo "")
-            if [ -z "$OM_REASON" ] || [ "$OM_REASON" = "null" ]; then
-                fail "Phase '$phase': has omissions without reason"
-                COVERAGE_FAILS=$((COVERAGE_FAILS + 1))
-            else
-                warn "Phase '$phase': has omissions (${OM_REASON:0:60}...)"
-            fi
+    # Check baselines_checked if required baselines exist in inventory.
+    if [ -n "$REQUIRED_BASELINES" ]; then
+        CHECKED_BASE=$(yq -r '.full_paper_coverage.baselines_checked[]? // ""' "$AF" 2>/dev/null || echo "")
+        if [ -n "$CHECKED_BASE" ]; then
+            for base in $REQUIRED_BASELINES; do
+                if ! echo "$CHECKED_BASE" | grep -qw "$base"; then
+                    fail "Phase '$pid': baseline '$base' not in baselines_checked"
+                    COVERAGE_FAILS=$((COVERAGE_FAILS + 1))
+                fi
+            done
         fi
+    fi
 
-        # Check objective_relevance.
-        OBJ_LEVEL=$(yq -r '.objective_relevance.level // ""' "$AF" 2>/dev/null || echo "")
-        OBJ_EXPLAIN=$(yq -r '.objective_relevance.explanation // ""' "$AF" 2>/dev/null || echo "")
-        if [ -z "$OBJ_LEVEL" ] || [ "$OBJ_LEVEL" = "null" ]; then
-            fail "Phase '$phase': no objective_relevance.level in $artifact"
-            COVERAGE_FAILS=$((COVERAGE_FAILS + 1))
-        elif [ -z "$OBJ_EXPLAIN" ] || [ "$OBJ_EXPLAIN" = "null" ] || [ ${#OBJ_EXPLAIN} -lt 10 ]; then
-            fail "Phase '$phase': objective_relevance.explanation too short or missing"
+    # Check omissions must have reason.
+    OMISSIONS=$(yq -r '.full_paper_coverage.omissions | length // 0' "$AF" 2>/dev/null || echo "0")
+    if [ "${OMISSIONS:-0}" -gt 0 ]; then
+        OM_REASON=$(yq -r '.full_paper_coverage.omissions[0].reason // ""' "$AF" 2>/dev/null || echo "")
+        if [ -z "$OM_REASON" ] || [ "$OM_REASON" = "null" ]; then
+            fail "Phase '$pid': has omissions without reason"
             COVERAGE_FAILS=$((COVERAGE_FAILS + 1))
         else
-            pass "Phase '$phase': coverage + objective OK ($OBJ_LEVEL)"
+            warn "Phase '$pid': has omissions (${OM_REASON:0:60}...)"
         fi
+    fi
+
+    # Check objective_relevance.
+    OBJ_LEVEL=$(yq -r '.objective_relevance.level // ""' "$AF" 2>/dev/null || echo "")
+    OBJ_EXPLAIN=$(yq -r '.objective_relevance.explanation // ""' "$AF" 2>/dev/null || echo "")
+    if [ -z "$OBJ_LEVEL" ] || [ "$OBJ_LEVEL" = "null" ]; then
+        fail "Phase '$pid': no objective_relevance.level in $PRIMARY_ARTIFACT"
+        COVERAGE_FAILS=$((COVERAGE_FAILS + 1))
+    elif [ -z "$OBJ_EXPLAIN" ] || [ "$OBJ_EXPLAIN" = "null" ] || [ ${#OBJ_EXPLAIN} -lt 10 ]; then
+        fail "Phase '$pid': objective_relevance.explanation too short or missing"
+        COVERAGE_FAILS=$((COVERAGE_FAILS + 1))
+    else
+        pass "Phase '$pid': coverage + objective OK ($OBJ_LEVEL)"
     fi
 done
 

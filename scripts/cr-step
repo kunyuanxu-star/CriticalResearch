@@ -200,17 +200,42 @@ case "$SUBCMD" in
         yq -i ".phases.\"$CURRENT\".status = \"running\"" "$STATE_FILE" 2>/dev/null
         yq -i ".phases.\"$CURRENT\".started_at = \"$NOW\"" "$STATE_FILE" 2>/dev/null
 
-        # Write phase-run-log started record.
+        # Write phase-run-log started event.
         PHASE_ORDER=$(yq -r ".phase_order | index(\"$CURRENT\") // 0" "$STATE_FILE" 2>/dev/null || echo "0")
         PHASE_ORDER=$((PHASE_ORDER + 1))
-        cat >> "$ROUND_DIR/phase-run-log.yaml" << LOGEOF
-- phase: $CURRENT
-  order: $PHASE_ORDER
-  started_at: "$NOW"
-  status_transition:
-    from: open
-    to: running
-LOGEOF
+
+        # Ensure run-log has schema header if empty or old format.
+        RUN_LOG="$ROUND_DIR/phase-run-log.yaml"
+        if [ ! -s "$RUN_LOG" ] || ! grep -q '^schema_version:' "$RUN_LOG" 2>/dev/null; then
+            cat > "$RUN_LOG" << 'HDR'
+schema_version: "1.0.0"
+events:
+HDR
+        fi
+
+        # Convert old empty-list format to block format.
+        if grep -q '^events: \[\]' "$RUN_LOG" 2>/dev/null; then
+            sed -i '' 's/^events: \[\]/events:/' "$RUN_LOG" 2>/dev/null || \
+                sed -i 's/^events: \[\]/events:/' "$RUN_LOG"
+        fi
+
+        {
+            echo "  - event: phase_started"
+            echo "    phase: $CURRENT"
+            echo "    order: $PHASE_ORDER"
+            echo "    at: \"$NOW\""
+            echo "    input_hashes:"
+            ALL_INPUTS=$(yq -r ".phases.\"$CURRENT\".required_inputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
+            for inp in $ALL_INPUTS; do
+                [ -z "$inp" ] && continue
+                f="$ROUND_DIR/$inp"
+                [ -f "$f" ] || f="$PROJECT_DIR/$inp"
+                [ -f "$f" ] || continue
+                h=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
+                echo "      \"$inp\": \"$h\""
+            done
+            [ -z "$ALL_INPUTS" ] && echo "      {}"
+        } >> "$RUN_LOG"
         echo "Phase '$CURRENT' started (open -> running)"
         ;;
 

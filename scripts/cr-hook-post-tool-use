@@ -15,6 +15,11 @@ source "$SCRIPT_DIR/cr-common.sh"
 WORKSPACE_ROOT="$(cr_workspace_root)"
 SCOPE_CLI="$SCRIPT_DIR/cr-scope"
 
+# Repair mode: allow violations if explicitly set (for recovery operations).
+if [ "${CR_REPAIR_MODE:-0}" = "1" ]; then
+    exit 0
+fi
+
 # Quick check: is there a workspace and scope?
 if [ ! -d "$WORKSPACE_ROOT/_cr" ]; then
     exit 0
@@ -26,11 +31,81 @@ if [ ! -d "$SESSIONS_DIR" ] || [ -z "$(ls -A "$SESSIONS_DIR" 2>/dev/null)" ]; th
     exit 0
 fi
 
+# Find active project and round for audit-log path.
+AUDIT_LOG=""
+ACTIVE_PROJ_FILE="$WORKSPACE_ROOT/_cr/active-project"
+if [ -f "$ACTIVE_PROJ_FILE" ]; then
+    ACTIVE_PROJ=$(cat "$ACTIVE_PROJ_FILE" 2>/dev/null || echo "")
+    if [ -n "$ACTIVE_PROJ" ] && [ -d "$WORKSPACE_ROOT/$ACTIVE_PROJ" ]; then
+        STATE_JSON="$WORKSPACE_ROOT/$ACTIVE_PROJ/state/project-state.json"
+        if [ -f "$STATE_JSON" ]; then
+            ACTIVE_RND=$(jq -r '.active_round // 0' "$STATE_JSON" 2>/dev/null || echo "0")
+            if [ "$ACTIVE_RND" != "null" ] && [ "$ACTIVE_RND" -gt 0 ] 2>/dev/null; then
+                RND_NUM=$(printf "%03d" "$ACTIVE_RND")
+                ROUND_DIR="$WORKSPACE_ROOT/$ACTIVE_PROJ/rounds/round-$RND_NUM"
+                if [ -d "$ROUND_DIR" ]; then
+                    AUDIT_LOG="$ROUND_DIR/audit-log.yaml"
+                fi
+            fi
+        fi
+    fi
+fi
+
 # Run scope audit (use set +e to capture real exit code).
 set +e
 AUDIT_OUT=$("$SCOPE_CLI" audit 2>&1)
 AUDIT_RC=$?
 set -e
+
+NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Write audit-log entry regardless of violations.
+if [ -n "$AUDIT_LOG" ]; then
+    # Ensure schema header exists.
+    if [ ! -f "$AUDIT_LOG" ] || ! grep -q '^schema_version:' "$AUDIT_LOG" 2>/dev/null; then
+        cat > "$AUDIT_LOG" << 'HDR'
+schema_version: "1.0.0"
+events:
+HDR
+    fi
+    # Convert old empty-list format.
+    if grep -q '^events: \[\]' "$AUDIT_LOG" 2>/dev/null; then
+        sed -i '' 's/^events: \[\]/events:/' "$AUDIT_LOG" 2>/dev/null || \
+            sed -i 's/^events: \[\]/events:/' "$AUDIT_LOG"
+    fi
+
+    # Build violations array.
+    VIOLATIONS=""
+    if [ "${AUDIT_RC:-0}" -ne 0 ]; then
+        while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            case "$line" in
+                VIOLATION*)
+                    v="${line#VIOLATION: }"
+                    if [ -n "$VIOLATIONS" ]; then
+                        VIOLATIONS="${VIOLATIONS}
+      - \"$v\""
+                    else
+                        VIOLATIONS="      - \"$v\""
+                    fi
+                    ;;
+            esac
+        done <<< "$AUDIT_OUT"
+    fi
+
+    {
+        echo "  - event: post_tool_use_audit"
+        echo "    at: \"$NOW\""
+        echo "    audit_result: $([ "${AUDIT_RC:-0}" -eq 0 ] && echo "pass" || echo "fail")"
+        if [ -n "$VIOLATIONS" ]; then
+            echo "    violations:"
+            echo "$VIOLATIONS"
+        else
+            echo "    violations: []"
+        fi
+        echo "    repair_required: $([ "${AUDIT_RC:-0}" -eq 0 ] && echo "false" || echo "true")"
+    } >> "$AUDIT_LOG"
+fi
 
 if [ "${AUDIT_RC:-0}" -ne 0 ]; then
     # Violations detected — block and require revert.
@@ -38,7 +113,7 @@ if [ "${AUDIT_RC:-0}" -ne 0 ]; then
         hookSpecificOutput: {
             hookEventName: "PostToolUse",
             permissionDecision: "deny",
-            permissionDecisionReason: ("Scope violation detected after last tool call.\n" + $audit + "\nRun: cr scope revert-last\nOr manually revert before continuing.")
+            permissionDecisionReason: ("Scope violation detected after last tool call.\n" + $audit + "\nRun: cr scope revert-last\nOr set CR_REPAIR_MODE=1 and manually revert before continuing.")
         }
     }'
     exit 1

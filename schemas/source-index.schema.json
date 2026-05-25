@@ -11,7 +11,7 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["source_id", "title", "source_type", "retrieved_at", "snapshot_path", "sha256"],
+        "required": ["source_id", "title", "source_type", "retrieved_at", "snapshot_path", "sha256", "triage_decision"],
         "properties": {
           "source_id": { "type": "string", "pattern": "^S[0-9]{3}$" },
           "url": { "type": "string" },
@@ -20,6 +20,7 @@
           "retrieved_at": { "type": "string" },
           "snapshot_path": { "type": "string" },
           "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "triage_decision": { "type": "string", "enum": ["include", "exclude", "maybe"] },
           "metadata": {
             "type": "object",
             "properties": {

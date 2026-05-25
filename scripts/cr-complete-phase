@@ -131,47 +131,61 @@ echo "Phase '$PHASE' marked complete at $NOW"
 
 # ── Record phase-run-log (execution proof) ────────────────────────
 
-PHASE_ORDER=$(yq -r ".phase_order | index("$PHASE") // 0" "$STATE_FILE" 2>/dev/null || echo "0")
+PHASE_ORDER=$(yq -r ".phase_order | index(\"$PHASE\") // 0" "$STATE_FILE" 2>/dev/null || echo "0")
 PHASE_ORDER=$((PHASE_ORDER + 1))
 RUN_LOG="$ROUND_DIR/phase-run-log.yaml"
 
-# Compute hashes of phase outputs for tamper-proof record.
-OUTPUT_HASHES=""
-for out in $ALL_OUTPUTS; do
-    f="$ROUND_DIR/$out"
-    if [ -f "$f" ]; then
-        h=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
-        OUTPUT_HASHES="$OUTPUT_HASHES
-      $out: $h"
-    fi
-done
-INPUT_HASHES=""
-for inp in $ALL_INPUTS; do
-    f="$ROUND_DIR/$inp"
-    [ -f "$f" ] || f="$PROJECT_DIR/$inp"
-    if [ -f "$f" ]; then
-        h=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
-        INPUT_HASHES="$INPUT_HASHES
-      $inp: $h"
-    fi
-done
+# Get started_at from state.yaml for the phase_started event.
+STARTED_AT=$(yq -r ".phases.\"$PHASE\".started_at // \"$NOW\"" "$STATE_FILE" 2>/dev/null || echo "$NOW")
 
-cat >> "$RUN_LOG" << LOGEOF
-- phase: $PHASE
-  order: $PHASE_ORDER
-  started_at: "$NOW"
-  completed_at: "$NOW"
-  status_transition:
-    from: "$PHASE_STATUS"
-    to: complete
-  prompt_path: "$(yq -r ".phases."$PHASE".prompt // """ "$STATE_FILE" 2>/dev/null || echo "unknown")"
-  validator: "cr-validate-phase"
-  validator_exit_code: 0
-  input_hashes: {$INPUT_HASHES
-  }
-  output_hashes: {$OUTPUT_HASHES
-  }
-LOGEOF
+# Compute validator script hash.
+VALIDATOR_SCRIPT="$SCRIPT_DIR/cr-validate-phase"
+VALIDATOR_SHA256="unknown"
+if [ -f "$VALIDATOR_SCRIPT" ]; then
+    VALIDATOR_SHA256=$(shasum -a 256 "$VALIDATOR_SCRIPT" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
+fi
+
+# Ensure run-log has schema header if empty or old format.
+if [ ! -s "$RUN_LOG" ] || ! grep -q '^schema_version:' "$RUN_LOG" 2>/dev/null; then
+    cat > "$RUN_LOG" << 'HDR'
+schema_version: "1.0.0"
+events:
+HDR
+fi
+
+# Convert old empty-list format to block format.
+if grep -q '^events: \[\]' "$RUN_LOG" 2>/dev/null; then
+    sed -i '' 's/^events: \[\]/events:/' "$RUN_LOG" 2>/dev/null || \
+        sed -i 's/^events: \[\]/events:/' "$RUN_LOG"
+fi
+
+# Write phase_completed event.
+{
+    echo "  - event: phase_completed"
+    echo "    phase: $PHASE"
+    echo "    order: $PHASE_ORDER"
+    echo "    at: \"$NOW\""
+    echo "    status_transition:"
+    echo "      from: \"$PHASE_STATUS\""
+    echo "      to: complete"
+    echo "    validator:"
+    echo "      path: \"scripts/cr-validate-phase\""
+    echo "      sha256: \"$VALIDATOR_SHA256\""
+    echo "      exit_code: 0"
+    echo "    output_hashes:"
+    for out in $ALL_OUTPUTS; do
+        [ -z "$out" ] && continue
+        f="$ROUND_DIR/$out"
+        if [ -f "$f" ]; then
+            h=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
+            echo "      \"$out\": \"$h\""
+        elif [ -d "$f" ]; then
+            h=$(find "$f" -type f -exec shasum -a 256 {} \; 2>/dev/null | sort | shasum -a 256 | cut -d' ' -f1 || echo "unknown")
+            echo "      \"$out\": \"$h\""
+        fi
+    done
+    [ -z "$ALL_OUTPUTS" ] && echo "      {}"
+} >> "$RUN_LOG"
 echo "  Phase execution recorded in phase-run-log.yaml"
 
 # ── Auto-unblock next phases whose dependencies are now satisfied ──

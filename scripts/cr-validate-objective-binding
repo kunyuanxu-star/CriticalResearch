@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# cr-validate-objective-binding — Hard gate: every completed phase must demonstrate
-# it addressed the round objective. The user objective is a weighting lens —
-# every phase must show how it served the primary focus.
+# cr-validate-objective-binding — Hard gate: every completed phase with
+# objective_binding_required must demonstrate it addressed the round objective.
+# Reads phase list from phase-manifest.snapshot.yaml (single source of truth).
 #
 # Usage: cr-validate-objective-binding <project_dir> <round_dir>
 
@@ -20,6 +20,7 @@ fi
 
 STATE_FILE="$ROUND_DIR/state.yaml"
 OBJECTIVE="$ROUND_DIR/round-objective.yaml"
+MANIFEST="$ROUND_DIR/phase-manifest.snapshot.yaml"
 
 if [ ! -f "$STATE_FILE" ]; then
     fail "state.yaml not found"
@@ -34,6 +35,12 @@ if [ ! -f "$OBJECTIVE" ]; then
     cr_exit_summary
 fi
 
+# 2. Manifest snapshot must exist.
+if [ ! -f "$MANIFEST" ]; then
+    fail "phase-manifest.snapshot.yaml not found"
+    cr_exit_summary
+fi
+
 OBJ_TEXT=$(yq -r '.normalized_objective // ""' "$OBJECTIVE" 2>/dev/null || echo "")
 RAW_REQ=$(yq -r '.raw_user_request // ""' "$OBJECTIVE" 2>/dev/null || echo "")
 SCOPE_POLICY=$(yq -r '.scope_policy.objective_may_limit_scope' "$OBJECTIVE" 2>/dev/null || echo "true")
@@ -42,43 +49,63 @@ SCOPE_POLICY=$(yq -r '.scope_policy.objective_may_limit_scope' "$OBJECTIVE" 2>/d
 [ -n "$OBJ_TEXT" ] && pass "Round objective recorded: ${OBJ_TEXT:0:80}" || { fail "round-objective.yaml has no normalized_objective"; }
 [ "$SCOPE_POLICY" = "false" ] && pass "Objective may not limit scope" || { fail "objective_may_limit_scope must be false"; }
 
-# 2. Check that completed phases have objective_relevance.
-ANALYSIS_PHASES=(
-    "load_project_knowledge:loaded-knowledge.yaml"
-    "define_round_objective:round-objective.yaml"
-    "plan_research_questions:research-questions.yaml"
-    "merge_critique_ledger:critique-ledger.yaml"
-    "generate_dispositions:dispositions.yaml"
-    "global_argument_pass:argument-flow-report.yaml"
-    "claim_evidence_alignment_pass:claim-paper-matrix.yaml"
-    "reviewer_readiness_pass:reviewer-readiness.yaml"
-    "distill_thinking_knowledge:thinking-knowledge-delta.yaml"
-    "apply_knowledge_delta:knowledge-delta.yaml"
-    "close_round:closure-report.yaml"
-)
-
+# 3. Manifest-driven per-phase objective binding verification.
+# Find all phases with objective_binding_required=true in the manifest.
 MISSING_OBJ=0
-for entry in "${ANALYSIS_PHASES[@]}"; do
-    phase="${entry%%:*}"
-    artifact="${entry##*:}"
-    PHASE_STATUS=$(yq -r ".phases.$phase.status // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
 
-    if [ "$PHASE_STATUS" = "complete" ]; then
-        AF="$ROUND_DIR/$artifact"
-        if [ -f "$AF" ]; then
-            RELEVANCE=$(yq -r '.objective_relevance.level // ""' "$AF" 2>/dev/null || echo "")
-            EXPLANATION=$(yq -r '.objective_relevance.explanation // ""' "$AF" 2>/dev/null || echo "")
-            if [ -n "$RELEVANCE" ] && [ "$RELEVANCE" != "null" ]; then
-                pass "Objective binding: $phase ($RELEVANCE)"
-            else
-                fail "Phase '$phase' complete but $artifact has no objective_relevance.level"
-                MISSING_OBJ=$((MISSING_OBJ + 1))
-            fi
-            if [ -z "$EXPLANATION" ] || [ "$EXPLANATION" = "null" ]; then
-                fail "Phase '$phase' has objective_relevance but no explanation"
-                MISSING_OBJ=$((MISSING_OBJ + 1))
-            fi
+for i in $(seq 0 36); do
+    pid=$(yq -r ".phases[$i].id // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+    [ -z "$pid" ] && continue
+
+    obr=$(yq -r ".phases[$i].objective_binding_required // false" "$MANIFEST" 2>/dev/null || echo "false")
+    [ "$obr" != "true" ] && continue
+
+    PHASE_STATUS=$(yq -r ".phases.$pid.status // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
+    [ "$PHASE_STATUS" != "complete" ] && continue
+
+    # Find the primary artifact: first required_output that is not a directory.
+    PRIMARY_ARTIFACT=""
+    out_count=$(yq -r ".phases[$i].required_outputs | length" "$MANIFEST" 2>/dev/null || echo 0)
+    for j in $(seq 0 $((out_count - 1))); do
+        otype=$(yq -r ".phases[$i].required_outputs[$j].type // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+        opath=$(yq -r ".phases[$i].required_outputs[$j].path // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+        if [ "$otype" != "directory" ] && [ -n "$opath" ]; then
+            PRIMARY_ARTIFACT="$opath"
+            break
         fi
+    done
+
+    if [ -z "$PRIMARY_ARTIFACT" ]; then
+        warn "Phase '$pid': no non-directory primary artifact to check objective binding"
+        continue
+    fi
+
+    # Resolve scoped path to absolute path.
+    RESOLVED=$("$SCRIPT_DIR/cr-resolve-artifact-path" "$PROJECT_DIR" "$ROUND_DIR" "$PRIMARY_ARTIFACT" 2>/dev/null || echo "")
+    if [ -z "$RESOLVED" ]; then
+        fail "Phase '$pid': cannot resolve artifact path '$PRIMARY_ARTIFACT'"
+        MISSING_OBJ=$((MISSING_OBJ + 1))
+        continue
+    fi
+
+    AF=$(echo "$RESOLVED" | jq -r '.absolute_path // ""' 2>/dev/null || echo "")
+    if [ -z "$AF" ] || [ ! -f "$AF" ]; then
+        fail "Phase '$pid' complete but primary artifact '$PRIMARY_ARTIFACT' missing"
+        MISSING_OBJ=$((MISSING_OBJ + 1))
+        continue
+    fi
+
+    RELEVANCE=$(yq -r '.objective_relevance.level // ""' "$AF" 2>/dev/null || echo "")
+    EXPLANATION=$(yq -r '.objective_relevance.explanation // ""' "$AF" 2>/dev/null || echo "")
+    if [ -n "$RELEVANCE" ] && [ "$RELEVANCE" != "null" ]; then
+        pass "Objective binding: $pid ($RELEVANCE)"
+    else
+        fail "Phase '$pid' complete but $PRIMARY_ARTIFACT has no objective_relevance.level"
+        MISSING_OBJ=$((MISSING_OBJ + 1))
+    fi
+    if [ -z "$EXPLANATION" ] || [ "$EXPLANATION" = "null" ]; then
+        fail "Phase '$pid' has objective_relevance but no explanation"
+        MISSING_OBJ=$((MISSING_OBJ + 1))
     fi
 done
 
