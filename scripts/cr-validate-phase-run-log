@@ -155,6 +155,8 @@ for ((i=0; i<PHASE_COUNT; i++)); do
                 current_hash=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || echo "")
             elif [ -d "$f" ]; then
                 current_hash=$(find "$f" -type f -exec shasum -a 256 {} \; 2>/dev/null | awk '{print $1}' | sort | shasum -a 256 | cut -d' ' -f1 || echo "")
+            elif [ -f "$PROJECT_DIR/$key" ]; then
+                current_hash=$(shasum -a 256 "$PROJECT_DIR/$key" 2>/dev/null | cut -d' ' -f1 || echo "")
             else
                 current_hash=""
             fi
@@ -180,6 +182,108 @@ for ((i=0; i<PHASE_COUNT; i++)); do
                     fail "Phase '$phase' input '$key' hash mismatch: stored=$stored_hash current=$current_hash"
                     ERRORS=$((ERRORS + 1))
                 fi
+            fi
+        done
+    fi
+
+    # 3g. Manifest-driven required input/output hash completeness.
+    # Every required file-type input must have a hash in input_hashes.
+    # Every required output must have a hash in output_hashes.
+    # No extra hash keys allowed beyond required (and optional) IO.
+
+    MANIFEST="$ROUND_DIR/phase-manifest.snapshot.yaml"
+    if [ -f "$MANIFEST" ]; then
+        # Use manifest snapshot as single source of truth.
+        # Get required_inputs from manifest.
+        req_in_count=$(yq -r ".phases[] | select(.id == \"$phase\") | .required_inputs | length // 0" "$MANIFEST" 2>/dev/null || echo 0)
+        for j in $(seq 0 $((req_in_count - 1))); do
+            raw_path=$(yq -r ".phases[] | select(.id == \"$phase\") | .required_inputs[$j].path // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+            [ -z "$raw_path" ] && continue
+            key="${raw_path#*:}"  # Strip scope prefix (project:, round:, workspace:)
+            [ -z "$key" ] && continue
+            # Directory inputs (ending with /) are not recorded by cr-complete-phase — skip.
+            if [ "${key: -1}" = "/" ]; then
+                continue
+            fi
+            has_key=$(echo "$input_hashes" | yq -r "has(\"$key\")" 2>/dev/null || echo "false")
+            if [ "$has_key" != "true" ]; then
+                fail "Phase '$phase' required input '$key' missing from input_hashes"
+                ERRORS=$((ERRORS + 1))
+            fi
+        done
+
+        # Get required_outputs from manifest.
+        req_out_count=$(yq -r ".phases[] | select(.id == \"$phase\") | .required_outputs | length // 0" "$MANIFEST" 2>/dev/null || echo 0)
+        declared_outputs=""
+        for j in $(seq 0 $((req_out_count - 1))); do
+            raw_path=$(yq -r ".phases[] | select(.id == \"$phase\") | .required_outputs[$j].path // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+            [ -z "$raw_path" ] && continue
+            key="${raw_path#*:}"
+            [ -z "$key" ] && continue
+            declared_outputs="$declared_outputs $key"
+            has_key=$(echo "$output_hashes" | yq -r "has(\"$key\")" 2>/dev/null || echo "false")
+            if [ "$has_key" != "true" ]; then
+                fail "Phase '$phase' required output '$key' missing from output_hashes"
+                ERRORS=$((ERRORS + 1))
+            fi
+        done
+
+        # Check for extra keys in output_hashes not declared in manifest.
+        out_keys=$(echo "$output_hashes" | yq -r 'keys | .[]' 2>/dev/null || echo "")
+        for ok in $out_keys; do
+            [ -z "$ok" ] && continue
+            found=false
+            for declared in $declared_outputs; do
+                if [ "$declared" = "$ok" ]; then
+                    found=true
+                    break
+                fi
+            done
+            if [ "$found" = false ]; then
+                fail "Phase '$phase' output_hashes has extra key '$ok' not in manifest required_outputs"
+                ERRORS=$((ERRORS + 1))
+            fi
+        done
+    else
+        # Fallback: use state.yaml required_inputs/required_outputs.
+        req_inputs=$(yq -r ".phases.\"$phase\".required_inputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
+        for key in $req_inputs; do
+            [ -z "$key" ] && continue
+            if [ "${key: -1}" = "/" ]; then
+                continue
+            fi
+            has_key=$(echo "$input_hashes" | yq -r "has(\"$key\")" 2>/dev/null || echo "false")
+            if [ "$has_key" != "true" ]; then
+                fail "Phase '$phase' required input '$key' missing from input_hashes"
+                ERRORS=$((ERRORS + 1))
+            fi
+        done
+
+        req_outputs=$(yq -r ".phases.\"$phase\".required_outputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
+        declared_outputs=""
+        for key in $req_outputs; do
+            [ -z "$key" ] && continue
+            declared_outputs="$declared_outputs $key"
+            has_key=$(echo "$output_hashes" | yq -r "has(\"$key\")" 2>/dev/null || echo "false")
+            if [ "$has_key" != "true" ]; then
+                fail "Phase '$phase' required output '$key' missing from output_hashes"
+                ERRORS=$((ERRORS + 1))
+            fi
+        done
+
+        out_keys=$(echo "$output_hashes" | yq -r 'keys | .[]' 2>/dev/null || echo "")
+        for ok in $out_keys; do
+            [ -z "$ok" ] && continue
+            found=false
+            for declared in $declared_outputs; do
+                if [ "$declared" = "$ok" ]; then
+                    found=true
+                    break
+                fi
+            done
+            if [ "$found" = false ]; then
+                fail "Phase '$phase' output_hashes has extra key '$ok' not in required_outputs"
+                ERRORS=$((ERRORS + 1))
             fi
         done
     fi

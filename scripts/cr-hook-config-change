@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# cr-hook-config-change — Detect enforcement hook weakening or removal.
+# This hook fires when .claude/settings.json or other config changes.
+# It verifies all required CriticalResearch hooks are still present and active.
+#
+# Usage: cr-hook-config-change [args...]
+# Input: JSON via stdin (Claude Code hook protocol)
+# Output: JSON to stdout
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Read the hook input JSON from stdin.
+HOOK_INPUT=$(cat)
+
+# Find the project settings.json.
+SETTINGS_JSON=""
+if [ -f ".claude/settings.json" ]; then
+    SETTINGS_JSON=".claude/settings.json"
+fi
+
+ERRORS=""
+
+# Check 1: UserPromptExpansion exists.
+if [ -n "$SETTINGS_JSON" ]; then
+    if ! grep -q '"UserPromptExpansion"' "$SETTINGS_JSON" 2>/dev/null; then
+        ERRORS="$ERRORS UserPromptExpansion hook missing;"
+    fi
+fi
+
+# Check 2: UserPromptSubmit exists.
+if [ -n "$SETTINGS_JSON" ]; then
+    if ! grep -q '"UserPromptSubmit"' "$SETTINGS_JSON" 2>/dev/null; then
+        ERRORS="$ERRORS UserPromptSubmit hook missing;"
+    fi
+fi
+
+# Check 3: PreToolUse exists.
+if [ -n "$SETTINGS_JSON" ]; then
+    if ! grep -q '"PreToolUse"' "$SETTINGS_JSON" 2>/dev/null; then
+        ERRORS="$ERRORS PreToolUse hook missing;"
+    fi
+fi
+
+# Check 4: PostToolUse exists.
+if [ -n "$SETTINGS_JSON" ]; then
+    if ! grep -q '"PostToolUse"' "$SETTINGS_JSON" 2>/dev/null; then
+        ERRORS="$ERRORS PostToolUse hook missing;"
+    fi
+fi
+
+# Check 5: Stop exists.
+if [ -n "$SETTINGS_JSON" ]; then
+    if ! grep -q '"Stop"' "$SETTINGS_JSON" 2>/dev/null; then
+        ERRORS="$ERRORS Stop hook missing;"
+    fi
+fi
+
+# Check 6: ConfigChange exists.
+if [ -n "$SETTINGS_JSON" ]; then
+    if ! grep -q '"ConfigChange"' "$SETTINGS_JSON" 2>/dev/null; then
+        ERRORS="$ERRORS ConfigChange hook missing;"
+    fi
+fi
+
+# Check 7: PreToolUse matcher covers Write|Edit|MultiEdit|Bash.
+if [ -n "$SETTINGS_JSON" ]; then
+    if ! grep -A5 '"PreToolUse"' "$SETTINGS_JSON" 2>/dev/null | grep -q 'Write|Edit|MultiEdit|Bash'; then
+        ERRORS="$ERRORS PreToolUse matcher does not cover Write|Edit|MultiEdit|Bash;"
+    fi
+fi
+
+# Check 8: Stop calls critical-research-hook stop.
+if [ -n "$SETTINGS_JSON" ]; then
+    if ! grep -A5 '"Stop"' "$SETTINGS_JSON" 2>/dev/null | grep -q 'critical-research-hook stop'; then
+        ERRORS="$ERRORS Stop hook does not dispatch critical-research-hook;"
+    fi
+fi
+
+# Check 9: critical-research-hook wrapper is executable.
+WRAPPER="$SCRIPT_DIR/critical-research-hook"
+if [ ! -x "$WRAPPER" ]; then
+    ERRORS="$ERRORS critical-research-hook wrapper not executable;"
+fi
+
+# Check 10: No disableAllHooks:true in committed files.
+if grep -r '"disableAllHooks"\s*:\s*true' . --include="*.json" 2>/dev/null | grep -v '.git/' > /dev/null; then
+    ERRORS="$ERRORS disableAllHooks:true found;"
+fi
+
+# Check 11: critical-research-hook dispatches all 6 events.
+for event in user-prompt-expansion user-prompt-submit pre-tool-use post-tool-use stop config-change; do
+    if ! grep -q "$event)" "$WRAPPER" 2>/dev/null; then
+        ERRORS="$ERRORS critical-research-hook missing $event dispatch;"
+    fi
+done
+
+# Report results.
+if [ -n "$ERRORS" ]; then
+    REASON="CriticalResearch enforcement hooks were removed or weakened:$ERRORS"
+    cat << EOF
+{
+  "decision": "block",
+  "reason": "$REASON"
+}
+EOF
+    exit 1
+else
+    echo '{"decision":"allow"}'
+    exit 0
+fi

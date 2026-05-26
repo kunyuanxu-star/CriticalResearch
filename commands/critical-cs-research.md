@@ -1,3 +1,25 @@
+---
+description: "Start enforced 37-phase CriticalResearch paper transaction"
+argument-hint: "<project> <objective>"
+allowed-tools:
+  - "Bash(cr-start-paper-round:*)"
+  - "Bash(cr step:*)"
+  - "Bash(cr review-module:*)"
+  - "Bash(cr close-round:*)"
+  - "Bash(cr-validate-phase:*)"
+  - "Bash(cr-validate-phase-run-log:*)"
+  - "Bash(cr-validate-module-review:*)"
+  - "Bash(cr-validate-module-checkpoint:*)"
+  - "Read"
+  - "Write"
+  - "Edit"
+  - "MultiEdit"
+  - "Grep"
+  - "Glob"
+  - "Task"
+  - "AskUserQuestion"
+---
+
 # /critical-cs-research
 
 Start a new 37-phase paper research round for a CriticalResearch project.
@@ -11,13 +33,25 @@ Start a new 37-phase paper research round for a CriticalResearch project.
 ## Arguments
 
 - `project`: Existing project ID in the workspace. Must have `writing/paper-draft.md`.
-- `objective`: A concise description of what this round should focus on (e.g. "检查 introduction 的 claim 精度、related work 的 baseline 覆盖、evaluation contract 的完整性").
+- `objective`: A concise description of what this round should focus on.
 
-## What it does
+## Execution Contract
 
-1. Calls `cr-start-paper-round <project> "<objective>"` — the **only** valid entry point for paper rounds.
-2. Calls `cr step <project> status` to show the current phase and required outputs.
-3. Outputs the Phase 1 prompt and asks you to begin execution.
+Parse arguments as:
+
+```
+PROJECT=<first token>
+OBJECTIVE=<remaining text>
+```
+
+Run exactly:
+
+```bash
+cr-start-paper-round "$PROJECT" "$OBJECTIVE"
+cr step "$PROJECT" status
+```
+
+Then execute the current phase. Do not summarize completion until `cr close-round "$PROJECT"` succeeds.
 
 ## Invariants (must not be violated)
 

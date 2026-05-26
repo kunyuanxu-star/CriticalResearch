@@ -25,7 +25,17 @@ echo ""
 echo "── Test 1: 37-phase round initialization ──"
 cr workspace init > /dev/null 2>&1
 cr start e2e-test > /dev/null 2>&1
-cr round e2e-test --mode paper > /dev/null 2>&1
+
+# Paper rounds require prerequisite files.
+mkdir -p e2e-test/writing e2e-test/state
+echo "# test paper" > e2e-test/writing/paper-draft.md
+echo "schema_version: \"1.0.0\"" > e2e-test/state/claim-ledger.yaml
+
+# Clear any active round from cr start so cr-start-paper-round can create a new one.
+jq '.active_round = null' e2e-test/state/project-state.json > e2e-test/state/project-state.json.tmp && \
+    mv e2e-test/state/project-state.json.tmp e2e-test/state/project-state.json
+
+cr round e2e-test --mode paper "test objective" > /dev/null 2>&1
 
 PHASE_COUNT=$(yq -r '.phase_order | length' e2e-test/rounds/round-002/state.yaml 2>/dev/null || echo "0")
 [ "$PHASE_COUNT" = "37" ] && pass "Phase count = 37" || fail "Phase count = $PHASE_COUNT (expected 37)"

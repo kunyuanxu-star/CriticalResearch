@@ -15,7 +15,7 @@ jobs:
         run: sudo apt-get install -y shellcheck
       - name: Run shellcheck
         run: |
-          shellcheck scripts/cr scripts/cr-* scripts/critical-research-hook
+          shellcheck scripts/cr scripts/cr-* scripts/critical-research-hook scripts/cr-resolve-artifact-path scripts/cr-start-paper-round scripts/cr-validate-module-checkpoint scripts/cr-validate-module-review scripts/cr-validate-phase-run-log scripts/cr-hook-user-prompt-expansion scripts/cr-hook-config-change
 
   syntax:
     runs-on: ubuntu-latest
@@ -55,6 +55,99 @@ jobs:
           export PATH="$PWD/scripts:$PATH"
           bash tests/test-full-round-enforcement.sh
 
+  37-phase-happy-path:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y jq
+          sudo wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+      - name: Run 37-phase state machine happy path
+        run: |
+          export PATH="$PWD/scripts:$PATH"
+          export CR_SKILL_HOME="$PWD"
+          bash tests/test-37-phase-state-machine-happy-path.sh
+
+  slash-command-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run slash command contract test
+        run: |
+          export PATH="$PWD/scripts:$PATH"
+          bash tests/test-slash-command-contract.sh
+
+  phase-run-log-io:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y jq
+          sudo wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+      - name: Run phase-run-log required IO test
+        run: |
+          export PATH="$PWD/scripts:$PATH"
+          export CR_SKILL_HOME="$PWD"
+          bash tests/test-phase-run-log-required-io.sh
+
+  module-checkpoint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y jq
+          sudo wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+      - name: Run module checkpoint test
+        run: |
+          export PATH="$PWD/scripts:$PATH"
+          export CR_SKILL_HOME="$PWD"
+          bash tests/test-module-checkpoint.sh
+
+  close-round-protocol:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y jq
+          sudo wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+      - name: Run close-round protocol test
+        run: |
+          export PATH="$PWD/scripts:$PATH"
+          export CR_SKILL_HOME="$PWD"
+          bash tests/test-close-round-protocol.sh
+
+  hook-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run hook contract test
+        run: |
+          export PATH="$PWD/scripts:$PATH"
+          bash tests/test-hook-contract.sh
+
+  module-review-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y jq
+          sudo wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+      - name: Run module review gate test
+        run: |
+          export PATH="$PWD/scripts:$PATH"
+          export CR_SKILL_HOME="$PWD"
+          bash tests/test-module-review-gate.sh
+
   yaml-templates:
     runs-on: ubuntu-latest
     steps:
@@ -77,8 +170,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify hook config in settings.json
         run: |
-          echo "Checking .claude/settings.json for all 4 hook events..."
-          for event in UserPromptSubmit PreToolUse PostToolUse Stop; do
+          echo "Checking .claude/settings.json for all 6 hook events..."
+          for event in UserPromptExpansion UserPromptSubmit PreToolUse PostToolUse Stop ConfigChange; do
             grep -q "\"$event\"" .claude/settings.json || {
               echo "FAIL: Hook $event missing from .claude/settings.json"
               exit 1
@@ -99,7 +192,7 @@ jobs:
       - name: Verify hook wrapper dispatch is correct
         run: |
           echo "Checking critical-research-hook dispatch..."
-          for event in user-prompt-submit pre-tool-use post-tool-use stop; do
+          for event in user-prompt-expansion user-prompt-submit pre-tool-use post-tool-use stop config-change; do
             script_name="cr-hook-${event}"
             grep -q "$script_name" scripts/critical-research-hook || {
               echo "FAIL: $script_name not dispatched in critical-research-hook"

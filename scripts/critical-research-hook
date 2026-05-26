@@ -25,6 +25,9 @@ HOOK="${1:-}"
 shift 2>/dev/null || true
 
 case "$HOOK" in
+    user-prompt-expansion)
+        exec "$SKILL_HOME/scripts/cr-hook-user-prompt-expansion" "$@"
+        ;;
     user-prompt-submit)
         exec "$SKILL_HOME/scripts/cr-hook-user-prompt-submit" "$@"
         ;;
@@ -37,8 +40,11 @@ case "$HOOK" in
     stop)
         exec "$SKILL_HOME/scripts/cr-hook-stop" "$@"
         ;;
+    config-change)
+        exec "$SKILL_HOME/scripts/cr-hook-config-change" "$@"
+        ;;
     *)
-        echo "Usage: critical-research-hook <user-prompt-submit|pre-tool-use|post-tool-use|stop> [args...]" >&2
+        echo "Usage: critical-research-hook <user-prompt-expansion|user-prompt-submit|pre-tool-use|post-tool-use|stop|config-change> [args...]" >&2
         exit 2
         ;;
 esac

@@ -44,21 +44,35 @@ fi
 
 # ── Helper: check module review ──────────────────────────────────
 
+get_module_for_phase() {
+    local phase="$1"
+    case "$phase" in
+        freeze_full_paper_coverage)       echo "M0" ;;
+        generate_search_strategy)         echo "M1" ;;
+        update_literature_knowledge)      echo "M2" ;;
+        synthesize_evaluation_gaps)       echo "M3" ;;
+        merge_critique_ledger)            echo "M4" ;;
+        generate_experiment_obligations)  echo "M5" ;;
+        reviewer_readiness_pass)          echo "M6" ;;
+        prepare_next_round)               echo "M7" ;;
+        *) echo "" ;;
+    esac
+}
+
 check_module_review() {
     local phase="$1"
     local round_dir="$2"
+    local state_file="${3:-$round_dir/state.yaml}"
     local mod=""
-    case "$phase" in
-        freeze_full_paper_coverage)       mod="M0" ;;
-        generate_search_strategy)         mod="M1" ;;
-        update_literature_knowledge)      mod="M2" ;;
-        synthesize_evaluation_gaps)       mod="M3" ;;
-        merge_critique_ledger)            mod="M4" ;;
-        generate_experiment_obligations)  mod="M5" ;;
-        reviewer_readiness_pass)          mod="M6" ;;
-        prepare_next_round)               mod="M7" ;;
-    esac
+    mod=$(get_module_for_phase "$phase")
     [ -z "$mod" ] && return 0
+
+    # Check state.yaml module_reviews status (redundant but fast).
+    local state_review_status
+    state_review_status=$(yq -r ".module_reviews.\"$mod\".status // \"\"" "$state_file" 2>/dev/null || echo "")
+    if [ "$state_review_status" = "pass" ]; then
+        return 0
+    fi
 
     local review_file="$round_dir/phase-reviews/${mod}-review.yaml"
     if [ -f "$review_file" ]; then
@@ -123,12 +137,21 @@ auto_unblock() {
 if [ "$PHASE_STATUS" = "complete" ]; then
     echo "Phase '$PHASE' is already complete."
 
-    if ! check_module_review "$PHASE" "$ROUND_DIR"; then
+    if ! check_module_review "$PHASE" "$ROUND_DIR" "$STATE_FILE"; then
+        # Set review_required in state if this is a boundary phase.
+        mod=$(get_module_for_phase "$PHASE")
+        if [ -n "$mod" ]; then
+            yq -i ".module_reviews.\"$mod\".status = \"review_required\"" "$STATE_FILE" 2>/dev/null || true
+        fi
         echo "Module review still pending. Cannot advance."
-        exit 0
+        exit 3
     fi
 
-    # Review OK — auto-unblock and exit.
+    # Review OK — sync state to pass, then auto-unblock and exit.
+    mod=$(get_module_for_phase "$PHASE")
+    if [ -n "$mod" ]; then
+        yq -i ".module_reviews.\"$mod\".status = \"pass\"" "$STATE_FILE" 2>/dev/null || true
+    fi
     auto_unblock "$STATE_FILE"
     exit 0
 fi
@@ -268,6 +291,9 @@ fi
         elif [ -d "$f" ]; then
             h=$(find "$f" -type f -exec shasum -a 256 {} \; 2>/dev/null | awk '{print $1}' | sort | shasum -a 256 | cut -d' ' -f1 || echo "unknown")
             echo "      \"$out\": \"$h\""
+        elif [ -f "$PROJECT_DIR/$out" ]; then
+            h=$(shasum -a 256 "$PROJECT_DIR/$out" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
+            echo "      \"$out\": \"$h\""
         fi
     done
     [ -z "$ALL_OUTPUTS" ] && echo "      {}"
@@ -278,16 +304,27 @@ echo "  Phase execution recorded in phase-run-log.yaml"
 # If this phase is the last in a module, the module review must exist
 # and have status=pass before the next module's phases can unblock.
 
-if ! check_module_review "$PHASE" "$ROUND_DIR"; then
+if ! check_module_review "$PHASE" "$ROUND_DIR" "$STATE_FILE"; then
+    # Set review_required in state.
+    mod=$(get_module_for_phase "$PHASE")
+    if [ -n "$mod" ]; then
+        yq -i ".module_reviews.\"$mod\".status = \"review_required\"" "$STATE_FILE" 2>/dev/null || true
+    fi
     echo ""
     echo "══ Module Review Checkpoint ══"
     echo "Phase '$PHASE' completes a module."
     echo "Module review is required before proceeding to the next module."
     echo ""
-    echo "Run: cr review-module $(basename "$PROJECT_DIR") <module>"
+    echo "Run: cr review-module $(basename "$PROJECT_DIR") $mod"
     echo ""
     echo "Phase '$PHASE' is COMPLETE. The next module is BLOCKED pending review."
-    exit 0
+    exit 3
+fi
+
+# Review passed — sync state.
+mod=$(get_module_for_phase "$PHASE")
+if [ -n "$mod" ]; then
+    yq -i ".module_reviews.\"$mod\".status = \"pass\"" "$STATE_FILE" 2>/dev/null || true
 fi
 
 # ── Auto-unblock next phases whose dependencies are now satisfied ──

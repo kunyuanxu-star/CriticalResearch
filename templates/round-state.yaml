@@ -1310,6 +1310,40 @@ phases:
     phase_validators_hint:
       - cr-run-validator-pipeline
 
+module_reviews:
+  M0:
+    status: pending
+    boundary_phase: freeze_full_paper_coverage
+    review_file: phase-reviews/M0-review.yaml
+  M1:
+    status: pending
+    boundary_phase: generate_search_strategy
+    review_file: phase-reviews/M1-review.yaml
+  M2:
+    status: pending
+    boundary_phase: update_literature_knowledge
+    review_file: phase-reviews/M2-review.yaml
+  M3:
+    status: pending
+    boundary_phase: synthesize_evaluation_gaps
+    review_file: phase-reviews/M3-review.yaml
+  M4:
+    status: pending
+    boundary_phase: merge_critique_ledger
+    review_file: phase-reviews/M4-review.yaml
+  M5:
+    status: pending
+    boundary_phase: generate_experiment_obligations
+    review_file: phase-reviews/M5-review.yaml
+  M6:
+    status: pending
+    boundary_phase: reviewer_readiness_pass
+    review_file: phase-reviews/M6-review.yaml
+  M7:
+    status: pending
+    boundary_phase: prepare_next_round
+    review_file: phase-reviews/M7-review.yaml
+
 closure_policy:
   require_all_phases_complete: true
   require_exact_phase_count: 37

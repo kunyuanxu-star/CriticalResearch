@@ -144,4 +144,10 @@ findings: []
 blocking_findings: []
 YAML
 
+# Update state.yaml module_reviews status.
+STATE_FILE="$ROUND_DIR/state.yaml"
+if [ -f "$STATE_FILE" ]; then
+    yq -i ".module_reviews.\"$MODULE\".status = \"$REVIEW_STATUS\"" "$STATE_FILE" 2>/dev/null || true
+fi
+
 echo "Generated $REVIEW_FILE (status: $REVIEW_STATUS)"

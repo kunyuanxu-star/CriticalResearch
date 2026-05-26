@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# cr-validate-module-checkpoint — Check module review gates for completed modules.
+# A module is "completed" when its boundary phase is marked complete in state.yaml.
+# Every completed module must have a phase-reviews/Mx-review.yaml with status=pass
+# and zero blocking_findings.
+#
+# Usage: cr-validate-module-checkpoint <project_dir> <round_dir>
+#
+# Returns 0 if all completed modules have passing reviews.
+# Returns 1 if a module review is missing or not passing.
+# Output: human-readable error messages to stderr.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+ROUND_DIR="${2:-}"
+
+if [ -z "$PROJECT_DIR" ] || [ -z "$ROUND_DIR" ]; then
+    echo "Usage: cr-validate-module-checkpoint <project_dir> <round_dir>" >&2
+    exit 2
+fi
+
+STATE_FILE="$ROUND_DIR/state.yaml"
+if [ ! -f "$STATE_FILE" ]; then
+    echo "state.yaml missing" >&2
+    exit 1
+fi
+
+# Module boundary phases: completing this phase means the module is done.
+# These are the LAST phase in each module (M0-M7).
+declare -A MODULE_BOUNDARY=(
+    [freeze_full_paper_coverage]="M0"
+    [generate_search_strategy]="M1"
+    [update_literature_knowledge]="M2"
+    [synthesize_evaluation_gaps]="M3"
+    [merge_critique_ledger]="M4"
+    [generate_experiment_obligations]="M5"
+    [reviewer_readiness_pass]="M6"
+    [prepare_next_round]="M7"
+)
+
+REVIEW_DIR="$ROUND_DIR/phase-reviews"
+FAILS=0
+MISSING_MOD=""
+
+for phase in "${!MODULE_BOUNDARY[@]}"; do
+    mod="${MODULE_BOUNDARY[$phase]}"
+
+    # Check if this boundary phase is complete.
+    phase_status=$(yq -r ".phases.\"$phase\".status // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
+    if [ "$phase_status" != "complete" ]; then
+        # Module not yet complete — skip review check.
+        continue
+    fi
+
+    # Module is complete — review must exist and pass.
+    review_file="$REVIEW_DIR/${mod}-review.yaml"
+    if [ ! -f "$review_file" ]; then
+        echo "Module $mod review missing: ${mod}-review.yaml" >&2
+        MISSING_MOD="$mod"
+        FAILS=$((FAILS + 1))
+        continue
+    fi
+
+    status=$(yq -r '.status // ""' "$review_file" 2>/dev/null || echo "")
+    if [ "$status" != "pass" ]; then
+        echo "Module $mod review status='$status' (expected 'pass')" >&2
+        MISSING_MOD="$mod"
+        FAILS=$((FAILS + 1))
+        continue
+    fi
+
+    blocking=$(yq -r '.blocking_findings | length // 0' "$review_file" 2>/dev/null || echo "0")
+    if [ "$blocking" -gt 0 ] 2>/dev/null; then
+        echo "Module $mod review has $blocking blocking finding(s)" >&2
+        MISSING_MOD="$mod"
+        FAILS=$((FAILS + 1))
+        continue
+    fi
+done
+
+[ "$FAILS" -gt 0 ] && exit 1
+exit 0

@@ -787,13 +787,18 @@ echo ""
 advance_phase() {
     local phase="$1"
     echo "── Advancing: $phase ──"
-    if cr step e2e-happy advance > /tmp/cr-advance-$phase.out 2>&1; then
+    local EXIT_CODE=0
+    cr step e2e-happy advance > /tmp/cr-advance-$phase.out 2>&1 || EXIT_CODE=$?
+    if [ "$EXIT_CODE" -eq 0 ]; then
         pass "$phase advanced"
+        return 0
+    elif [ "$EXIT_CODE" -eq 3 ]; then
+        pass "$phase complete (module review required before next module)"
         return 0
     else
         echo "  Output:"
         sed 's/^/    /' /tmp/cr-advance-$phase.out
-        fail "$phase failed to advance"
+        fail "$phase failed to advance (exit $EXIT_CODE)"
         return 1
     fi
 }

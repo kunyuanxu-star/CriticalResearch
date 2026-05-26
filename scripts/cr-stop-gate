@@ -129,6 +129,31 @@ EOF
     fi
 fi
 
+# ── Module review checkpoint ────────────────────────────────────
+# If any completed module lacks a passing review, block stop.
+
+MODULE_CHECKPOINT="$SCRIPT_DIR/cr-validate-module-checkpoint"
+if [ -x "$MODULE_CHECKPOINT" ]; then
+    if ! "$MODULE_CHECKPOINT" "$PROJECT_DIR" "$ROUND_DIR" >/tmp/cr-module-check.out 2>&1; then
+        REASON=$(head -c 2000 /tmp/cr-module-check.out 2>/dev/null || echo "Module review checkpoint failed")
+        # Extract the module name from the error output for a precise message.
+        MISSING_MOD=$(grep -oE 'Module M[0-7]' /tmp/cr-module-check.out | head -1 | sed 's/Module //' || echo "")
+        PROJECT_NAME=$(basename "$PROJECT_DIR")
+        if [ -n "$MISSING_MOD" ]; then
+            NEXT_MOD_NUM=$(( ${MISSING_MOD:1} + 1 ))
+            NEXT_MOD="M${NEXT_MOD_NUM}"
+            cat << EOF
+{"decision":"block","reason":"Module $MISSING_MOD review is required before entering $NEXT_MOD.","systemMessage":"Module $MISSING_MOD review is required before entering $NEXT_MOD.\n\nRun: cr review-module $PROJECT_NAME $MISSING_MOD\n\nThen regenerate the review file with status=pass and zero blocking_findings."}
+EOF
+        else
+            cat << EOF
+{"decision":"block","reason":"$REASON","systemMessage":"$REASON\n\nRun: cr review-module $PROJECT_NAME <module>"}
+EOF
+        fi
+        exit 1
+    fi
+fi
+
 # ── Check round status ──────────────────────────────────────────
 
 ROUND_STATUS=""

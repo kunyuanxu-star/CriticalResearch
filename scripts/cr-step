@@ -253,7 +253,16 @@ HDR
 
         # Delegate to cr-complete-phase: validates, marks complete, unblocks next.
         if [ -x "$SCRIPT_DIR/cr-complete-phase" ]; then
-            exec "$SCRIPT_DIR/cr-complete-phase" "$PROJECT_DIR" "$ROUND_DIR" "$CURRENT"
+            "$SCRIPT_DIR/cr-complete-phase" "$PROJECT_DIR" "$ROUND_DIR" "$CURRENT"
+            EXIT_CODE=$?
+            if [ "$EXIT_CODE" -eq 3 ]; then
+                # Module review required — cr-complete-phase already printed the message.
+                exit 3
+            fi
+            if [ "$EXIT_CODE" -ne 0 ]; then
+                exit "$EXIT_CODE"
+            fi
+            exit 0
         fi
 
         # Fallback if cr-complete-phase not available.

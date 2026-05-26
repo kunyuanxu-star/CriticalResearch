@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# cr-hook-user-prompt-expansion — Gate slash command expansion before it happens.
+# This hook intercepts /critical-cs-research BEFORE Claude expands it into a prompt.
+# It validates arguments, workspace state, and project prerequisites.
+#
+# Usage: cr-hook-user-prompt-expansion [args...]
+# Input: JSON via stdin (Claude Code hook protocol)
+# Output: JSON to stdout
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+# Read the hook input JSON from stdin.
+HOOK_INPUT=$(cat)
+
+# Extract slash command arguments from the hook input.
+# The UserPromptExpansion hook receives the raw command text.
+CMD_TEXT=$(echo "$HOOK_INPUT" | jq -r '.commandText // .text // ""' 2>/dev/null || echo "")
+
+# Parse arguments: everything after the command name.
+ARGS=""
+if [ -n "$CMD_TEXT" ]; then
+    # Remove the leading slash command name.
+    ARGS=$(echo "$CMD_TEXT" | sed 's/^\/critical-cs-research\b//' | sed 's/^\s*//' || echo "")
+fi
+
+# Extract project (first token) and objective (remaining text).
+PROJECT=""
+OBJECTIVE=""
+if [ -n "$ARGS" ]; then
+    PROJECT=$(echo "$ARGS" | awk '{print $1}')
+    OBJECTIVE=$(echo "$ARGS" | cut -d' ' -f2-)
+fi
+
+# Validate: must have both project and objective.
+if [ -z "$PROJECT" ] || [ -z "$OBJECTIVE" ]; then
+    cat << 'EOF'
+{
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptExpansion",
+    "permissionDecision": "deny",
+    "reason": "Usage: /critical-cs-research <project> <objective>"
+  }
+}
+EOF
+    exit 0
+fi
+
+# Resolve workspace root.
+WORKSPACE_ROOT="$(cr_workspace_root 2>/dev/null || echo "")"
+if [ -z "$WORKSPACE_ROOT" ]; then
+    cat << 'EOF'
+{
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptExpansion",
+    "permissionDecision": "deny",
+    "reason": "Workspace not initialized. Run: cr workspace init"
+  }
+}
+EOF
+    exit 0
+fi
+
+PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
+
+# Validate: project must exist.
+if [ ! -d "$PROJECT_DIR" ]; then
+    cat << EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptExpansion",
+    "permissionDecision": "deny",
+    "reason": "Project '$PROJECT' not found. Run: cr start $PROJECT"
+  }
+}
+EOF
+    exit 0
+fi
+
+# Validate: project must have prerequisite files.
+if [ ! -f "$PROJECT_DIR/writing/paper-draft.md" ]; then
+    cat << EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptExpansion",
+    "permissionDecision": "deny",
+    "reason": "Project '$PROJECT' missing writing/paper-draft.md. Paper rounds require a draft."
+  }
+}
+EOF
+    exit 0
+fi
+
+if [ ! -f "$PROJECT_DIR/state/claim-ledger.yaml" ]; then
+    cat << EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptExpansion",
+    "permissionDecision": "deny",
+    "reason": "Project '$PROJECT' missing state/claim-ledger.yaml."
+  }
+}
+EOF
+    exit 0
+fi
+
+# Validate: must not have an active round already.
+STATE_FILE="$PROJECT_DIR/state/project-state.json"
+if [ -f "$STATE_FILE" ]; then
+    ACTIVE_ROUND=$(jq -r '.active_round // "null"' "$STATE_FILE" 2>/dev/null || echo "null")
+    if [ "$ACTIVE_ROUND" != "null" ] && [ -n "$ACTIVE_ROUND" ]; then
+        cat << EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptExpansion",
+    "permissionDecision": "deny",
+    "reason": "Project '$PROJECT' already has an active round (round-$ACTIVE_ROUND). Resume with 'cr step $PROJECT status', or close it with 'cr close-round $PROJECT' before starting a new one."
+  }
+}
+EOF
+        exit 0
+    fi
+fi
+
+# All checks pass — allow expansion with injected context.
+cat << EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptExpansion",
+    "permissionDecision": "allow",
+    "additionalContext": "CriticalResearch paper transaction requested for project '$PROJECT'. The ONLY valid launcher is cr-start-paper-round. After launch, execute phases via cr step $PROJECT advance. Do not bypass, skip, or manually edit state files."
+  }
+}
+EOF
+exit 0
