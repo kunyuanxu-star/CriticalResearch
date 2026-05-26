@@ -148,6 +148,133 @@ jobs:
           export CR_SKILL_HOME="$PWD"
           bash tests/test-module-review-gate.sh
 
+  user-prompt-expansion:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y jq
+          sudo wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+      - name: Run UserPromptExpansion hook test
+        run: |
+          export PATH="$PWD/scripts:$PATH"
+          export CR_SKILL_HOME="$PWD"
+          bash tests/test-user-prompt-expansion-hook.sh
+
+  config-change-blocks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run ConfigChange hook removal test
+        run: |
+          export PATH="$PWD/scripts:$PATH"
+          bash tests/test-config-change-blocks-hook-removal.sh
+
+  directory-hash-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run directory hash proof test
+        run: |
+          export PATH="$PWD/scripts:$PATH"
+          bash tests/test-directory-hash-proof.sh
+
+  no-bare-hash-key:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y jq
+          sudo wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+      - name: Run bare hash key rejection test
+        run: |
+          export PATH="$PWD/scripts:$PATH"
+          export CR_SKILL_HOME="$PWD"
+          bash tests/test-no-bare-hash-key.sh
+
+  scoped-run-log-io:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y jq
+          sudo wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+      - name: Run scoped run-log IO test
+        run: |
+          export PATH="$PWD/scripts:$PATH"
+          export CR_SKILL_HOME="$PWD"
+          bash tests/test-scoped-run-log-io.sh
+
+  stop-gate-run-log-mismatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y jq
+          sudo wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+      - name: Run stop gate run-log mismatch test
+        run: |
+          export PATH="$PWD/scripts:$PATH"
+          export CR_SKILL_HOME="$PWD"
+          bash tests/test-stop-gate-run-log-mismatch.sh
+
+  review-structural-vs-semantic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y jq
+          sudo wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+      - name: Run structural vs semantic review test
+        run: |
+          export PATH="$PWD/scripts:$PATH"
+          export CR_SKILL_HOME="$PWD"
+          bash tests/test-review-structural-vs-semantic.sh
+
+  release-gate:
+    runs-on: ubuntu-latest
+    needs:
+      - shellcheck
+      - syntax
+      - schemas
+      - happy-path
+      - 37-phase-happy-path
+      - slash-command-contract
+      - phase-run-log-io
+      - module-checkpoint
+      - close-round-protocol
+      - hook-contract
+      - module-review-gate
+      - user-prompt-expansion
+      - config-change-blocks
+      - directory-hash-proof
+      - no-bare-hash-key
+      - scoped-run-log-io
+      - stop-gate-run-log-mismatch
+      - review-structural-vs-semantic
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y jq
+          sudo wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+      - name: Run release gate
+        run: |
+          export PATH="$PWD/scripts:$PATH"
+          export CR_SKILL_HOME="$PWD"
+          bash tests/test-release-gate.sh
+
   yaml-templates:
     runs-on: ubuntu-latest
     steps:

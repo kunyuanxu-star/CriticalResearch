@@ -76,12 +76,23 @@ check_module_review() {
 
     local review_file="$round_dir/phase-reviews/${mod}-review.yaml"
     if [ -f "$review_file" ]; then
-        local review_status
-        review_status=$(yq -r '.status // ""' "$review_file" 2>/dev/null || echo "")
-        local review_blocking
-        review_blocking=$(yq -r '.blocking_findings | length // 0' "$review_file" 2>/dev/null || echo 0)
-        if [ "$review_status" = "pass" ] && [ "$review_blocking" -eq 0 ] 2>/dev/null; then
-            return 0
+        # Prefer new structural_review block; fall back to legacy top-level.
+        local structural_status
+        structural_status=$(yq -r '.structural_review.status // ""' "$review_file" 2>/dev/null || echo "")
+        if [ -n "$structural_status" ]; then
+            local structural_blocking
+            structural_blocking=$(yq -r '.structural_review.blocking_findings | length // 0' "$review_file" 2>/dev/null || echo 0)
+            if [ "$structural_status" = "pass" ] && [ "$structural_blocking" -eq 0 ] 2>/dev/null; then
+                return 0
+            fi
+        else
+            local review_status
+            review_status=$(yq -r '.status // ""' "$review_file" 2>/dev/null || echo "")
+            local review_blocking
+            review_blocking=$(yq -r '.blocking_findings | length // 0' "$review_file" 2>/dev/null || echo 0)
+            if [ "$review_status" = "pass" ] && [ "$review_blocking" -eq 0 ] 2>/dev/null; then
+                return 0
+            fi
         fi
     fi
     return 1

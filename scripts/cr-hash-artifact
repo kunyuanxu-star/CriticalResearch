@@ -52,10 +52,17 @@ fi
 
 # Compute hash based on kind.
 if [ "$KIND" = "directory" ] || [ -d "$ABS_PATH" ]; then
-    # Directory hash: content-only hash of all files.
-    # Exclude paths via awk, sort hashes, then hash the sorted list.
-    find "$ABS_PATH" -type f -exec shasum -a 256 {} \; 2>/dev/null | \
-        awk '{print $1}' | sort | shasum -a 256 | cut -d' ' -f1
+    # Directory hash includes BOTH file content AND relative path.
+    # Format per line: "<hash>  <relative_path>"
+    # Then hash the entire sorted listing.
+    # This ensures file renames, moves, and structural changes change the hash.
+    (
+      cd "$ABS_PATH"
+      find . -type f | sort | while read -r rel; do
+          h=$(shasum -a 256 "$rel" | cut -d' ' -f1)
+          printf '%s  %s\n' "$h" "$rel"
+      done
+    ) | shasum -a 256 | cut -d' ' -f1
 else
     # File hash: direct sha256.
     shasum -a 256 "$ABS_PATH" 2>/dev/null | cut -d' ' -f1

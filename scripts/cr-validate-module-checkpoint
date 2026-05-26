@@ -65,20 +65,38 @@ for phase in "${!MODULE_BOUNDARY[@]}"; do
         continue
     fi
 
-    status=$(yq -r '.status // ""' "$review_file" 2>/dev/null || echo "")
-    if [ "$status" != "pass" ]; then
-        echo "Module $mod review status='$status' (expected 'pass')" >&2
-        MISSING_MOD="$mod"
-        FAILS=$((FAILS + 1))
-        continue
-    fi
-
-    blocking=$(yq -r '.blocking_findings | length // 0' "$review_file" 2>/dev/null || echo "0")
-    if [ "$blocking" -gt 0 ] 2>/dev/null; then
-        echo "Module $mod review has $blocking blocking finding(s)" >&2
-        MISSING_MOD="$mod"
-        FAILS=$((FAILS + 1))
-        continue
+    # Prefer new structural_review block; fall back to legacy top-level fields.
+    structural_status=$(yq -r '.structural_review.status // ""' "$review_file" 2>/dev/null || echo "")
+    if [ -n "$structural_status" ]; then
+        if [ "$structural_status" != "pass" ]; then
+            echo "Module $mod structural review status='$structural_status' (expected 'pass')" >&2
+            MISSING_MOD="$mod"
+            FAILS=$((FAILS + 1))
+            continue
+        fi
+        blocking=$(yq -r '.structural_review.blocking_findings | length // 0' "$review_file" 2>/dev/null || echo "0")
+        if [ "$blocking" -gt 0 ] 2>/dev/null; then
+            echo "Module $mod structural review has $blocking blocking finding(s)" >&2
+            MISSING_MOD="$mod"
+            FAILS=$((FAILS + 1))
+            continue
+        fi
+    else
+        # Legacy format: top-level status + blocking_findings.
+        status=$(yq -r '.status // ""' "$review_file" 2>/dev/null || echo "")
+        if [ "$status" != "pass" ]; then
+            echo "Module $mod review status='$status' (expected 'pass')" >&2
+            MISSING_MOD="$mod"
+            FAILS=$((FAILS + 1))
+            continue
+        fi
+        blocking=$(yq -r '.blocking_findings | length // 0' "$review_file" 2>/dev/null || echo "0")
+        if [ "$blocking" -gt 0 ] 2>/dev/null; then
+            echo "Module $mod review has $blocking blocking finding(s)" >&2
+            MISSING_MOD="$mod"
+            FAILS=$((FAILS + 1))
+            continue
+        fi
     fi
 done
 

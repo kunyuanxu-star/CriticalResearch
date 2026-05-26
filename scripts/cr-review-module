@@ -122,27 +122,47 @@ else
     REVIEW_STATUS="pending"
 fi
 
-# Write review file.
+# Collect checked phase IDs for structural review.
+CHECKED_PHASES=""
+for i in $(seq "$START" "$END"); do
+    pid=$(yq -r ".phases[$i].id // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+    [ -z "$pid" ] && continue
+    CHECKED_PHASES="$CHECKED_PHASES  - $pid\n"
+done
+
+# Write review file with explicit structural / semantic separation.
 cat > "$REVIEW_FILE" << YAML
 schema_version: "1.0.0"
 module: $MODULE
 reviewed_at: $NOW
-reviewer: module_checkpoint
-status: $REVIEW_STATUS
-phase_count: $((END - START + 1))
-phases_complete: $([ "$ALL_COMPLETE" = "true" ] && echo "all" || echo "partial")
-artifacts_complete: $([ "$ALL_ARTIFACTS" = "true" ] && echo "all" || echo "partial")
+
+structural_review:
+  reviewer: module_checkpoint
+  status: $REVIEW_STATUS
+  checked_phases:
+$CHECKED_PHASES  phase_count: $((END - START + 1))
+  phases_complete: $([ "$ALL_COMPLETE" = "true" ] && echo "all" || echo "partial")
+  artifacts_complete: $([ "$ALL_ARTIFACTS" = "true" ] && echo "all" || echo "partial")
+  blocking_findings: []
+  findings: []
+
+semantic_review:
+  required: false
+  status: not_configured
+  reviewer: null
+  findings: []
+YAML
+
+# Append legacy phase details for backward compatibility.
+echo "$PHASES_JSON" | jq -r '.[] | "  - id: \(.id)\n    order: \(.order)\n    status: \(.status)\n    artifact: \(.artifact)\n    artifact_exists: \(.artifact_exists)"' > "$REVIEW_FILE.phases.tmp"
+if [ -s "$REVIEW_FILE.phases.tmp" ]; then
+    cat >> "$REVIEW_FILE" << PHASES
+
 phases:
-YAML
-
-# Append phase details.
-echo "$PHASES_JSON" | jq -r '.[] | "  - id: \(.id)\n    order: \(.order)\n    status: \(.status)\n    artifact: \(.artifact)\n    artifact_exists: \(.artifact_exists)"' >> "$REVIEW_FILE"
-
-cat >> "$REVIEW_FILE" << YAML
-
-findings: []
-blocking_findings: []
-YAML
+PHASES
+    cat "$REVIEW_FILE.phases.tmp" >> "$REVIEW_FILE"
+fi
+rm -f "$REVIEW_FILE.phases.tmp"
 
 # Update state.yaml module_reviews status.
 STATE_FILE="$ROUND_DIR/state.yaml"
