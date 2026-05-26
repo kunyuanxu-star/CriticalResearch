@@ -225,16 +225,38 @@ HDR
             echo "    order: $PHASE_ORDER"
             echo "    at: \"$NOW\""
             echo "    input_hashes:"
-            ALL_INPUTS=$(yq -r ".phases.\"$CURRENT\".required_inputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
-            for inp in $ALL_INPUTS; do
-                [ -z "$inp" ] && continue
-                f="$ROUND_DIR/$inp"
-                [ -f "$f" ] || f="$PROJECT_DIR/$inp"
-                [ -f "$f" ] || continue
-                h=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
-                echo "      \"$inp\": \"$h\""
-            done
-            [ -z "$ALL_INPUTS" ] && echo "      {}"
+
+            # Read required_inputs from manifest snapshot (single source of truth).
+            MANIFEST="$ROUND_DIR/phase-manifest.snapshot.yaml"
+            if [ -f "$MANIFEST" ]; then
+                # Find phase index in manifest.
+                PH_IDX=$(yq -r ".phases | to_entries | .[] | select(.value.id == \"$CURRENT\") | .key // -1" "$MANIFEST" 2>/dev/null || echo "-1")
+                if [ "$PH_IDX" -ge 0 ] 2>/dev/null; then
+                    IN_COUNT=$(yq -r ".phases[$PH_IDX].required_inputs | length // 0" "$MANIFEST" 2>/dev/null || echo 0)
+                    for j in $(seq 0 $((IN_COUNT - 1))); do
+                        scoped_in=$(yq -r ".phases[$PH_IDX].required_inputs[$j].path // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+                        [ -z "$scoped_in" ] && continue
+                        h=$("$SCRIPT_DIR/cr-hash-artifact" "$PROJECT_DIR" "$ROUND_DIR" "$scoped_in" 2>/dev/null || echo "unknown")
+                        echo "      \"$scoped_in\": \"$h\""
+                    done
+                fi
+            else
+                # Fallback to state.yaml bare paths (backward compat).
+                ALL_INPUTS=$(yq -r ".phases.\"$CURRENT\".required_inputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
+                for inp in $ALL_INPUTS; do
+                    [ -z "$inp" ] && continue
+                    f="$ROUND_DIR/$inp"
+                    [ -f "$f" ] || f="$PROJECT_DIR/$inp"
+                    [ -f "$f" ] || continue
+                    h=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
+                    echo "      \"$inp\": \"$h\""
+                done
+            fi
+
+            # If no hashes written, output empty dict marker.
+            if [ ! -f "$MANIFEST" ] && [ -z "$ALL_INPUTS" ]; then
+                echo "      {}"
+            fi
         } >> "$RUN_LOG"
         echo "Phase '$CURRENT' started (open -> running)"
         ;;

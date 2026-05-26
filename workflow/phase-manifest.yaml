@@ -764,11 +764,11 @@ phases:
   - path: round:writing-diff.yaml
     type: yaml
     schema: schemas/writing-diff.schema.json
-  - path: round:writing/paper-draft.md
+  - path: project:writing/paper-draft.md
     type: markdown
   allowed_write_scopes:
   - round:writing-diff.yaml
-  - round:writing/paper-draft.md
+  - project:writing/paper-draft.md
   forbidden_actions:
   - add_new_evidence
   - change_unpatched_sections

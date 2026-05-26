@@ -282,21 +282,48 @@ fi
     echo "      sha256: \"$VALIDATOR_SHA256\""
     echo "      exit_code: 0"
     echo "    output_hashes:"
-    for out in $ALL_OUTPUTS; do
-        [ -z "$out" ] && continue
-        f="$ROUND_DIR/$out"
-        if [ -f "$f" ]; then
-            h=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
-            echo "      \"$out\": \"$h\""
-        elif [ -d "$f" ]; then
-            h=$(find "$f" -type f -exec shasum -a 256 {} \; 2>/dev/null | awk '{print $1}' | sort | shasum -a 256 | cut -d' ' -f1 || echo "unknown")
-            echo "      \"$out\": \"$h\""
-        elif [ -f "$PROJECT_DIR/$out" ]; then
-            h=$(shasum -a 256 "$PROJECT_DIR/$out" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
-            echo "      \"$out\": \"$h\""
+
+    # Write output hashes from manifest snapshot (scoped paths).
+    MANIFEST="$ROUND_DIR/phase-manifest.snapshot.yaml"
+    HAS_HASHES=false
+    if [ -f "$MANIFEST" ]; then
+        PH_IDX=$(yq -r ".phases | to_entries | .[] | select(.value.id == \"$PHASE\") | .key // -1" "$MANIFEST" 2>/dev/null || echo "-1")
+        if [ "$PH_IDX" -ge 0 ] 2>/dev/null; then
+            OUT_COUNT=$(yq -r ".phases[$PH_IDX].required_outputs | length // 0" "$MANIFEST" 2>/dev/null || echo 0)
+            for j in $(seq 0 $((OUT_COUNT - 1))); do
+                scoped_out=$(yq -r ".phases[$PH_IDX].required_outputs[$j].path // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+                [ -z "$scoped_out" ] && continue
+                h=$("$SCRIPT_DIR/cr-hash-artifact" "$PROJECT_DIR" "$ROUND_DIR" "$scoped_out" 2>/dev/null || echo "unknown")
+                if [ "$h" != "unknown" ]; then
+                    echo "      \"$scoped_out\": \"$h\""
+                    HAS_HASHES=true
+                fi
+            done
         fi
-    done
-    [ -z "$ALL_OUTPUTS" ] && echo "      {}"
+    else
+        # Fallback to state.yaml bare paths (backward compat).
+        for out in $ALL_OUTPUTS; do
+            [ -z "$out" ] && continue
+            f="$ROUND_DIR/$out"
+            if [ -f "$f" ]; then
+                h=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
+                echo "      \"$out\": \"$h\""
+                HAS_HASHES=true
+            elif [ -d "$f" ]; then
+                h=$(find "$f" -type f -exec shasum -a 256 {} \; 2>/dev/null | awk '{print $1}' | sort | shasum -a 256 | cut -d' ' -f1 || echo "unknown")
+                echo "      \"$out\": \"$h\""
+                HAS_HASHES=true
+            elif [ -f "$PROJECT_DIR/$out" ]; then
+                h=$(shasum -a 256 "$PROJECT_DIR/$out" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
+                echo "      \"$out\": \"$h\""
+                HAS_HASHES=true
+            fi
+        done
+    fi
+
+    if [ "$HAS_HASHES" = false ]; then
+        echo "      {}"
+    fi
 } >> "$RUN_LOG"
 echo "  Phase execution recorded in phase-run-log.yaml"
 

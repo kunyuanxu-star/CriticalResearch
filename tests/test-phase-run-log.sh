@@ -30,6 +30,11 @@ echo "schema_version: \"1.0.0\"" > e2e-log/state/claim-ledger.yaml
 cr-start-paper-round e2e-log "test run log" > /dev/null 2>&1
 ROUND_DIR="e2e-log/rounds/round-002"
 
+# Compute real hashes for scoped paths.
+REAL_HASH_OUT=$(cr-hash-artifact "$TEST_DIR/e2e-log" "$ROUND_DIR" "round:paper-state.yaml" 2>/dev/null || echo "")
+REAL_HASH_IN1=$(cr-hash-artifact "$TEST_DIR/e2e-log" "$ROUND_DIR" "project:writing/paper-draft.md" 2>/dev/null || echo "")
+REAL_HASH_IN2=$(cr-hash-artifact "$TEST_DIR/e2e-log" "$ROUND_DIR" "project:state/claim-ledger.yaml" 2>/dev/null || echo "")
+
 # ── Test 1: state complete but no started event → fail ──
 echo "── Test 1: state complete but no started event → fail ──"
 yq -i '.phases.snapshot_paper_state.status = "complete"' "$ROUND_DIR/state.yaml" 2>/dev/null || true
@@ -48,7 +53,7 @@ events:
       sha256: "0000000000000000000000000000000000000000000000000000000000000000"
       exit_code: 0
     output_hashes:
-      "paper-state.yaml": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      "round:paper-state.yaml": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 HDR
 
 VALIDATE_OUT=$(cr-validate-phase-run-log "$TEST_DIR/e2e-log" "$ROUND_DIR" 2>&1 || true)
@@ -68,7 +73,9 @@ events:
     phase: snapshot_paper_state
     order: 2
     at: "2026-01-01T00:00:00Z"
-    input_hashes: {}
+    input_hashes:
+      "project:writing/paper-draft.md": "abc"
+      "project:state/claim-ledger.yaml": "def"
   - event: phase_completed
     phase: snapshot_paper_state
     order: 1
@@ -81,7 +88,7 @@ events:
       sha256: "0000000000000000000000000000000000000000000000000000000000000000"
       exit_code: 0
     output_hashes:
-      "paper-state.yaml": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      "round:paper-state.yaml": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 HDR
 
 VALIDATE_OUT=$(cr-validate-phase-run-log "$TEST_DIR/e2e-log" "$ROUND_DIR" 2>&1 || true)
@@ -101,7 +108,9 @@ events:
     phase: snapshot_paper_state
     order: 1
     at: "2026-01-01T00:00:02Z"
-    input_hashes: {}
+    input_hashes:
+      "project:writing/paper-draft.md": "abc"
+      "project:state/claim-ledger.yaml": "def"
   - event: phase_completed
     phase: snapshot_paper_state
     order: 1
@@ -114,7 +123,7 @@ events:
       sha256: "0000000000000000000000000000000000000000000000000000000000000000"
       exit_code: 0
     output_hashes:
-      "paper-state.yaml": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      "round:paper-state.yaml": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 HDR
 
 VALIDATE_OUT=$(cr-validate-phase-run-log "$TEST_DIR/e2e-log" "$ROUND_DIR" 2>&1 || true)
@@ -134,7 +143,9 @@ events:
     phase: snapshot_paper_state
     order: 1
     at: "2026-01-01T00:00:00Z"
-    input_hashes: {}
+    input_hashes:
+      "project:writing/paper-draft.md": "abc"
+      "project:state/claim-ledger.yaml": "def"
   - event: phase_completed
     phase: snapshot_paper_state
     order: 1
@@ -160,7 +171,6 @@ echo ""
 # ── Test 5: hash mismatch → fail ──
 echo "── Test 5: output hash mismatch → fail ──"
 echo "schema_version: \"1.0.0\"" > "$ROUND_DIR/paper-state.yaml"
-REAL_HASH=$(shasum -a 256 "$ROUND_DIR/paper-state.yaml" | cut -d' ' -f1)
 cat > "$ROUND_DIR/phase-run-log.yaml" << 'HDR'
 schema_version: "1.0.0"
 events:
@@ -168,7 +178,9 @@ events:
     phase: snapshot_paper_state
     order: 1
     at: "2026-01-01T00:00:00Z"
-    input_hashes: {}
+    input_hashes:
+      "project:writing/paper-draft.md": "abc"
+      "project:state/claim-ledger.yaml": "def"
   - event: phase_completed
     phase: snapshot_paper_state
     order: 1
@@ -181,7 +193,7 @@ events:
       sha256: "0000000000000000000000000000000000000000000000000000000000000000"
       exit_code: 0
     output_hashes:
-      "paper-state.yaml": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      "round:paper-state.yaml": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 HDR
 
 VALIDATE_OUT=$(cr-validate-phase-run-log "$TEST_DIR/e2e-log" "$ROUND_DIR" 2>&1 || true)
@@ -194,7 +206,10 @@ echo ""
 
 # ── Test 6: started+completed with matching hashes → pass ──
 echo "── Test 6: valid started+completed with matching hashes → pass ──"
-REAL_HASH=$(shasum -a 256 "$ROUND_DIR/paper-state.yaml" | cut -d' ' -f1)
+# Recompute hashes after Test 5 may have modified the file.
+REAL_HASH_OUT=$(cr-hash-artifact "$TEST_DIR/e2e-log" "$ROUND_DIR" "round:paper-state.yaml" 2>/dev/null || echo "")
+REAL_HASH_IN1=$(cr-hash-artifact "$TEST_DIR/e2e-log" "$ROUND_DIR" "project:writing/paper-draft.md" 2>/dev/null || echo "")
+REAL_HASH_IN2=$(cr-hash-artifact "$TEST_DIR/e2e-log" "$ROUND_DIR" "project:state/claim-ledger.yaml" 2>/dev/null || echo "")
 cat > "$ROUND_DIR/phase-run-log.yaml" << HDR
 schema_version: "1.0.0"
 events:
@@ -202,7 +217,9 @@ events:
     phase: snapshot_paper_state
     order: 1
     at: "2026-01-01T00:00:00Z"
-    input_hashes: {}
+    input_hashes:
+      "project:writing/paper-draft.md": "$REAL_HASH_IN1"
+      "project:state/claim-ledger.yaml": "$REAL_HASH_IN2"
   - event: phase_completed
     phase: snapshot_paper_state
     order: 1
@@ -215,7 +232,7 @@ events:
       sha256: "0000000000000000000000000000000000000000000000000000000000000000"
       exit_code: 0
     output_hashes:
-      "paper-state.yaml": "$REAL_HASH"
+      "round:paper-state.yaml": "$REAL_HASH_OUT"
 HDR
 
 VALIDATE_OUT=$(cr-validate-phase-run-log "$TEST_DIR/e2e-log" "$ROUND_DIR" 2>&1 || true)

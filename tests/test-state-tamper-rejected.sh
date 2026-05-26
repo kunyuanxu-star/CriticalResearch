@@ -67,10 +67,17 @@ REAL_HASH=$(shasum -a 256 "$ROUND_DIR/paper-state.yaml" | cut -d' ' -f1)
 cat > "$ROUND_DIR/phase-run-log.yaml" << FAKE
 schema_version: "1.0.0"
 events:
-  - event: phase_completed
+  - event: phase_started
     phase: snapshot_paper_state
     order: 1
     at: "2026-01-01T00:00:00Z"
+    input_hashes:
+      "project:writing/paper-draft.md": "abc123"
+      "project:state/claim-ledger.yaml": "def456"
+  - event: phase_completed
+    phase: snapshot_paper_state
+    order: 1
+    at: "2026-01-01T00:00:01Z"
     status_transition:
       from: "running"
       to: complete
@@ -79,7 +86,7 @@ events:
       sha256: "0000000000000000000000000000000000000000000000000000000000000000"
       exit_code: 0
     output_hashes:
-      "paper-state.yaml": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      "round:paper-state.yaml": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 FAKE
 
 VALIDATE_OUT=$(cr-validate-phase-run-log "$TEST_DIR/e2e-tamper" "$ROUND_DIR" 2>&1 || true)

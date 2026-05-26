@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-phase-run-log-required-io.sh — Verify manifest-driven required IO hash completeness.
+# test-phase-run-log-required-io.sh — Verify manifest-driven required IO hash completeness with scoped paths.
 set -euo pipefail
 
 FAILS=0
@@ -15,7 +15,7 @@ export CR_SKILL_HOME="$SCRIPT_DIR/.."
 TEST_DIR=$(mktemp -d /tmp/cr-runlog-io-XXXXXX)
 cd "$TEST_DIR"
 
-echo "══ Phase Run Log Required IO Tests ══"
+echo "══ Phase Run Log Scoped IO Tests ══"
 echo "Test dir: $TEST_DIR"
 echo ""
 
@@ -37,6 +37,11 @@ mkdir -p "$ROUND_DIR/_cr/knowledge"
 echo "schema_version: \"1.0.0\"" > "$ROUND_DIR/paper-state.yaml"
 echo "schema_version: \"1.0.0\"" > "$ROUND_DIR/round-objective.yaml"
 
+# Compute actual hashes.
+H1=$(cr-hash-artifact "$TEST_DIR/e2e-io" "$ROUND_DIR" "project:writing/paper-draft.md" 2>/dev/null || shasum -a 256 "$TEST_DIR/e2e-io/writing/paper-draft.md" | cut -d' ' -f1)
+H2=$(cr-hash-artifact "$TEST_DIR/e2e-io" "$ROUND_DIR" "project:state/claim-ledger.yaml" 2>/dev/null || shasum -a 256 "$TEST_DIR/e2e-io/state/claim-ledger.yaml" | cut -d' ' -f1)
+H3=$(cr-hash-artifact "$TEST_DIR/e2e-io" "$ROUND_DIR" "round:paper-state.yaml" 2>/dev/null || shasum -a 256 "$ROUND_DIR/paper-state.yaml" | cut -d' ' -f1)
+
 # ── Test 1: required input missing from input_hashes → fail ──
 echo "── Test 1: required input missing from input_hashes → fail ──"
 cat > "$ROUND_DIR/phase-run-log.yaml" << 'RL'
@@ -47,7 +52,7 @@ events:
     order: 1
     at: "2026-01-01T00:00:00Z"
     input_hashes:
-      "writing/paper-draft.md": "abc123"
+      "project:writing/paper-draft.md": "abc123"
   - event: phase_completed
     phase: snapshot_paper_state
     order: 1
@@ -60,7 +65,7 @@ events:
       sha256: "test"
       exit_code: 0
     output_hashes:
-      "paper-state.yaml": "def456"
+      "round:paper-state.yaml": "def456"
 RL
 
 # Mark phase complete in state.
@@ -69,7 +74,7 @@ yq -i '.phases.snapshot_paper_state.status = "complete"' "$ROUND_DIR/state.yaml"
 if cr-validate-phase-run-log "$TEST_DIR/e2e-io" "$ROUND_DIR" > /tmp/io1.out 2>&1; then
     fail "Validator should fail when required input missing from input_hashes"
 else
-    if grep -q "required input 'state/claim-ledger.yaml' missing from input_hashes" /tmp/io1.out; then
+    if grep -q "required input 'project:state/claim-ledger.yaml' missing from input_hashes" /tmp/io1.out; then
         pass "Validator detects missing required input in input_hashes"
     else
         fail "Wrong error message"
@@ -88,8 +93,8 @@ events:
     order: 1
     at: "2026-01-01T00:00:00Z"
     input_hashes:
-      "writing/paper-draft.md": "abc123"
-      "state/claim-ledger.yaml": "ghi789"
+      "project:writing/paper-draft.md": "abc123"
+      "project:state/claim-ledger.yaml": "ghi789"
   - event: phase_completed
     phase: snapshot_paper_state
     order: 1
@@ -107,7 +112,7 @@ RL2
 if cr-validate-phase-run-log "$TEST_DIR/e2e-io" "$ROUND_DIR" > /tmp/io2.out 2>&1; then
     fail "Validator should fail when required output missing from output_hashes"
 else
-    if grep -q "required output 'paper-state.yaml' missing from output_hashes" /tmp/io2.out; then
+    if grep -q "required output 'round:paper-state.yaml' missing from output_hashes" /tmp/io2.out; then
         pass "Validator detects missing required output in output_hashes"
     else
         fail "Wrong error message"
@@ -126,8 +131,49 @@ events:
     order: 1
     at: "2026-01-01T00:00:00Z"
     input_hashes:
-      "writing/paper-draft.md": "abc123"
-      "state/claim-ledger.yaml": "ghi789"
+      "project:writing/paper-draft.md": "abc123"
+      "project:state/claim-ledger.yaml": "ghi789"
+  - event: phase_completed
+    phase: snapshot_paper_state
+    order: 1
+    at: "2026-01-01T00:01:00Z"
+    status_transition:
+      from: "running"
+      to: complete
+    validator:
+      path: "scripts/cr-validate-phase"
+      sha256: "test"
+      exit_code: 0
+    output_hashes:
+      "round:paper-state.yaml": "def456"
+      "round:extra-file.yaml": "zzz999"
+RL3
+
+echo "schema_version: \"1.0.0\"" > "$ROUND_DIR/extra-file.yaml"
+
+if cr-validate-phase-run-log "$TEST_DIR/e2e-io" "$ROUND_DIR" > /tmp/io3.out 2>&1; then
+    fail "Validator should fail when extra key in output_hashes"
+else
+    if grep -q "extra key 'round:extra-file.yaml'" /tmp/io3.out; then
+        pass "Validator detects extra key in output_hashes"
+    else
+        fail "Wrong error message"
+        cat /tmp/io3.out
+    fi
+fi
+echo ""
+
+# ── Test 4: bare path hash key → fail ──
+echo "── Test 4: bare path hash key → fail ──"
+cat > "$ROUND_DIR/phase-run-log.yaml" << 'RL4'
+schema_version: "1.0.0"
+events:
+  - event: phase_started
+    phase: snapshot_paper_state
+    order: 1
+    at: "2026-01-01T00:00:00Z"
+    input_hashes:
+      "paper-state.yaml": "abc123"
   - event: phase_completed
     phase: snapshot_paper_state
     order: 1
@@ -141,30 +187,23 @@ events:
       exit_code: 0
     output_hashes:
       "paper-state.yaml": "def456"
-      "extra-file.yaml": "zzz999"
-RL3
+RL4
 
-echo "schema_version: \"1.0.0\"" > "$ROUND_DIR/extra-file.yaml"
-
-if cr-validate-phase-run-log "$TEST_DIR/e2e-io" "$ROUND_DIR" > /tmp/io3.out 2>&1; then
-    fail "Validator should fail when extra key in output_hashes"
+if cr-validate-phase-run-log "$TEST_DIR/e2e-io" "$ROUND_DIR" > /tmp/io4.out 2>&1; then
+    fail "Validator should fail when bare path hash key used"
 else
-    if grep -q "extra key 'extra-file.yaml'" /tmp/io3.out; then
-        pass "Validator detects extra key in output_hashes"
+    if grep -q "bare key" /tmp/io4.out; then
+        pass "Validator detects bare path hash key"
     else
         fail "Wrong error message"
-        cat /tmp/io3.out
+        cat /tmp/io4.out
     fi
 fi
 echo ""
 
-# ── Test 4: all manifest required IO have hashes → pass ──
-echo "── Test 4: all manifest required IO have hashes → pass ──"
-H1=$(shasum -a 256 "$TEST_DIR/e2e-io/writing/paper-draft.md" | cut -d' ' -f1)
-H2=$(shasum -a 256 "$TEST_DIR/e2e-io/state/claim-ledger.yaml" | cut -d' ' -f1)
-H3=$(shasum -a 256 "$ROUND_DIR/paper-state.yaml" | cut -d' ' -f1)
-
-cat > "$ROUND_DIR/phase-run-log.yaml" << RL4
+# ── Test 5: all manifest required IO have hashes → pass ──
+echo "── Test 5: all manifest required IO have hashes → pass ──"
+cat > "$ROUND_DIR/phase-run-log.yaml" << RL5
 schema_version: "1.0.0"
 events:
   - event: phase_started
@@ -172,8 +211,8 @@ events:
     order: 1
     at: "2026-01-01T00:00:00Z"
     input_hashes:
-      "writing/paper-draft.md": "$H1"
-      "state/claim-ledger.yaml": "$H2"
+      "project:writing/paper-draft.md": "$H1"
+      "project:state/claim-ledger.yaml": "$H2"
   - event: phase_completed
     phase: snapshot_paper_state
     order: 1
@@ -186,14 +225,14 @@ events:
       sha256: "test"
       exit_code: 0
     output_hashes:
-      "paper-state.yaml": "$H3"
-RL4
+      "round:paper-state.yaml": "$H3"
+RL5
 
-if cr-validate-phase-run-log "$TEST_DIR/e2e-io" "$ROUND_DIR" > /tmp/io4.out 2>&1; then
-    pass "Validator passes when all required IO hashes present"
+if cr-validate-phase-run-log "$TEST_DIR/e2e-io" "$ROUND_DIR" > /tmp/io5.out 2>&1; then
+    pass "Validator passes when all required IO hashes present with scoped keys"
 else
     fail "Validator should pass"
-    cat /tmp/io4.out
+    cat /tmp/io5.out
 fi
 echo ""
 

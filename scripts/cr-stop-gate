@@ -154,6 +154,21 @@ EOF
     fi
 fi
 
+# ── Phase-run-log proof check ───────────────────────────────────
+# If round has completed phases, the run-log must prove them.
+
+RUN_LOG_VALIDATOR="$SCRIPT_DIR/cr-validate-phase-run-log"
+if [ -x "$RUN_LOG_VALIDATOR" ]; then
+    if ! "$RUN_LOG_VALIDATOR" "$PROJECT_DIR" "$ROUND_DIR" >/tmp/cr-runlog-stop.out 2>&1; then
+        REASON=$(head -c 2000 /tmp/cr-runlog-stop.out 2>/dev/null || echo "Phase run log validation failed")
+        PROJECT_NAME=$(basename "$PROJECT_DIR")
+        cat << EOF
+{"decision":"block","reason":"$REASON","systemMessage":"Phase run log proof is incomplete or inconsistent.\n\n$REASON\n\nRun: cr step $PROJECT_NAME status\nThen: cr step $PROJECT_NAME advance"}
+EOF
+        exit 1
+    fi
+fi
+
 # ── Check round status ──────────────────────────────────────────
 
 ROUND_STATUS=""

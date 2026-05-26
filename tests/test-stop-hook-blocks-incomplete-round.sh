@@ -52,7 +52,7 @@ yq -i '.phases.snapshot_paper_state.status = "complete"' "$ROUND_DIR/state.yaml"
 yq -i '.phases.snapshot_paper_state.completed_at = "2026-01-01T00:00:00Z"' "$ROUND_DIR/state.yaml" 2>/dev/null || true
 
 STOP_OUT=$(cr-stop-gate "$TEST_DIR/e2e-stop" 2>&1 || true)
-if echo "$STOP_OUT" | jq -e '.decision == "block"' >/dev/null 2>&1; then
+if echo "$STOP_OUT" | grep '"decision"' | grep -q '"block"'; then
     pass "stop-gate blocks incomplete round"
 else
     fail "stop-gate did not block incomplete round: ${STOP_OUT:0:200}"

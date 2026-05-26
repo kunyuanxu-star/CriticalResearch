@@ -145,20 +145,26 @@ for ((i=0; i<PHASE_COUNT; i++)); do
     fi
 
     # 3e. Check output hashes still match current files.
+    HASH_ARTIFACT="$SCRIPT_DIR/cr-hash-artifact"
     if [ "$output_hashes" != "{}" ] && [ -n "$output_hashes" ]; then
         keys=$(echo "$output_hashes" | yq -r 'keys | .[]' 2>/dev/null || echo "")
         for key in $keys; do
             [ -z "$key" ] && continue
             stored_hash=$(echo "$output_hashes" | yq -r ".[\"$key\"]" 2>/dev/null || echo "")
-            f="$ROUND_DIR/$key"
-            if [ -f "$f" ]; then
-                current_hash=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || echo "")
-            elif [ -d "$f" ]; then
-                current_hash=$(find "$f" -type f -exec shasum -a 256 {} \; 2>/dev/null | awk '{print $1}' | sort | shasum -a 256 | cut -d' ' -f1 || echo "")
-            elif [ -f "$PROJECT_DIR/$key" ]; then
-                current_hash=$(shasum -a 256 "$PROJECT_DIR/$key" 2>/dev/null | cut -d' ' -f1 || echo "")
+            # Scoped path: use cr-hash-artifact. Bare path: use legacy resolution.
+            if [[ "$key" == *":"* ]] && [ -x "$HASH_ARTIFACT" ]; then
+                current_hash=$("$HASH_ARTIFACT" "$PROJECT_DIR" "$ROUND_DIR" "$key" 2>/dev/null || echo "")
             else
-                current_hash=""
+                f="$ROUND_DIR/$key"
+                if [ -f "$f" ]; then
+                    current_hash=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || echo "")
+                elif [ -d "$f" ]; then
+                    current_hash=$(find "$f" -type f -exec shasum -a 256 {} \; 2>/dev/null | awk '{print $1}' | sort | shasum -a 256 | cut -d' ' -f1 || echo "")
+                elif [ -f "$PROJECT_DIR/$key" ]; then
+                    current_hash=$(shasum -a 256 "$PROJECT_DIR/$key" 2>/dev/null | cut -d' ' -f1 || echo "")
+                else
+                    current_hash=""
+                fi
             fi
             if [ "$stored_hash" != "$current_hash" ]; then
                 fail "Phase '$phase' output '$key' hash mismatch: stored=$stored_hash current=$current_hash"
@@ -174,40 +180,48 @@ for ((i=0; i<PHASE_COUNT; i++)); do
         for key in $keys; do
             [ -z "$key" ] && continue
             stored_hash=$(echo "$input_hashes" | yq -r ".[\"$key\"]" 2>/dev/null || echo "")
-            f="$ROUND_DIR/$key"
-            [ -f "$f" ] || f="$PROJECT_DIR/$key"
-            if [ -f "$f" ]; then
-                current_hash=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || echo "")
-                if [ "$stored_hash" != "$current_hash" ]; then
-                    fail "Phase '$phase' input '$key' hash mismatch: stored=$stored_hash current=$current_hash"
-                    ERRORS=$((ERRORS + 1))
+            if [[ "$key" == *":"* ]] && [ -x "$HASH_ARTIFACT" ]; then
+                current_hash=$("$HASH_ARTIFACT" "$PROJECT_DIR" "$ROUND_DIR" "$key" 2>/dev/null || echo "")
+            else
+                f="$ROUND_DIR/$key"
+                [ -f "$f" ] || f="$PROJECT_DIR/$key"
+                if [ -f "$f" ]; then
+                    current_hash=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || echo "")
+                else
+                    current_hash=""
                 fi
+            fi
+            if [ -n "$stored_hash" ] && [ "$stored_hash" != "$current_hash" ]; then
+                fail "Phase '$phase' input '$key' hash mismatch: stored=$stored_hash current=$current_hash"
+                ERRORS=$((ERRORS + 1))
             fi
         done
     fi
 
     # 3g. Manifest-driven required input/output hash completeness.
-    # Every required file-type input must have a hash in input_hashes.
+    # Every required input (file AND directory) must have a hash in input_hashes.
     # Every required output must have a hash in output_hashes.
+    # Hash keys MUST use scoped paths (project:/round:/workspace:) — bare paths fail.
     # No extra hash keys allowed beyond required (and optional) IO.
 
     MANIFEST="$ROUND_DIR/phase-manifest.snapshot.yaml"
+    HASH_ARTIFACT="$SCRIPT_DIR/cr-hash-artifact"
     if [ -f "$MANIFEST" ]; then
         # Use manifest snapshot as single source of truth.
-        # Get required_inputs from manifest.
+        # Get required_inputs from manifest — use scoped path as key, do NOT strip.
         req_in_count=$(yq -r ".phases[] | select(.id == \"$phase\") | .required_inputs | length // 0" "$MANIFEST" 2>/dev/null || echo 0)
         for j in $(seq 0 $((req_in_count - 1))); do
-            raw_path=$(yq -r ".phases[] | select(.id == \"$phase\") | .required_inputs[$j].path // \"\"" "$MANIFEST" 2>/dev/null || echo "")
-            [ -z "$raw_path" ] && continue
-            key="${raw_path#*:}"  # Strip scope prefix (project:, round:, workspace:)
-            [ -z "$key" ] && continue
-            # Directory inputs (ending with /) are not recorded by cr-complete-phase — skip.
-            if [ "${key: -1}" = "/" ]; then
+            scoped_path=$(yq -r ".phases[] | select(.id == \"$phase\") | .required_inputs[$j].path // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+            [ -z "$scoped_path" ] && continue
+            # Scoped path must contain a colon separator.
+            if [[ "$scoped_path" != *":"* ]]; then
+                fail "Phase '$phase' input '$scoped_path' is a bare path (expected scoped path like project:... or round:...)"
+                ERRORS=$((ERRORS + 1))
                 continue
             fi
-            has_key=$(echo "$input_hashes" | yq -r "has(\"$key\")" 2>/dev/null || echo "false")
+            has_key=$(echo "$input_hashes" | yq -r "has(\"$scoped_path\")" 2>/dev/null || echo "false")
             if [ "$has_key" != "true" ]; then
-                fail "Phase '$phase' required input '$key' missing from input_hashes"
+                fail "Phase '$phase' required input '$scoped_path' missing from input_hashes"
                 ERRORS=$((ERRORS + 1))
             fi
         done
@@ -216,14 +230,17 @@ for ((i=0; i<PHASE_COUNT; i++)); do
         req_out_count=$(yq -r ".phases[] | select(.id == \"$phase\") | .required_outputs | length // 0" "$MANIFEST" 2>/dev/null || echo 0)
         declared_outputs=""
         for j in $(seq 0 $((req_out_count - 1))); do
-            raw_path=$(yq -r ".phases[] | select(.id == \"$phase\") | .required_outputs[$j].path // \"\"" "$MANIFEST" 2>/dev/null || echo "")
-            [ -z "$raw_path" ] && continue
-            key="${raw_path#*:}"
-            [ -z "$key" ] && continue
-            declared_outputs="$declared_outputs $key"
-            has_key=$(echo "$output_hashes" | yq -r "has(\"$key\")" 2>/dev/null || echo "false")
+            scoped_path=$(yq -r ".phases[] | select(.id == \"$phase\") | .required_outputs[$j].path // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+            [ -z "$scoped_path" ] && continue
+            if [[ "$scoped_path" != *":"* ]]; then
+                fail "Phase '$phase' output '$scoped_path' is a bare path (expected scoped path like round:...)"
+                ERRORS=$((ERRORS + 1))
+                continue
+            fi
+            declared_outputs="$declared_outputs $scoped_path"
+            has_key=$(echo "$output_hashes" | yq -r "has(\"$scoped_path\")" 2>/dev/null || echo "false")
             if [ "$has_key" != "true" ]; then
-                fail "Phase '$phase' required output '$key' missing from output_hashes"
+                fail "Phase '$phase' required output '$scoped_path' missing from output_hashes"
                 ERRORS=$((ERRORS + 1))
             fi
         done
@@ -232,6 +249,12 @@ for ((i=0; i<PHASE_COUNT; i++)); do
         out_keys=$(echo "$output_hashes" | yq -r 'keys | .[]' 2>/dev/null || echo "")
         for ok in $out_keys; do
             [ -z "$ok" ] && continue
+            # Extra keys must also be scoped; bare keys are rejected.
+            if [[ "$ok" != *":"* ]]; then
+                fail "Phase '$phase' output_hashes has bare key '$ok' (must use scoped path like round:...)"
+                ERRORS=$((ERRORS + 1))
+                continue
+            fi
             found=false
             for declared in $declared_outputs; do
                 if [ "$declared" = "$ok" ]; then
@@ -244,8 +267,35 @@ for ((i=0; i<PHASE_COUNT; i++)); do
                 ERRORS=$((ERRORS + 1))
             fi
         done
+
+        # 3e+. Verify stored hashes still match current artifacts (using scoped paths).
+        if [ -x "$HASH_ARTIFACT" ]; then
+            for scoped_path in $declared_outputs; do
+                [ -z "$scoped_path" ] && continue
+                stored_hash=$(echo "$output_hashes" | yq -r ".[\"$scoped_path\"]" 2>/dev/null || echo "")
+                [ -z "$stored_hash" ] && continue
+                current_hash=$("$HASH_ARTIFACT" "$PROJECT_DIR" "$ROUND_DIR" "$scoped_path" 2>/dev/null || echo "")
+                if [ "$stored_hash" != "$current_hash" ]; then
+                    fail "Phase '$phase' output '$scoped_path' hash mismatch: stored=$stored_hash current=$current_hash"
+                    ERRORS=$((ERRORS + 1))
+                fi
+            done
+
+            # Also verify input hashes.
+            in_keys=$(echo "$input_hashes" | yq -r 'keys | .[]' 2>/dev/null || echo "")
+            for scoped_path in $in_keys; do
+                [ -z "$scoped_path" ] && continue
+                stored_hash=$(echo "$input_hashes" | yq -r ".[\"$scoped_path\"]" 2>/dev/null || echo "")
+                [ -z "$stored_hash" ] && continue
+                current_hash=$("$HASH_ARTIFACT" "$PROJECT_DIR" "$ROUND_DIR" "$scoped_path" 2>/dev/null || echo "")
+                if [ "$stored_hash" != "$current_hash" ]; then
+                    fail "Phase '$phase' input '$scoped_path' hash mismatch: stored=$stored_hash current=$current_hash"
+                    ERRORS=$((ERRORS + 1))
+                fi
+            done
+        fi
     else
-        # Fallback: use state.yaml required_inputs/required_outputs.
+        # Fallback: use state.yaml required_inputs/required_outputs (bare paths allowed).
         req_inputs=$(yq -r ".phases.\"$phase\".required_inputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
         for key in $req_inputs; do
             [ -z "$key" ] && continue
