@@ -545,7 +545,7 @@ cmd_close() {
                     fi
                     if [ -x "$validator_script" ]; then
                         echo "  Running: $validator"
-                        if ! "$validator_script" "$PROJECT_DIR" "$ROUND_DIR" 2>&1; then
+                        if ! "$validator_script" "$CONTRACT" "$PROJECT_DIR" "$ROUND_DIR" 2>&1; then
                             fail "Validator '$validator' failed"
                             validator_ok=false
                         else
