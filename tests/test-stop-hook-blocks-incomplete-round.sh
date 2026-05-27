@@ -36,40 +36,40 @@ jq '.active_round = null' e2e-stop/state/project-state.json > e2e-stop/state/pro
 
 STOP_OUT=$(cr-stop-gate "$TEST_DIR/e2e-stop" 2>&1 || true)
 if echo "$STOP_OUT" | jq -e '.decision == "approve"' >/dev/null 2>&1; then
-    pass "stop-gate approves when no active round"
+    pass "No active round → stop approved"
 else
-    fail "stop-gate did not approve for no active round: $STOP_OUT"
+    fail "No active round should allow stop: $STOP_OUT"
 fi
 echo ""
 
-# ── Test 2: Active round, phase incomplete → block ──
-echo "── Test 2: Active round, current phase incomplete → block ──"
+# ── Test 2: Active round, stage incomplete → block ──
+echo "── Test 2: Active round, current stage incomplete → block ──"
 # Restore active_round.
 jq '.active_round = 2' e2e-stop/state/project-state.json > e2e-stop/state/project-state.json.tmp && \
     mv e2e-stop/state/project-state.json.tmp e2e-stop/state/project-state.json
-# Mark only phase 1 complete, leave phase 2 open.
-yq -i '.phases.snapshot_paper_state.status = "complete"' "$ROUND_DIR/state.yaml" 2>/dev/null || true
-yq -i '.phases.snapshot_paper_state.completed_at = "2026-01-01T00:00:00Z"' "$ROUND_DIR/state.yaml" 2>/dev/null || true
+# Mark only stage 1 complete, leave stage 2 open.
+yq -i '.stages.s1_round_contract.status = "complete"' "$ROUND_DIR/state.yaml" 2>/dev/null || true
+yq -i '.stages.s1_round_contract.completed_at = "2026-01-01T00:00:00Z"' "$ROUND_DIR/state.yaml" 2>/dev/null || true
 
 STOP_OUT=$(cr-stop-gate "$TEST_DIR/e2e-stop" 2>&1 || true)
 if echo "$STOP_OUT" | grep '"decision"' | grep -q '"block"'; then
-    pass "stop-gate blocks incomplete round"
+    pass "Incomplete round blocked"
 else
-    fail "stop-gate did not block incomplete round: ${STOP_OUT:0:200}"
+    fail "Incomplete round should be blocked: $STOP_OUT"
 fi
 echo ""
 
 # ── Test 3: Active round, manifest snapshot missing → block ──
 echo "── Test 3: Missing manifest snapshot → block ──"
 # Temporarily rename manifest.
-mv "$ROUND_DIR/phase-manifest.snapshot.yaml" "$ROUND_DIR/phase-manifest.snapshot.yaml.bak"
+mv "$ROUND_DIR/stage-manifest.snapshot.yaml" "$ROUND_DIR/stage-manifest.snapshot.yaml.bak"
 STOP_OUT=$(cr-stop-gate "$TEST_DIR/e2e-stop" 2>&1 || true)
 if echo "$STOP_OUT" | jq -e '.decision == "block"' >/dev/null 2>&1; then
-    pass "stop-gate blocks when manifest snapshot missing"
+    pass "Missing manifest snapshot blocked"
 else
-    fail "stop-gate did not block for missing manifest: ${STOP_OUT:0:200}"
+    fail "Missing manifest should block: $STOP_OUT"
 fi
-mv "$ROUND_DIR/phase-manifest.snapshot.yaml.bak" "$ROUND_DIR/phase-manifest.snapshot.yaml"
+mv "$ROUND_DIR/stage-manifest.snapshot.yaml.bak" "$ROUND_DIR/stage-manifest.snapshot.yaml"
 echo ""
 
 # ── Cleanup ──

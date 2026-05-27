@@ -1,0 +1,23 @@
+# Revision Plan
+# Claim-level, structure-level, and evidence-level revision decisions.
+# Produced in S4: Revision Strategy.
+
+schema_version: "1.0.0"
+round_id: 0
+revisions: []
+# Example:
+#  - revision_id: REV-001
+#    level: claim
+#    decision: ""
+#    rationale: ""
+#    source_dispositions:
+#      - DSP-001
+#    source_critiques:
+#      - CRT-001
+#    target_sections:
+#      - ""
+#    target_claims:
+#      - CLM-001
+#    status: pending_human_decision
+
+no_revision_reason: null

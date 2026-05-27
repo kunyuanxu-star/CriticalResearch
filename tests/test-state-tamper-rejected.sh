@@ -30,70 +30,73 @@ ROUND_DIR="e2e-tamper/rounds/round-002"
 
 # ── Test 1: Manual state edit without run-log → detected ──
 echo "── Test 1: Manual state.yaml edit without run-log → detected ──"
-# Mark a phase complete without recording in phase-run-log.
-yq -i '.phases.snapshot_paper_state.status = "complete"' "$ROUND_DIR/state.yaml" 2>/dev/null || true
-yq -i '.phases.snapshot_paper_state.completed_at = "2026-01-01T00:00:00Z"' "$ROUND_DIR/state.yaml" 2>/dev/null || true
+# Mark a stage complete without recording in stage-run-log.
+yq -i '.stages.s1_round_contract.status = "complete"' "$ROUND_DIR/state.yaml" 2>/dev/null || true
+yq -i '.stages.s1_round_contract.completed_at = "2026-01-01T00:00:00Z"' "$ROUND_DIR/state.yaml" 2>/dev/null || true
 
 # Create a run-log with only a started event (no completed) so validator doesn't early-exit.
-cat > "$ROUND_DIR/phase-run-log.yaml" << 'HDR'
+cat > "$ROUND_DIR/stage-run-log.yaml" << 'HDR'
 schema_version: "1.0.0"
 events:
-  - event: phase_started
-    phase: snapshot_paper_state
-    order: 1
-    at: "2026-01-01T00:00:00Z"
-HDR
-
-VALIDATE_OUT=$(cr-validate-phase-run-log "$TEST_DIR/e2e-tamper" "$ROUND_DIR" 2>&1 || true)
-if echo "$VALIDATE_OUT" | grep -qi "NO phase_completed event"; then
-    pass "Phase-run-log validator detects tampered state (missing completed event)"
-else
-    fail "Validator did not detect tampered state: ${VALIDATE_OUT:0:300}"
-fi
-echo ""
-
-# ── Test 2: Manual phase-run-log edit → hash mismatch detected ──
-echo "── Test 2: Manual phase-run-log edit → hash mismatch detected ──"
-# Keep snapshot_paper_state complete so count matches, but use wrong hash in run-log.
-yq -i '.phases.snapshot_paper_state.status = "complete"' "$ROUND_DIR/state.yaml" 2>/dev/null || true
-yq -i '.phases.snapshot_paper_state.completed_at = "2026-01-01T00:00:00Z"' "$ROUND_DIR/state.yaml" 2>/dev/null || true
-
-# Create the output file with real content.
-echo "schema_version: \"1.0.0\"" > "$ROUND_DIR/paper-state.yaml"
-echo "thesis: \"test thesis\"" >> "$ROUND_DIR/paper-state.yaml"
-REAL_HASH=$(shasum -a 256 "$ROUND_DIR/paper-state.yaml" | cut -d' ' -f1)
-
-# Create a valid-looking run-log entry but with WRONG hash.
-cat > "$ROUND_DIR/phase-run-log.yaml" << FAKE
-schema_version: "1.0.0"
-events:
-  - event: phase_started
-    phase: snapshot_paper_state
+  - event: stage_started
+    stage: s1_round_contract
     order: 1
     at: "2026-01-01T00:00:00Z"
     input_hashes:
-      "project:writing/paper-draft.md": "abc123"
-      "project:state/claim-ledger.yaml": "def456"
-  - event: phase_completed
-    phase: snapshot_paper_state
+      "project:writing/paper-draft.md": "abc"
+      "project:state/claim-ledger.yaml": "def"
+HDR
+
+VALIDATE_OUT=$(cr-validate-stage-run-log "$TEST_DIR/e2e-tamper" "$ROUND_DIR" 2>&1 || true)
+if echo "$VALIDATE_OUT" | grep -qi "NO stage_completed event"; then
+    pass "Validator detects missing completed event"
+else
+    fail "Validator did not detect tampered state: ${VALIDATE_OUT:0:200}"
+fi
+echo ""
+
+# ── Test 2: Manual stage-run-log edit → hash mismatch detected ──
+echo "── Test 2: Manual stage-run-log edit → hash mismatch detected ──"
+# Keep s1_round_contract complete so count matches, but use wrong hash in run-log.
+yq -i '.stages.s1_round_contract.status = "complete"' "$ROUND_DIR/state.yaml" 2>/dev/null || true
+yq -i '.stages.s1_round_contract.completed_at = "2026-01-01T00:00:00Z"' "$ROUND_DIR/state.yaml" 2>/dev/null || true
+
+# Create the output file with real content.
+echo "schema_version: \"1.0.0\"" > "$ROUND_DIR/round-contract.yaml"
+echo "thesis: \"test thesis\"" >> "$ROUND_DIR/round-contract.yaml"
+REAL_HASH=$(shasum -a 256 "$ROUND_DIR/round-contract.yaml" | cut -d' ' -f1)
+
+# Create a valid-looking run-log entry but with WRONG hash.
+cat > "$ROUND_DIR/stage-run-log.yaml" << FAKE
+schema_version: "1.0.0"
+events:
+  - event: stage_started
+    stage: s1_round_contract
+    order: 1
+    at: "2026-01-01T00:00:00Z"
+    input_hashes:
+      "project:writing/paper-draft.md": "abc"
+      "project:state/claim-ledger.yaml": "def"
+  - event: stage_completed
+    stage: s1_round_contract
     order: 1
     at: "2026-01-01T00:00:01Z"
     status_transition:
       from: "running"
       to: complete
     validator:
-      path: "scripts/cr-validate-phase"
-      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      path: "scripts/cr-validate-stage"
+      sha256: "test"
       exit_code: 0
     output_hashes:
-      "round:paper-state.yaml": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      "round:round-contract.yaml": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 FAKE
 
-VALIDATE_OUT=$(cr-validate-phase-run-log "$TEST_DIR/e2e-tamper" "$ROUND_DIR" 2>&1 || true)
+VALIDATE_OUT=$(cr-validate-stage-run-log "$TEST_DIR/e2e-tamper" "$ROUND_DIR" 2>&1 || true)
 if echo "$VALIDATE_OUT" | grep -qi "hash mismatch"; then
-    pass "Phase-run-log validator detects hash mismatch"
+    pass "Validator detects hash mismatch in run-log"
 else
-    fail "Validator did not detect hash mismatch: ${VALIDATE_OUT:0:300}"
+    fail "Validator did not detect hash mismatch: ${VALIDATE_OUT:0:200}"
 fi
 echo ""
 

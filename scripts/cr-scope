@@ -391,13 +391,13 @@ YAML
                     rnd_num=$(printf "%03d" "$active_rnd")
                     state_file="$WORKSPACE_ROOT/$scoped_project/rounds/round-$rnd_num/state.yaml"
                     if [ -f "$state_file" ]; then
-                        full_round=$(yq -r '.execution_policy.full_round_required // false' "$state_file" 2>/dev/null || echo "false")
                         if [ "$full_round" = "true" ]; then
                             echo "DENY: Cannot close scope while a full-round paper round is active."
-                            echo "  Complete all 37 phases and close the round first."
+                            echo "  Complete all 8 stages and close the round first."
                             echo "  Round: $active_rnd, project: $scoped_project"
                             exit 1
                         fi
+
                     fi
                 fi
             fi
@@ -432,8 +432,8 @@ YAML
                 rnd_num=$(printf "%03d" "$active_rnd")
                 state_file="$WORKSPACE_ROOT/$project_id/rounds/round-$rnd_num/state.yaml"
                 if [ -f "$state_file" ]; then
-                    phase=$(yq -r '.current_phase // "unknown"' "$state_file" 2>/dev/null || echo "unknown")
-                    echo "Phase:   $phase"
+                    stage=$(yq -r '.current_stage // "unknown"' "$state_file" 2>/dev/null || echo "unknown")
+                    echo "Stage:   $stage"
                 fi
             fi
         fi
@@ -559,18 +559,17 @@ YAML
                 rnd_num=$(printf "%03d" "$active_rnd")
                 state_file="$WORKSPACE_ROOT/$project_id/rounds/round-$rnd_num/state.yaml"
                 if [ -f "$state_file" ]; then
-                    phase=$(yq -r '.current_phase // "unknown"' "$state_file" 2>/dev/null || echo "unknown")
-                    echo "- Current phase: $phase"
+                    stage=$(yq -r '.current_stage // "unknown"' "$state_file" 2>/dev/null || echo "unknown")
+                    echo "- Current stage: $stage"
                 fi
             fi
         fi
         ;;
 
-    phase-check)
-        # Check if a file path is allowed for the current active phase.
-        # Reads state.yaml to get current_phase, then checks allowed/forbidden paths.
+    stage-check|phase-check)
+        # Check if a file path is allowed for the current active stage.
         PATH_ARG="${1:-}"
-        [ -z "$PATH_ARG" ] && { echo "DENY:no path for phase-check"; exit 1; }
+        [ -z "$PATH_ARG" ] && { echo "DENY:no path for stage-check"; exit 1; }
 
         # Find active project and round.
         ACTIVE_PROJ_FILE="$WORKSPACE_ROOT/_cr/active-project"
@@ -591,8 +590,9 @@ YAML
         STATE_FILE="$PROJECT_DIR/rounds/round-$RND_NUM/state.yaml"
         [ ! -f "$STATE_FILE" ] && { echo "ALLOW:no state.yaml for round $RND_NUM"; exit 0; }
 
-        CURRENT_PHASE=$(yq -r '.current_phase // ""' "$STATE_FILE" 2>/dev/null || echo "")
-        [ -z "$CURRENT_PHASE" ] && { echo "ALLOW:no current phase"; exit 0; }
+        CURRENT_STAGE=$(yq -r '.current_stage // ""' "$STATE_FILE" 2>/dev/null || echo "")
+        [ -z "$CURRENT_STAGE" ] && { echo "ALLOW:no current stage"; exit 0; }
+
 
         # Normalize the path relative to workspace.
         REL_PATH="${PATH_ARG#$WORKSPACE_ROOT/}"
@@ -604,7 +604,7 @@ YAML
 
         # ── Protected files: always deny direct write ──────────────────
         case "$REL_PATH" in
-            */rounds/*/state.yaml|*/rounds/*/phase-run-log.yaml|*/rounds/*/round.yaml|*/state/project-state.json|*/rounds/*/phase-manifest.snapshot.yaml)
+            */rounds/*/state.yaml|*/rounds/*/stage-run-log.yaml|*/rounds/*/round.yaml|*/state/project-state.json|*/rounds/*/stage-manifest.snapshot.yaml)
                 echo "DENY:protected runtime file — use cr step advance or cr close-round to modify state"
                 exit 1
                 ;;
@@ -613,7 +613,7 @@ YAML
         # ── Manifest-driven allowed_write_scopes check ─────────────────
         # Read allowed_write_scopes from state.yaml (generated from manifest snapshot).
         ROUND_DIR="$PROJECT_DIR/rounds/round-$RND_NUM"
-        AWSCOPES=$(yq -r ".phases.\"$CURRENT_PHASE\".allowed_write_scopes[]? // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
+        AWSCOPES=$(yq -r ".stages.\"$CURRENT_STAGE\".allowed_write_scopes[]? // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
         if [ -n "$AWSCOPES" ]; then
             # Convert REL_PATH to be relative to the round directory for comparison.
             # REL_PATH is like: project-id/rounds/round-001/paper-state.yaml
@@ -652,20 +652,20 @@ YAML
             done
 
             if [ "$MATCHED" = false ]; then
-                echo "DENY:Phase '$CURRENT_PHASE' allowed_write_scopes does not include '$REL_TO_ROUND'. Allowed: $(echo "$AWSCOPES" | tr '\n' ' ')"
+                echo "DENY:Stage '$CURRENT_STAGE' allowed_write_scopes does not include '$REL_TO_ROUND'. Allowed: $(echo "$AWSCOPES" | tr '\n' ' ')"
                 exit 1
             fi
         fi
 
         # ── Forbidden actions check (negative boundaries) ──────────────
-        FORBIDDEN=$(yq -r ".phases.\"$CURRENT_PHASE\".forbidden_actions[]? // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
+        FORBIDDEN=$(yq -r ".stages.\"$CURRENT_STAGE\".forbidden_actions[]? // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
         for fb in $FORBIDDEN; do
             [ -z "$fb" ] && continue
             case "$fb" in
                 *_draft|*paper-draft*|edit_draft)
                     case "$REL_PATH" in
                         */writing/paper-draft.md|*/paper-draft.md)
-                            echo "DENY:Phase '$CURRENT_PHASE' forbids draft editing. Use the writing phases (S27-S32) to modify paper-draft.md."
+                            echo "DENY:Stage '$CURRENT_STAGE' forbids draft editing. Use s6_paper_patch to modify paper-draft.md."
                             exit 1
                             ;;
                     esac
@@ -673,7 +673,7 @@ YAML
                 write_paper_patch|generate_patch|write_patch|create_patch)
                     case "$REL_PATH" in
                         */patches/*|*patches/PP-*)
-                            echo "DENY:Phase '$CURRENT_PHASE' forbids patch creation. Use S25 (generate_paper_patches) to write patches."
+                            echo "DENY:Stage '$CURRENT_STAGE' forbids patch creation. Use s6_paper_patch to write patches."
                             exit 1
                             ;;
                     esac
@@ -681,7 +681,7 @@ YAML
                 generate_critique|write_critique*|*critique_ledger*)
                     case "$REL_PATH" in
                         */critique-ledger.yaml|*/critique-*.yaml)
-                            echo "DENY:Phase '$CURRENT_PHASE' forbids critique generation. Use M4 phases (S17-S22) for critique."
+                            echo "DENY:Stage '$CURRENT_STAGE' forbids critique generation. Use s3_critical_review for critique."
                             exit 1
                             ;;
                     esac
@@ -689,7 +689,7 @@ YAML
                 write_evidence*|*evidence_ledger*|add_evidence*)
                     case "$REL_PATH" in
                         */evidence-ledger.yaml|*/evidence*.yaml)
-                            echo "DENY:Phase '$CURRENT_PHASE' forbids evidence writing. Use S11 (normalize_evidence) to write evidence."
+                            echo "DENY:Stage '$CURRENT_STAGE' forbids evidence writing. Use s2_evidence_grounding to write evidence."
                             exit 1
                             ;;
                     esac
@@ -697,7 +697,7 @@ YAML
                 *experiment*|fabricate*)
                     case "$REL_PATH" in
                         */experiment-obligations.yaml|*/experiments/*)
-                            echo "DENY:Phase '$CURRENT_PHASE' forbids experiment obligation creation. Use S26 to generate experiment obligations."
+                            echo "DENY:Stage '$CURRENT_STAGE' forbids experiment obligation creation. Use s6_paper_patch to generate experiment obligations."
                             exit 1
                             ;;
                     esac
@@ -705,7 +705,7 @@ YAML
                 external_research|execute_search|*search*)
                     case "$REL_PATH" in
                         */search-log.yaml|*/raw-sources/*|*/search-queue.yaml)
-                            echo "DENY:Phase '$CURRENT_PHASE' forbids external research/search. Use M2 phases (S07-S13) for research."
+                            echo "DENY:Stage '$CURRENT_STAGE' forbids external research/search. Use s2_evidence_grounding for research."
                             exit 1
                             ;;
                     esac
@@ -713,7 +713,7 @@ YAML
                 *knowledge*|write_knowledge|modify_knowledge*)
                     case "$REL_PATH" in
                         */knowledge-delta.yaml|*/knowledge-apply-log.yaml|*/literature-knowledge-delta.yaml|*/thinking-knowledge-delta.yaml)
-                            echo "DENY:Phase '$CURRENT_PHASE' forbids knowledge writeback. Use M7 phases (S33-S37) for knowledge."
+                            echo "DENY:Stage '$CURRENT_STAGE' forbids knowledge writeback. Use s7_knowledge_consolidation for knowledge."
                             exit 1
                             ;;
                     esac

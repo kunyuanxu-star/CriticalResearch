@@ -32,42 +32,42 @@ jq '.active_round = null' test-proj/state/project-state.json > test-proj/state/p
 
 ROUND_OUT=$(cr round test-proj --mode paper "test objective" 2>&1 || true)
 if echo "$ROUND_OUT" | grep -qi "round-002\|paper round.*started\|Paper Round 002"; then
-    pass "cr round --mode paper starts a paper round"
+    pass "Paper round started via cr round"
 else
-    fail "cr round --mode paper failed: ${ROUND_OUT:0:200}"
+    fail "Paper round not started: ${ROUND_OUT:0:200}"
 fi
 
 ROUND_DIR="test-proj/rounds/round-002"
 
 # Check manifest snapshot exists.
-if [ -f "$ROUND_DIR/phase-manifest.snapshot.yaml" ]; then
-    pass "phase-manifest.snapshot.yaml exists"
+if [ -f "$ROUND_DIR/stage-manifest.snapshot.yaml" ]; then
+    pass "stage-manifest.snapshot.yaml exists"
 else
-    fail "phase-manifest.snapshot.yaml missing"
+    fail "stage-manifest.snapshot.yaml missing"
 fi
 
-# Check phase_order has 37 phases.
-PHASE_COUNT=$(yq -r '.phase_order | length' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "0")
-if [ "$PHASE_COUNT" -eq 37 ]; then
-    pass "state.yaml phase_order has 37 phases"
+# Check stage_order has 8 stages.
+STAGE_COUNT=$(yq -r '.stage_order | length' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "0")
+if [ "$STAGE_COUNT" -eq 8 ]; then
+    pass "stage_order has 8 stages"
 else
-    fail "phase_order has $PHASE_COUNT phases (expected 37)"
+    fail "stage_order has $STAGE_COUNT stages (expected 8)"
 fi
 
 # Check active_round is non-null.
 ACTIVE_RND=$(jq -r '.active_round // "null"' test-proj/state/project-state.json 2>/dev/null || echo "null")
 if [ "$ACTIVE_RND" != "null" ] && [ "$ACTIVE_RND" != "0" ]; then
-    pass "active_round is non-null ($ACTIVE_RND)"
+    pass "active_round is set"
 else
     fail "active_round is $ACTIVE_RND"
 fi
 
-# Check current_phase is snapshot_paper_state.
-CURRENT=$(yq -r '.current_phase // ""' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "")
-if [ "$CURRENT" = "snapshot_paper_state" ]; then
-    pass "current_phase is snapshot_paper_state"
+# Check current_stage is s1_round_contract.
+CURRENT=$(yq -r '.current_stage // ""' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "")
+if [ "$CURRENT" = "s1_round_contract" ]; then
+    pass "current_stage = s1_round_contract"
 else
-    fail "current_phase is '$CURRENT' (expected snapshot_paper_state)"
+    fail "current_stage = $CURRENT"
 fi
 
 echo ""
@@ -76,9 +76,9 @@ echo ""
 echo "── Test 2: cr-new-round --mode paper is rejected ──"
 REJECT_OUT=$(cr-new-round test-proj discovery --mode paper 2>&1 || true)
 if echo "$REJECT_OUT" | grep -qi "must be started via cr-start-paper-round\|paper mode must be started"; then
-    pass "cr-new-round --mode paper is rejected"
+    pass "cr-new-round --mode paper rejected"
 else
-    fail "cr-new-round --mode paper was not rejected: ${REJECT_OUT:0:200}"
+    fail "cr-new-round --mode paper not rejected: ${REJECT_OUT:0:200}"
 fi
 echo ""
 
@@ -90,9 +90,9 @@ jq '.active_round = null' test-proj/state/project-state.json > test-proj/state/p
 
 NO_OBJ_OUT=$(cr round test-proj --mode paper 2>&1 || true)
 if echo "$NO_OBJ_OUT" | grep -qi "usage\|objective\|required"; then
-    pass "cr round --mode paper without objective fails"
+    pass "Missing objective rejected"
 else
-    fail "cr round --mode paper without objective did not fail: ${NO_OBJ_OUT:0:200}"
+    fail "Missing objective not rejected: ${NO_OBJ_OUT:0:200}"
 fi
 echo ""
 

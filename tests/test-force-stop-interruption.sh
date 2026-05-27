@@ -39,7 +39,7 @@ ACTIVE_AFTER=$(jq -r '.active_round // "null"' e2e-force/state/project-state.jso
 if [ "$ACTIVE_BEFORE" = "$ACTIVE_AFTER" ] && [ "$ACTIVE_AFTER" != "null" ]; then
     pass "active_round preserved ($ACTIVE_AFTER)"
 else
-    fail "active_round changed: $ACTIVE_BEFORE -> $ACTIVE_AFTER"
+    fail "active_round changed: before=$ACTIVE_BEFORE after=$ACTIVE_AFTER"
 fi
 echo ""
 
@@ -49,7 +49,7 @@ ROUND_STATUS=$(grep -E '^status:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^
 if [ "$ROUND_STATUS" = "open" ]; then
     pass "round.yaml status remains open"
 else
-    fail "round.yaml status='$ROUND_STATUS' (expected open)"
+    fail "round.yaml status=$ROUND_STATUS"
 fi
 echo ""
 
@@ -61,27 +61,27 @@ else
     fail "interruption-log.yaml missing"
 fi
 
-INT_PHASE=$(yq -r '.current_phase // ""' "$ROUND_DIR/interruption-log.yaml" 2>/dev/null || echo "")
+INT_STAGE=$(yq -r '.current_stage // ""' "$ROUND_DIR/interruption-log.yaml" 2>/dev/null || echo "")
 INT_REASON=$(yq -r '.reason // ""' "$ROUND_DIR/interruption-log.yaml" 2>/dev/null || echo "")
 if [ "$INT_REASON" = "user_forced_stop" ]; then
     pass "interruption-log has reason=user_forced_stop"
 else
-    fail "interruption-log reason='$INT_REASON' (expected user_forced_stop)"
+    fail "interruption-log reason=$INT_REASON"
 fi
-if [ "$INT_PHASE" = "snapshot_paper_state" ]; then
-    pass "interruption-log records current_phase"
+if [ "$INT_STAGE" = "s1_round_contract" ]; then
+    pass "interruption-log current_stage=s1_round_contract"
 else
-    fail "interruption-log current_phase='$INT_PHASE' (expected snapshot_paper_state)"
+    fail "interruption-log current_stage='$INT_STAGE'"
 fi
 echo ""
 
-# ── Test 4: force stop → state.yaml current_phase unchanged ──
-echo "── Test 4: force stop preserves current_phase ──"
-CURRENT=$(yq -r '.current_phase // ""' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "")
-if [ "$CURRENT" = "snapshot_paper_state" ]; then
-    pass "current_phase preserved ($CURRENT)"
+# ── Test 4: force stop → state.yaml current_stage unchanged ──
+echo "── Test 4: force stop preserves current_stage ──"
+CURRENT=$(yq -r '.current_stage // ""' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "")
+if [ "$CURRENT" = "s1_round_contract" ]; then
+    pass "current_stage preserved as s1_round_contract"
 else
-    fail "current_phase='$CURRENT' (expected snapshot_paper_state)"
+    fail "current_stage=$CURRENT"
 fi
 echo ""
 

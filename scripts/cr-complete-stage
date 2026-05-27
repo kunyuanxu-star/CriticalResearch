@@ -1,0 +1,271 @@
+#!/usr/bin/env bash
+# cr-complete-stage — The ONLY way to mark a stage complete.
+# Validates the stage via cr-validate-stage, then updates state.yaml.
+# Manual edits to stage status in state.yaml are blocked by cr-guard-path.
+#
+# Usage: cr-complete-stage <project_dir> <round_dir> <stage>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+ROUND_DIR="${2:-}"
+STAGE="${3:-}"
+
+if [ -z "$PROJECT_DIR" ] || [ -z "$ROUND_DIR" ] || [ -z "$STAGE" ]; then
+    echo "Usage: cr-complete-stage <project_dir> <round_dir> <stage>" >&2
+    exit 2
+fi
+
+STATE_FILE="$ROUND_DIR/state.yaml"
+
+if [ ! -f "$STATE_FILE" ]; then
+    echo "Error: state.yaml not found in $ROUND_DIR" >&2
+    exit 2
+fi
+
+# Check stage exists.
+STAGE_STATUS=$(yq -r ".stages.$STAGE.status // \"unknown\"" "$STATE_FILE" 2>/dev/null || echo "unknown")
+if [ "$STAGE_STATUS" = "unknown" ]; then
+    echo "Error: stage '$STAGE' not found in state.yaml" >&2
+    exit 2
+fi
+
+# ── Only allow completing current_stage ────────────────────────────
+
+CURRENT_STAGE=$(yq -r '.current_stage // ""' "$STATE_FILE" 2>/dev/null || echo "")
+if [ "$STAGE" != "$CURRENT_STAGE" ]; then
+    echo "Error: Cannot complete stage '$STAGE'; current_stage is '$CURRENT_STAGE'" >&2
+    echo "  Stages must be completed in stage_order sequence." >&2
+    exit 2
+fi
+
+# ── Helper: auto-unblock next stages ─────────────────────────────
+
+auto_unblock() {
+    local state_file="$1"
+    local all_stages
+    all_stages=$(yq -r '.stage_order // [] | .[]' "$state_file" 2>/dev/null)
+    [ -z "$all_stages" ] && all_stages=$(yq -r '.stages | keys | .[]' "$state_file" 2>/dev/null)
+    for s in $all_stages; do
+        [ -z "$s" ] && continue
+        local s_status
+        s_status=$(yq -r ".stages.$s.status // \"\"" "$state_file" 2>/dev/null)
+        [ "$s_status" != "blocked" ] && continue
+
+        local all_deps_met=true
+        local deps
+        deps=$(yq -r ".stages.$s.depends_on // [] | .[]" "$state_file" 2>/dev/null)
+        for dep in $deps; do
+            [ -z "$dep" ] && continue
+            local dep_status
+            dep_status=$(yq -r ".stages.$dep.status // \"\"" "$state_file" 2>/dev/null)
+            if [ "$dep_status" != "complete" ]; then
+                all_deps_met=false
+                break
+            fi
+        done
+
+        if [ "$all_deps_met" = true ]; then
+            yq -i ".stages.$s.status = \"open\"" "$state_file" 2>/dev/null
+            echo "  Unblocked: $s"
+        fi
+    done
+
+    # Set current_stage to the first open stage.
+    for s in $all_stages; do
+        [ -z "$s" ] && continue
+        local s_status
+        s_status=$(yq -r ".stages.$s.status // \"\"" "$state_file" 2>/dev/null)
+        if [ "$s_status" = "open" ]; then
+            yq -i ".current_stage = \"$s\"" "$state_file" 2>/dev/null
+            echo "Current stage: $s"
+            break
+        fi
+    done
+}
+
+# ── Already complete: unblock if possible ────────────────────────
+
+if [ "$STAGE_STATUS" = "complete" ]; then
+    echo "Stage '$STAGE' is already complete."
+    auto_unblock "$STATE_FILE"
+    exit 0
+fi
+
+if [ "$STAGE_STATUS" = "blocked" ]; then
+    echo "Error: stage '$STAGE' is blocked. Complete its dependencies first:"
+    yq -r ".stages.$STAGE.depends_on[]" "$STATE_FILE" 2>/dev/null | while read -r dep; do
+        dep_status=$(yq -r ".stages.$dep.status // \"unknown\"" "$STATE_FILE" 2>/dev/null)
+        echo "  - $dep: $dep_status"
+    done
+    exit 2
+fi
+
+# Collect all inputs and outputs for stage-run-log recording.
+ALL_OUTPUTS=$(yq -r ".stages.$STAGE.required_outputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
+ALL_INPUTS=$(yq -r ".stages.$STAGE.required_inputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
+
+# ── Validate state transition ──────────────────────────────────────
+
+TRANSITION_VALIDATOR="$SCRIPT_DIR/cr-validate-stage-transition"
+if [ -x "$TRANSITION_VALIDATOR" ]; then
+    if ! "$TRANSITION_VALIDATOR" "$STATE_FILE" "$STAGE" "$STAGE_STATUS" "complete"; then
+        echo ""
+        echo "State transition $STAGE_STATUS -> complete is FORBIDDEN for stage '$STAGE'."
+        echo "  Repair path: set stage to 'running' first, re-validate, then complete."
+        echo "  If repairing from repair_required, ensure you have re-run the stage."
+        exit 2
+    fi
+else
+    echo "Warning: cr-validate-stage-transition not found — skipping transition check."
+fi
+
+# ── Stage-specific completion predicate ─────────────────────────────
+
+COMPLETION_ALL_OUTPUTS=$(yq -r ".stages.$STAGE.completion_predicate.all_outputs_exist" "$STATE_FILE" 2>/dev/null || echo "true")
+[ -z "$COMPLETION_ALL_OUTPUTS" ] || [ "$COMPLETION_ALL_OUTPUTS" = "null" ] && COMPLETION_ALL_OUTPUTS="true"
+COMPLETION_VALIDATOR=$(yq -r ".stages.$STAGE.completion_predicate.validator_passed" "$STATE_FILE" 2>/dev/null || echo "true")
+[ -z "$COMPLETION_VALIDATOR" ] || [ "$COMPLETION_VALIDATOR" = "null" ] && COMPLETION_VALIDATOR="true"
+
+if [ "$COMPLETION_ALL_OUTPUTS" != "true" ]; then
+    echo "Error: completion_predicate.all_outputs_exist is false for stage '$STAGE'" >&2
+    exit 2
+fi
+
+# Run stage validator. Must pass before marking complete.
+echo "Validating stage '$STAGE'..."
+STAGE_VALIDATOR="$SCRIPT_DIR/cr-validate-stage"
+if [ -x "$STAGE_VALIDATOR" ]; then
+    if ! "$STAGE_VALIDATOR" "$PROJECT_DIR" "$ROUND_DIR" "$STAGE"; then
+        echo ""
+        echo "Stage '$STAGE' validation FAILED. Fix issues before completing this stage."
+        exit 2
+    fi
+else
+    echo "Warning: cr-validate-stage not found — checking required outputs only."
+    REQ=$(yq -r ".stages.$STAGE.required_outputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
+    for output in $REQ; do
+        [ -z "$output" ] && continue
+        case "$output" in
+            *.yaml|*.md|*.json)
+                if [ ! -f "$ROUND_DIR/$output" ] && [ ! -f "$PROJECT_DIR/$output" ]; then
+                    echo "Error: required output '$output' is missing" >&2
+                    exit 2
+                fi
+                ;;
+            raw-sources|patches|experiments)
+                if [ ! -d "$ROUND_DIR/$output" ] || [ -z "$(ls -A "$ROUND_DIR/$output" 2>/dev/null)" ]; then
+                    echo "Error: required output '$output/' is missing or empty" >&2
+                    exit 2
+                fi
+                ;;
+        esac
+    done
+fi
+
+# ── All checks passed — mark stage complete ──────────────────────
+
+NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+yq -i ".stages.$STAGE.status = \"complete\" | .stages.$STAGE.completed_at = \"$NOW\"" "$STATE_FILE" 2>/dev/null || {
+    echo "Error: failed to update state.yaml" >&2
+    exit 2
+}
+
+echo "Stage '$STAGE' marked complete at $NOW"
+
+# ── Record stage-run-log (execution proof) ────────────────────────
+
+STAGE_ORDER=$(yq -r ".stage_order | to_entries | .[] | select(.value == \"$STAGE\") | .key // 0" "$STATE_FILE" 2>/dev/null || echo "0")
+STAGE_ORDER=$((STAGE_ORDER + 1))
+RUN_LOG="$ROUND_DIR/stage-run-log.yaml"
+
+# Get started_at from state.yaml for the stage_started event.
+STARTED_AT=$(yq -r ".stages.\"$STAGE\".started_at // \"$NOW\"" "$STATE_FILE" 2>/dev/null || echo "$NOW")
+
+# Compute validator script hash.
+VALIDATOR_SCRIPT="$SCRIPT_DIR/cr-validate-stage"
+VALIDATOR_SHA256="unknown"
+if [ -f "$VALIDATOR_SCRIPT" ]; then
+    VALIDATOR_SHA256=$(shasum -a 256 "$VALIDATOR_SCRIPT" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
+fi
+
+# Ensure run-log has schema header if empty or old format.
+if [ ! -s "$RUN_LOG" ] || ! grep -q '^schema_version:' "$RUN_LOG" 2>/dev/null; then
+    cat > "$RUN_LOG" << 'HDR'
+schema_version: "1.0.0"
+events:
+HDR
+fi
+
+# Convert old empty-list format to block format.
+if grep -q '^events: \[\]' "$RUN_LOG" 2>/dev/null; then
+    sed -i '' 's/^events: \[\]/events:/' "$RUN_LOG" 2>/dev/null || \
+        sed -i 's/^events: \[\]/events:/' "$RUN_LOG"
+fi
+
+# Write stage_completed event.
+{
+    echo "  - event: stage_completed"
+    echo "    stage: $STAGE"
+    echo "    order: $STAGE_ORDER"
+    echo "    at: \"$NOW\""
+    echo "    status_transition:"
+    echo "      from: \"$STAGE_STATUS\""
+    echo "      to: complete"
+    echo "    validator:"
+    echo "      path: \"scripts/cr-validate-stage\""
+    echo "      sha256: \"$VALIDATOR_SHA256\""
+    echo "      exit_code: 0"
+    echo "    output_hashes:"
+
+    # Write output hashes from manifest snapshot (scoped paths).
+    MANIFEST="$ROUND_DIR/stage-manifest.snapshot.yaml"
+    HAS_HASHES=false
+    if [ -f "$MANIFEST" ]; then
+        ST_IDX=$(yq -r ".stages | to_entries | .[] | select(.value.id == \"$STAGE\") | .key // -1" "$MANIFEST" 2>/dev/null || echo "-1")
+        if [ "$ST_IDX" -ge 0 ] 2>/dev/null; then
+            OUT_COUNT=$(yq -r ".stages[$ST_IDX].required_outputs | length // 0" "$MANIFEST" 2>/dev/null || echo 0)
+            for j in $(seq 0 $((OUT_COUNT - 1))); do
+                scoped_out=$(yq -r ".stages[$ST_IDX].required_outputs[$j].path // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+                [ -z "$scoped_out" ] && continue
+                h=$("$SCRIPT_DIR/cr-hash-artifact" "$PROJECT_DIR" "$ROUND_DIR" "$scoped_out" 2>/dev/null || echo "unknown")
+                if [ "$h" != "unknown" ]; then
+                    echo "      \"$scoped_out\": \"$h\""
+                    HAS_HASHES=true
+                fi
+            done
+        fi
+    else
+        # Fallback to state.yaml bare paths (backward compat).
+        for out in $ALL_OUTPUTS; do
+            [ -z "$out" ] && continue
+            f="$ROUND_DIR/$out"
+            if [ -f "$f" ]; then
+                h=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
+                echo "      \"$out\": \"$h\""
+                HAS_HASHES=true
+            elif [ -d "$f" ]; then
+                h=$(find "$f" -type f -exec shasum -a 256 {} \; 2>/dev/null | awk '{print $1}' | sort | shasum -a 256 | cut -d' ' -f1 || echo "unknown")
+                echo "      \"$out\": \"$h\""
+                HAS_HASHES=true
+            elif [ -f "$PROJECT_DIR/$out" ]; then
+                h=$(shasum -a 256 "$PROJECT_DIR/$out" 2>/dev/null | cut -d' ' -f1 || echo "unknown")
+                echo "      \"$out\": \"$h\""
+                HAS_HASHES=true
+            fi
+        done
+    fi
+
+    if [ "$HAS_HASHES" = false ]; then
+        echo "      {}"
+    fi
+} >> "$RUN_LOG"
+echo "  Stage execution recorded in stage-run-log.yaml"
+
+# ── Auto-unblock next stages whose dependencies are now satisfied ──
+
+auto_unblock "$STATE_FILE"

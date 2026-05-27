@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+# cr-validate-stage-manifest-consistency — Hard gate: all stage definitions must be
+# consistent with stage-manifest.yaml (the single source of truth).
+# Checks: stage count, ordering, prompt existence, fields per stage,
+#         close_round position, schema coverage, stage_order alignment.
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+SKILL_HOME="$(cr_skill_home)"
+MANIFEST="$SKILL_HOME/workflow/stage-manifest.yaml"
+echo "── Stage Manifest Consistency Check ──"
+[ ! -f "$MANIFEST" ] && { fail "stage-manifest.yaml not found"; cr_exit_summary; }
+
+# ── 1. Top-level checks ───────────────────────────────────────────
+
+MANIFEST_COUNT=$(yq -r '.stage_count' "$MANIFEST" 2>/dev/null || echo "0")
+[ "$MANIFEST_COUNT" = "8" ] && pass "Manifest: 8 stages" || { fail "Manifest stage_count=$MANIFEST_COUNT"; }
+
+CLOSE_IS_STAGE=$(yq -r '.close_round_is_stage' "$MANIFEST" 2>/dev/null || echo "false")
+[ "$CLOSE_IS_STAGE" = "true" ] && pass "Manifest: close_round_is_stage" || fail "close_round_is_stage not true"
+
+# ── 2. s8_round_closure must be last ───────────────────────────────────
+
+LAST_STAGE=$(yq -r ".stages[$((MANIFEST_COUNT - 1))].id" "$MANIFEST" 2>/dev/null || echo "")
+if [ "$LAST_STAGE" = "s8_round_closure" ]; then
+    pass "s8_round_closure is the last stage (order $MANIFEST_COUNT)"
+else
+    fail "s8_round_closure is NOT the last stage (last=$LAST_STAGE)"
+fi
+
+# ── 3. Stage order alignment with round-state template ────────────
+
+TEMPLATE="$SKILL_HOME/templates/round-state.yaml"
+if [ -f "$TEMPLATE" ]; then
+    TEMPLATE_ORDER_MATCH=true
+    for i in $(seq 0 7); do
+        manifest_id=$(yq -r ".stages[$i].id" "$MANIFEST" 2>/dev/null || echo "")
+        template_id=$(yq -r ".stage_order[$i]" "$TEMPLATE" 2>/dev/null || echo "")
+        if [ "$manifest_id" != "$template_id" ]; then
+            fail "Stage order mismatch at index $i: manifest=$manifest_id template=$template_id"
+            TEMPLATE_ORDER_MATCH=false
+        fi
+    done
+    [ "$TEMPLATE_ORDER_MATCH" = true ] && pass "Manifest stage_order matches round-state template"
+else
+    warn "round-state.yaml template not found — skipping stage_order alignment check"
+fi
+
+# ── 4. Each stage has required fields ─────────────────────────────
+
+MISSING_PROMPTS=0
+MISSING_SCHEMA=0
+for i in $(seq 0 7); do
+    sid=$(yq -r ".stages[$i].id" "$MANIFEST" 2>/dev/null || echo "")
+    [ -z "$sid" ] && { fail "Stage $i has no id"; continue; }
+
+    # Prompt file exists.
+    PROMPT="$SKILL_HOME/prompts/stages/${sid}.md"
+    [ -f "$PROMPT" ] || { fail "Missing prompt: prompts/stages/${sid}.md"; MISSING_PROMPTS=$((MISSING_PROMPTS+1)); }
+
+    # state_required == running.
+    sr=$(yq -r ".stages[$i].state_required // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+    [ "$sr" != "running" ] && fail "Stage $sid state_required=$sr (must be running)"
+
+    # Each required output has schema or explicit no_schema_reason.
+    output_count=$(yq -r ".stages[$i].required_outputs | length" "$MANIFEST" 2>/dev/null || echo 0)
+    for j in $(seq 0 $((output_count - 1))); do
+        out_path=$(yq -r ".stages[$i].required_outputs[$j].path // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+        out_schema=$(yq -r ".stages[$i].required_outputs[$j].schema // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+        no_schema=$(yq -r ".stages[$i].required_outputs[$j].no_schema_reason // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+        if [ -z "$out_schema" ] || [ "$out_schema" = "null" ]; then
+            if [ -z "$no_schema" ] || [ "$no_schema" = "null" ]; then
+                # Directories and some files don't need schemas.
+                case "$out_path" in
+                    *patches/|*experiments/|*raw-sources/|*source-notes/) ;; # directories ok without schema
+                    *search-queue.yaml|*human-decisions.yaml|*round-summary.yaml|*literature-delta.yaml) ;; # explicit exemptions
+                    *writing/paper-draft.md) ;; # project-level draft, no schema
+                    *)
+                        fail "Stage $sid output '$out_path' missing schema or no_schema_reason"
+                        MISSING_SCHEMA=$((MISSING_SCHEMA+1))
+                        ;;
+                esac
+            fi
+        else
+            # Schema path is relative to skill home.
+            schema_file="$SKILL_HOME/$out_schema"
+            [ -f "$schema_file" ] || { fail "Stage $sid schema not found: $out_schema"; MISSING_SCHEMA=$((MISSING_SCHEMA+1)); }
+        fi
+    done
+done
+
+[ "$MISSING_PROMPTS" -gt 0 ] && fail "$MISSING_PROMPTS prompts missing"
+[ "$MISSING_PROMPTS" -eq 0 ] && pass "All stages have prompts"
+
+[ "$MISSING_SCHEMA" -gt 0 ] && fail "$MISSING_SCHEMA schema issues"
+[ "$MISSING_SCHEMA" -eq 0 ] && pass "All required outputs have schemas or explicit exemptions"
+
+# ── 5. Check validator pipeline has required hard gates ───────────
+
+REGISTRY="$SKILL_HOME/schemas/artifact-registry.json"
+if [ -f "$REGISTRY" ]; then
+    HAS_STAGE_RUN_LOG=$(jq -r '.validator_pipeline.validators[] | select(.name=="cr-validate-stage-run-log") | .name' "$REGISTRY" 2>/dev/null || echo "")
+    HAS_ALL_STAGES=$(jq -r '.validator_pipeline.validators[] | select(.name=="cr-validate-all-stages") | .name' "$REGISTRY" 2>/dev/null || echo "")
+    HAS_TRANSACTION=$(jq -r '.validator_pipeline.validators[] | select(.name=="cr-validate-transaction-chain") | .name' "$REGISTRY" 2>/dev/null || echo "")
+
+    [ -n "$HAS_STAGE_RUN_LOG" ] && pass "Validator pipeline includes cr-validate-stage-run-log" || fail "Missing cr-validate-stage-run-log in validator pipeline"
+    [ -n "$HAS_ALL_STAGES" ] && pass "Validator pipeline includes cr-validate-all-stages" || fail "Missing cr-validate-all-stages in validator pipeline"
+    [ -n "$HAS_TRANSACTION" ] && pass "Validator pipeline includes cr-validate-transaction-chain" || fail "Missing cr-validate-transaction-chain in validator pipeline"
+else
+    warn "artifact-registry.json not found — skipping pipeline check"
+fi
+
+cr_exit_summary

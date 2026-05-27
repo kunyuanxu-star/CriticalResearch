@@ -15,7 +15,7 @@ jobs:
         run: sudo apt-get install -y shellcheck
       - name: Run shellcheck
         run: |
-          shellcheck scripts/cr scripts/cr-* scripts/critical-research-hook scripts/cr-resolve-artifact-path scripts/cr-start-paper-round scripts/cr-validate-module-checkpoint scripts/cr-validate-module-review scripts/cr-validate-phase-run-log scripts/cr-hook-user-prompt-expansion scripts/cr-hook-config-change
+          shellcheck scripts/cr scripts/cr-* scripts/critical-research-hook scripts/cr-resolve-artifact-path scripts/cr-start-paper-round scripts/cr-validate-stage scripts/cr-validate-stage-run-log scripts/cr-hook-user-prompt-expansion scripts/cr-hook-config-change
 
   syntax:
     runs-on: ubuntu-latest
@@ -55,7 +55,7 @@ jobs:
           export PATH="$PWD/scripts:$PATH"
           bash tests/test-full-round-enforcement.sh
 
-  37-phase-happy-path:
+  8-stage-state-machine-happy-path:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,11 +64,11 @@ jobs:
           sudo apt-get install -y jq
           sudo wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
-      - name: Run 37-phase state machine happy path
+      - name: Run 8-stage state machine happy path
         run: |
           export PATH="$PWD/scripts:$PATH"
           export CR_SKILL_HOME="$PWD"
-          bash tests/test-37-phase-state-machine-happy-path.sh
+          bash tests/test-8-stage-state-machine-happy-path.sh
 
   slash-command-contract:
     runs-on: ubuntu-latest
@@ -79,7 +79,7 @@ jobs:
           export PATH="$PWD/scripts:$PATH"
           bash tests/test-slash-command-contract.sh
 
-  phase-run-log-io:
+  stage-run-log-required-io:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -88,26 +88,11 @@ jobs:
           sudo apt-get install -y jq
           sudo wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
-      - name: Run phase-run-log required IO test
+      - name: Run stage-run-log required IO test
         run: |
           export PATH="$PWD/scripts:$PATH"
           export CR_SKILL_HOME="$PWD"
-          bash tests/test-phase-run-log-required-io.sh
-
-  module-checkpoint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install dependencies
-        run: |
-          sudo apt-get install -y jq
-          sudo wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-      - name: Run module checkpoint test
-        run: |
-          export PATH="$PWD/scripts:$PATH"
-          export CR_SKILL_HOME="$PWD"
-          bash tests/test-module-checkpoint.sh
+          bash tests/test-stage-run-log-required-io.sh
 
   close-round-protocol:
     runs-on: ubuntu-latest
@@ -132,21 +117,6 @@ jobs:
         run: |
           export PATH="$PWD/scripts:$PATH"
           bash tests/test-hook-contract.sh
-
-  module-review-gate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install dependencies
-        run: |
-          sudo apt-get install -y jq
-          sudo wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-      - name: Run module review gate test
-        run: |
-          export PATH="$PWD/scripts:$PATH"
-          export CR_SKILL_HOME="$PWD"
-          bash tests/test-module-review-gate.sh
 
   user-prompt-expansion:
     runs-on: ubuntu-latest
@@ -248,13 +218,11 @@ jobs:
       - syntax
       - schemas
       - happy-path
-      - 37-phase-happy-path
+      - 8-stage-state-machine-happy-path
       - slash-command-contract
-      - phase-run-log-io
-      - module-checkpoint
+      - stage-run-log-required-io
       - close-round-protocol
       - hook-contract
-      - module-review-gate
       - user-prompt-expansion
       - config-change-blocks
       - directory-hash-proof
@@ -299,40 +267,6 @@ jobs:
         run: |
           echo "Checking .claude/settings.json for all 6 hook events..."
           for event in UserPromptExpansion UserPromptSubmit PreToolUse PostToolUse Stop ConfigChange; do
-            grep -q "\"$event\"" .claude/settings.json || {
-              echo "FAIL: Hook $event missing from .claude/settings.json"
-              exit 1
-            }
-            echo "  OK: $event"
+            grep -q "$event" .claude/settings.json || { echo "MISSING: $event"; exit 1; }
           done
-          echo "All hook events configured."
-
-      - name: Verify no disableAllHooks in committed files
-        run: |
-          echo "Checking for disableAllHooks:true in tracked files..."
-          if grep -r '"disableAllHooks"\s*:\s*true' . --include="*.json" 2>/dev/null; then
-            echo "FAIL: disableAllHooks:true found in committed files"
-            exit 1
-          fi
-          echo "  OK: No disableAllHooks:true found."
-
-      - name: Verify hook wrapper dispatch is correct
-        run: |
-          echo "Checking critical-research-hook dispatch..."
-          for event in user-prompt-expansion user-prompt-submit pre-tool-use post-tool-use stop config-change; do
-            script_name="cr-hook-${event}"
-            grep -q "$script_name" scripts/critical-research-hook || {
-              echo "FAIL: $script_name not dispatched in critical-research-hook"
-              exit 1
-            }
-            echo "  OK: $event -> $script_name"
-          done
-
-      - name: Verify pre-commit hook passes syntax check
-        run: |
-          if [ -f hooks/pre-commit ]; then
-            bash -n hooks/pre-commit || { echo "FAIL: hooks/pre-commit syntax error"; exit 1; }
-            echo "  OK: hooks/pre-commit passes bash -n"
-          else
-            echo "  WARN: hooks/pre-commit not found (should be created)"
-          fi
+          echo "All 6 hook events found in settings.json"

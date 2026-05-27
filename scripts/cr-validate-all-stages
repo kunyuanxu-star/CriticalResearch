@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# cr-validate-all-stages — Hard gate: require all stages complete before round close.
+# Dynamic: reads stage_order from state.yaml instead of hardcoding a fixed list.
+# A round cannot close unless every pre-close stage is individually complete with
+# a timestamp.
+#
+# Usage: cr-validate-all-stages <project_dir> <round_dir> [preclose|postclose]
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+ROUND_DIR="${2:-}"
+
+if [ -z "$PROJECT_DIR" ] || [ -z "$ROUND_DIR" ]; then
+    echo "Usage: cr-validate-all-stages <project_dir> <round_dir> [preclose|postclose]" >&2
+    exit 2
+fi
+
+MODE="${3:-postclose}"
+STATE_FILE="$ROUND_DIR/state.yaml"
+
+if [ ! -f "$STATE_FILE" ]; then
+    fail "state.yaml not found in $ROUND_DIR"
+    cr_exit_summary
+fi
+
+echo "── Stage Completeness Check ──"
+
+FAIL=0
+COMPLETED=0
+TOTAL=0
+
+# Read stage_order dynamically from state.yaml.
+readarray -t STAGE_LIST < <(yq -r '.stage_order[]' "$STATE_FILE" 2>/dev/null || echo "")
+
+if [ "${#STAGE_LIST[@]}" -eq 0 ]; then
+    # Fallback: read stages keys directly.
+    readarray -t STAGE_LIST < <(yq -r '.stages | keys[]' "$STATE_FILE" 2>/dev/null || echo "")
+fi
+
+if [ "${#STAGE_LIST[@]}" -eq 0 ]; then
+    fail "No stages found in state.yaml — cannot validate stage completeness"
+    cr_exit_summary
+fi
+
+# Stage count check: read closure_policy for expected minimum.
+POLICY_COUNT=$(yq -r '.closure_policy.require_all_stages_complete // false' "$STATE_FILE" 2>/dev/null || echo "false")
+
+for stage in "${STAGE_LIST[@]}"; do
+    [ -z "$stage" ] && continue
+
+    # preclose mode: skip s8_round_closure (not yet complete).
+    # postclose mode: check s8_round_closure like every other stage.
+    if [ "$MODE" = "preclose" ] && [ "$stage" = "s8_round_closure" ]; then
+        continue
+    fi
+
+    TOTAL=$((TOTAL + 1))
+    status=$(yq -r ".stages.\"$stage\".status // \"missing\"" "$STATE_FILE" 2>/dev/null || echo "missing")
+    completed_at=$(yq -r ".stages.\"$stage\".completed_at // \"null\"" "$STATE_FILE" 2>/dev/null || echo "null")
+
+    if [ "$status" != "complete" ]; then
+        fail "Stage '$stage': status=$status (expected complete)"
+        FAIL=1
+        continue
+    fi
+
+    if [ "$completed_at" = "null" ] || [ -z "$completed_at" ]; then
+        fail "Stage '$stage': complete but no completed_at timestamp"
+        FAIL=1
+        continue
+    fi
+
+    COMPLETED=$((COMPLETED + 1))
+    pass "Stage '$stage': complete at $completed_at"
+done
+
+# Check closure_policy.require_all_stages_complete is true.
+if [ "$POLICY_COUNT" != "true" ]; then
+    warn "closure_policy.require_all_stages_complete is not true"
+fi
+
+echo ""
+echo "Stages complete ($MODE): $COMPLETED / $TOTAL stages"
+
+if [ "$FAIL" -ne 0 ]; then
+    cr_exit_summary
+fi
+
+pass "All $TOTAL stages complete ($MODE)"
+cr_exit_summary

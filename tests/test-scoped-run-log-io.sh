@@ -31,44 +31,43 @@ cr-start-paper-round e2e-scoped "test scoped io" > /dev/null 2>&1
 ROUND_DIR="e2e-scoped/rounds/round-002"
 mkdir -p "$ROUND_DIR/_cr/knowledge"
 
-echo "schema_version: \"1.0.0\"" > "$ROUND_DIR/paper-state.yaml"
-echo "schema_version: \"1.0.0\"" > "$ROUND_DIR/round-objective.yaml"
+echo "schema_version: \"1.0.0\"" > "$ROUND_DIR/round-contract.yaml"
 
 # Compute real hashes.
 H_IN1=$(cr-hash-artifact "$TEST_DIR/e2e-scoped" "$ROUND_DIR" "project:writing/paper-draft.md" 2>/dev/null || echo "")
 H_IN2=$(cr-hash-artifact "$TEST_DIR/e2e-scoped" "$ROUND_DIR" "project:state/claim-ledger.yaml" 2>/dev/null || echo "")
-H_OUT=$(cr-hash-artifact "$TEST_DIR/e2e-scoped" "$ROUND_DIR" "round:paper-state.yaml" 2>/dev/null || echo "")
+H_OUT=$(cr-hash-artifact "$TEST_DIR/e2e-scoped" "$ROUND_DIR" "round:round-contract.yaml" 2>/dev/null || echo "")
 
 # ── Test 1: scoped output key -> pass ──
 echo "── Test 1: scoped output key -> pass ──"
-cat > "$ROUND_DIR/phase-run-log.yaml" << RL
+cat > "$ROUND_DIR/stage-run-log.yaml" << RL
 schema_version: "1.0.0"
 events:
-  - event: phase_started
-    phase: snapshot_paper_state
+  - event: stage_started
+    stage: s1_round_contract
     order: 1
     at: "2026-01-01T00:00:00Z"
     input_hashes:
       "project:writing/paper-draft.md": "$H_IN1"
       "project:state/claim-ledger.yaml": "$H_IN2"
-  - event: phase_completed
-    phase: snapshot_paper_state
+  - event: stage_completed
+    stage: s1_round_contract
     order: 1
     at: "2026-01-01T00:01:00Z"
     status_transition:
       from: "running"
       to: complete
     validator:
-      path: "scripts/cr-validate-phase"
+      path: "scripts/cr-validate-stage"
       sha256: "test"
       exit_code: 0
     output_hashes:
-      "round:paper-state.yaml": "$H_OUT"
+      "round:round-contract.yaml": "$H_OUT"
 RL
 
-yq -i '.phases.snapshot_paper_state.status = "complete"' "$ROUND_DIR/state.yaml" 2>/dev/null || true
+yq -i '.stages.s1_round_contract.status = "complete"' "$ROUND_DIR/state.yaml" 2>/dev/null || true
 
-if cr-validate-phase-run-log "$TEST_DIR/e2e-scoped" "$ROUND_DIR" > /tmp/sc1.out 2>&1; then
+if cr-validate-stage-run-log "$TEST_DIR/e2e-scoped" "$ROUND_DIR" > /tmp/sc1.out 2>&1; then
     pass "Scoped output hash key accepted"
 else
     fail "Scoped output hash key should be accepted"
@@ -78,9 +77,9 @@ echo ""
 
 # ── Test 2: artifact modified after hash recorded -> fail ──
 echo "── Test 2: artifact modified -> hash mismatch -> fail ──"
-echo "# MODIFIED" > "$ROUND_DIR/paper-state.yaml"
+echo "# MODIFIED" > "$ROUND_DIR/round-contract.yaml"
 
-OUT=$(cr-validate-phase-run-log "$TEST_DIR/e2e-scoped" "$ROUND_DIR" 2>&1 || true)
+OUT=$(cr-validate-stage-run-log "$TEST_DIR/e2e-scoped" "$ROUND_DIR" 2>&1 || true)
 if echo "$OUT" | grep -q "hash mismatch"; then
     pass "Validator detects artifact modification"
 else

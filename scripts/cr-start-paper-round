@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cr-start-paper-round — Strong setup script for a 37-phase paper round.
+# cr-start-paper-round — Strong setup script for an 8-stage paper round.
 # Creates the round directory, snapshots the manifest, generates state,
 # and prepares all runtime files. This is the ONLY way to start a paper round.
 #
@@ -91,19 +91,19 @@ fi
 
 mkdir -p "$ROUND_DIR"
 
-# ── 7. Snapshot phase manifest ────────────────────────────────────
+# ── 7. Snapshot stage manifest ────────────────────────────────────
 
 SKILL_HOME="$(cr_skill_home)"
-MANIFEST="$SKILL_HOME/workflow/phase-manifest.yaml"
-MANIFEST_SNAPSHOT="$ROUND_DIR/phase-manifest.snapshot.yaml"
+MANIFEST="$SKILL_HOME/workflow/stage-manifest.yaml"
+MANIFEST_SNAPSHOT="$ROUND_DIR/stage-manifest.snapshot.yaml"
 
 if [ ! -f "$MANIFEST" ]; then
-    echo "Error: phase manifest not found: $MANIFEST" >&2
+    echo "Error: stage manifest not found: $MANIFEST" >&2
     exit 1
 fi
 
 cp "$MANIFEST" "$MANIFEST_SNAPSHOT"
-echo "  Snapshotted phase manifest to $MANIFEST_SNAPSHOT"
+echo "  Snapshotted stage manifest to $MANIFEST_SNAPSHOT"
 
 NOW="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
@@ -122,6 +122,10 @@ required_outputs:
   - report
   - evidence_ledger
   - critique_ledger
+  - review_disposition
+  - revision_plan
+  - patch_plan
+  - patch_trace
   - writing_diff_yaml
   - knowledge_delta
   - knowledge_apply_log
@@ -138,15 +142,15 @@ echo "  Generated round.yaml"
 STATE_YAML="$ROUND_DIR/state.yaml"
 
 # Build the state.yaml dynamically from the manifest.
-# We preserve the full structure: execution_policy, phase_order, phases map.
+# We preserve the full structure: execution_policy, stage_order, stages map.
 
 cat > "$STATE_YAML" << HEADER
-schema_version: "3.0.0"
+schema_version: "4.0.0"
 project_id: "$PROJECT_ID"
 round_id: $NEXT_ROUND
 workflow_mode: paper
 status: open
-current_phase: snapshot_paper_state
+current_stage: s1_round_contract
 
 required_research: true
 required_min_sources: 5
@@ -159,96 +163,76 @@ execution_policy:
   invocation_mode: slash_command
   full_round_required: true
   full_paper_required: true
-  required_phase_count: 37
+  required_stage_count: 8
   allow_partial_stop: false
   stop_only_on:
     - round_closed
     - human_decision_required
     - unrecoverable_tool_error
 
-phase_order:
+stage_order:
 HEADER
 
-# Append phase_order from manifest.
-for i in $(seq 0 36); do
-    pid=$(yq -r ".phases[$i].id" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo "")
-    [ -n "$pid" ] && echo "  - $pid" >> "$STATE_YAML"
+# Append stage_order from manifest.
+for i in $(seq 0 7); do
+    sid=$(yq -r ".stages[$i].id" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo "")
+    [ -n "$sid" ] && echo "  - $sid" >> "$STATE_YAML"
 done
 
-# Append phases block.
+# Append stages block.
 echo "" >> "$STATE_YAML"
-echo "phases:" >> "$STATE_YAML"
+echo "stages:" >> "$STATE_YAML"
 
-for i in $(seq 0 36); do
-    pid=$(yq -r ".phases[$i].id" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo "")
-    [ -z "$pid" ] && continue
+for i in $(seq 0 7); do
+    sid=$(yq -r ".stages[$i].id" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo "")
+    [ -z "$sid" ] && continue
 
     order=$((i + 1))
-    module=$(yq -r ".phases[$i].module // \"\"" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo "")
-    [ -z "$module" ] && module=$(yq -r ".phases[$i].id" "$MANIFEST_SNAPSHOT" 2>/dev/null | sed 's/_.*//' || echo "M0")
-    # Infer module from phase id if not in manifest.
-    case "$pid" in
-        snapshot_paper_state|load_project_knowledge|define_round_objective|freeze_full_paper_coverage) module="M0" ;;
-        plan_research_questions|generate_search_strategy) module="M1" ;;
-        execute_retrieval|triage_sources|ingest_sources|read_sources|normalize_evidence|build_related_work_map|update_literature_knowledge) module="M2" ;;
-        synthesize_claim_evidence|synthesize_baseline_positioning|synthesize_evaluation_gaps) module="M3" ;;
-        critique_claim_precision|critique_novelty_and_baselines|critique_evidence_sufficiency|critique_evaluation_contract|critique_writing_argument|merge_critique_ledger) module="M4" ;;
-        generate_dispositions|resolve_human_decisions|generate_paper_patches|generate_experiment_obligations) module="M5" ;;
-        plan_writing_changes|apply_local_section_patches|validate_patch_application|global_argument_pass|claim_evidence_alignment_pass|reviewer_readiness_pass) module="M6" ;;
-        distill_literature_knowledge|distill_thinking_knowledge|apply_knowledge_delta|prepare_next_round|close_round) module="M7" ;;
-    esac
+    prompt_path=$(yq -r ".stages[$i].prompt // \"prompts/stages/${sid}.md\"" "$MANIFEST_SNAPSHOT" 2>/dev/null)
 
-    prompt_path=$(yq -r ".phases[$i].prompt // \"prompts/phases/${pid}.md\"" "$MANIFEST_SNAPSHOT" 2>/dev/null)
-
-    # Get required_inputs from manifest or use defaults from template.
-    required_inputs=$(yq -r ".phases[$i].required_inputs // []" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo "[]")
-    # If manifest has structured required_inputs, use them; otherwise fall back to template defaults.
+    # Get required_inputs from manifest or use defaults.
+    required_inputs=$(yq -r ".stages[$i].required_inputs // []" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo "[]")
     has_structured_inputs=false
     if [ "$required_inputs" != "[]" ] && [ "$required_inputs" != "null" ]; then
-        input_len=$(yq -r ".phases[$i].required_inputs | length" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo 0)
+        input_len=$(yq -r ".stages[$i].required_inputs | length" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo 0)
         [ "$input_len" -gt 0 ] 2>/dev/null && has_structured_inputs=true
     fi
 
-    required_outputs=$(yq -r ".phases[$i].required_outputs // []" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo "[]")
+    required_outputs=$(yq -r ".stages[$i].required_outputs // []" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo "[]")
     has_structured_outputs=false
     if [ "$required_outputs" != "[]" ] && [ "$required_outputs" != "null" ]; then
-        output_len=$(yq -r ".phases[$i].required_outputs | length" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo 0)
+        output_len=$(yq -r ".stages[$i].required_outputs | length" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo 0)
         [ "$output_len" -gt 0 ] 2>/dev/null && has_structured_outputs=true
     fi
 
-    forbidden_actions=$(yq -r ".phases[$i].forbidden_actions // []" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo "[]")
+    forbidden_actions=$(yq -r ".stages[$i].forbidden_actions // []" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo "[]")
     has_forbidden=false
     if [ "$forbidden_actions" != "[]" ] && [ "$forbidden_actions" != "null" ]; then
-        fb_len=$(yq -r ".phases[$i].forbidden_actions | length" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo 0)
+        fb_len=$(yq -r ".stages[$i].forbidden_actions | length" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo 0)
         [ "$fb_len" -gt 0 ] 2>/dev/null && has_forbidden=true
     fi
 
-    no_op_allowed=$(yq -r ".phases[$i].no_op_allowed // .no_op.allowed // false" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo "false")
+    no_op_allowed=$(yq -r ".stages[$i].no_op_allowed // false" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo "false")
 
-    # Determine status: first phase is open, rest blocked.
+    # Determine status: first stage is open, rest blocked.
     if [ "$i" -eq 0 ]; then
-        phase_status="open"
+        stage_status="open"
     else
-        phase_status="blocked"
+        stage_status="blocked"
     fi
 
-    cat >> "$STATE_YAML" << PHASE
-  $pid:
-    status: $phase_status
+    cat >> "$STATE_YAML" << STAGE
+  $sid:
+    status: $stage_status
     order: $order
-    module: $module
     started_at: null
     completed_at: null
     prompt: $prompt_path
     prompt_hash: null
-PHASE
+STAGE
 
-    # Add depends_on (previous phase for linear flow, or from manifest).
-    deps=$(yq -r ".phases[$i].dependencies // [] | .[]" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo "")
-    if [ -z "$deps" ] && [ "$i" -gt 0 ]; then
-        prev=$(yq -r ".phases[$((i-1))].id" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo "")
-        [ -n "$prev" ] && deps="$prev"
-    fi
+    # Add depends_on (from manifest).
+    deps=$(yq -r ".stages[$i].dependencies // [] | .[]" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo "")
     if [ -n "$deps" ]; then
         echo "    depends_on:" >> "$STATE_YAML"
         for dep in $deps; do
@@ -261,86 +245,33 @@ PHASE
     # required_inputs (strip scope prefix for state.yaml compatibility)
     if [ "$has_structured_inputs" = true ]; then
         echo "    required_inputs:" >> "$STATE_YAML"
-        yq -r ".phases[$i].required_inputs[] | \"- \" + .path" "$MANIFEST_SNAPSHOT" 2>/dev/null | sed 's/^/      /' | sed 's/^      - project:/      - /; s/^      - round:/      - /; s/^      - workspace:/      - /' >> "$STATE_YAML" || true
+        yq -r ".stages[$i].required_inputs[] | \"- \" + .path" "$MANIFEST_SNAPSHOT" 2>/dev/null | sed 's/^/      /' | sed 's/^      - project:/      - /; s/^      - round:/      - /; s/^      - workspace:/      - /' >> "$STATE_YAML" || true
     else
-        # Fallback: read from template round-state.yaml if available.
-        tmpl="$SKILL_HOME/templates/round-state.yaml"
-        if [ -f "$tmpl" ] && command -v yq >/dev/null 2>&1; then
-            tmpl_inputs=$(yq -r ".phases.\"$pid\".required_inputs // [] | .[]" "$tmpl" 2>/dev/null || echo "")
-            if [ -n "$tmpl_inputs" ]; then
-                echo "    required_inputs:" >> "$STATE_YAML"
-                for ti in $tmpl_inputs; do
-                    echo "      - $ti" >> "$STATE_YAML"
-                done
-            else
-                echo "    required_inputs: []" >> "$STATE_YAML"
-            fi
-        else
-            echo "    required_inputs: []" >> "$STATE_YAML"
-        fi
+        echo "    required_inputs: []" >> "$STATE_YAML"
     fi
 
     # required_outputs (strip scope prefix for state.yaml compatibility)
     if [ "$has_structured_outputs" = true ]; then
         echo "    required_outputs:" >> "$STATE_YAML"
-        yq -r ".phases[$i].required_outputs[] | \"- \" + .path" "$MANIFEST_SNAPSHOT" 2>/dev/null | sed 's/^/      /' | sed 's/^      - project:/      - /; s/^      - round:/      - /; s/^      - workspace:/      - /' >> "$STATE_YAML" || true
+        yq -r ".stages[$i].required_outputs[] | \"- \" + .path" "$MANIFEST_SNAPSHOT" 2>/dev/null | sed 's/^/      /' | sed 's/^      - project:/      - /; s/^      - round:/      - /; s/^      - workspace:/      - /' >> "$STATE_YAML" || true
     else
-        tmpl="$SKILL_HOME/templates/round-state.yaml"
-        if [ -f "$tmpl" ] && command -v yq >/dev/null 2>&1; then
-            tmpl_outputs=$(yq -r ".phases.\"$pid\".required_outputs // [] | .[]" "$tmpl" 2>/dev/null || echo "")
-            if [ -n "$tmpl_outputs" ]; then
-                echo "    required_outputs:" >> "$STATE_YAML"
-                for to in $tmpl_outputs; do
-                    echo "      - $to" >> "$STATE_YAML"
-                done
-            else
-                echo "    required_outputs: []" >> "$STATE_YAML"
-            fi
-        else
-            echo "    required_outputs: []" >> "$STATE_YAML"
-        fi
+        echo "    required_outputs: []" >> "$STATE_YAML"
     fi
 
     # allowed_write_scopes (strip scope prefix for state.yaml compatibility)
     if [ "$has_structured_outputs" = true ]; then
         echo "    allowed_write_scopes:" >> "$STATE_YAML"
-        yq -r ".phases[$i].required_outputs[] | .path" "$MANIFEST_SNAPSHOT" 2>/dev/null | sed 's/^/      - /' | sed 's/^      - project:/      - /; s/^      - round:/      - /; s/^      - workspace:/      - /' >> "$STATE_YAML" || true
+        yq -r ".stages[$i].required_outputs[] | .path" "$MANIFEST_SNAPSHOT" 2>/dev/null | sed 's/^/      - /' | sed 's/^      - project:/      - /; s/^      - round:/      - /; s/^      - workspace:/      - /' >> "$STATE_YAML" || true
     else
-        tmpl="$SKILL_HOME/templates/round-state.yaml"
-        if [ -f "$tmpl" ] && command -v yq >/dev/null 2>&1; then
-            tmpl_scopes=$(yq -r ".phases.\"$pid\".allowed_write_scopes // [] | .[]" "$tmpl" 2>/dev/null || echo "")
-            if [ -n "$tmpl_scopes" ]; then
-                echo "    allowed_write_scopes:" >> "$STATE_YAML"
-                for ts in $tmpl_scopes; do
-                    echo "      - $ts" >> "$STATE_YAML"
-                done
-            else
-                echo "    allowed_write_scopes: []" >> "$STATE_YAML"
-            fi
-        else
-            echo "    allowed_write_scopes: []" >> "$STATE_YAML"
-        fi
+        echo "    allowed_write_scopes: []" >> "$STATE_YAML"
     fi
 
     # forbidden_actions
     if [ "$has_forbidden" = true ]; then
         echo "    forbidden_actions:" >> "$STATE_YAML"
-        yq -r ".phases[$i].forbidden_actions[]" "$MANIFEST_SNAPSHOT" 2>/dev/null | sed 's/^/      - /' >> "$STATE_YAML" || true
+        yq -r ".stages[$i].forbidden_actions[]" "$MANIFEST_SNAPSHOT" 2>/dev/null | sed 's/^/      - /' >> "$STATE_YAML" || true
     else
-        tmpl="$SKILL_HOME/templates/round-state.yaml"
-        if [ -f "$tmpl" ] && command -v yq >/dev/null 2>&1; then
-            tmpl_fb=$(yq -r ".phases.\"$pid\".forbidden_actions // [] | .[]" "$tmpl" 2>/dev/null || echo "")
-            if [ -n "$tmpl_fb" ]; then
-                echo "    forbidden_actions:" >> "$STATE_YAML"
-                for fb in $tmpl_fb; do
-                    echo "      - $fb" >> "$STATE_YAML"
-                done
-            else
-                echo "    forbidden_actions: []" >> "$STATE_YAML"
-            fi
-        else
-            echo "    forbidden_actions: []" >> "$STATE_YAML"
-        fi
+        echo "    forbidden_actions: []" >> "$STATE_YAML"
     fi
 
     cat >> "$STATE_YAML" << REST
@@ -351,51 +282,17 @@ PHASE
       all_outputs_exist: true
       validator_passed: true
       no_unresolved_blockers: true
-    phase_validators_hint: []
+    stage_validators_hint: []
 REST
 done
 
-# Append module_reviews.
-cat >> "$STATE_YAML" << MODREV
-
-module_reviews:
-  M0:
-    status: pending
-    boundary_phase: freeze_full_paper_coverage
-    review_file: phase-reviews/M0-review.yaml
-  M1:
-    status: pending
-    boundary_phase: generate_search_strategy
-    review_file: phase-reviews/M1-review.yaml
-  M2:
-    status: pending
-    boundary_phase: update_literature_knowledge
-    review_file: phase-reviews/M2-review.yaml
-  M3:
-    status: pending
-    boundary_phase: synthesize_evaluation_gaps
-    review_file: phase-reviews/M3-review.yaml
-  M4:
-    status: pending
-    boundary_phase: merge_critique_ledger
-    review_file: phase-reviews/M4-review.yaml
-  M5:
-    status: pending
-    boundary_phase: generate_experiment_obligations
-    review_file: phase-reviews/M5-review.yaml
-  M6:
-    status: pending
-    boundary_phase: reviewer_readiness_pass
-    review_file: phase-reviews/M6-review.yaml
-  M7:
-    status: pending
-    boundary_phase: prepare_next_round
-    review_file: phase-reviews/M7-review.yaml
+# Append closure_policy.
+cat >> "$STATE_YAML" << POLICY
 
 closure_policy:
-  require_all_phases_complete: true
-  require_exact_phase_count: 37
-  require_no_skipped_phases: true
+  require_all_stages_complete: true
+  require_exact_stage_count: 8
+  require_no_skipped_stages: true
   require_external_research: true
   require_no_pending_human_decisions: true
   require_transaction_chain_complete: true
@@ -403,86 +300,55 @@ closure_policy:
   require_experiment_for_claim_patch: true
   require_draft_diff_for_applied_patch: true
   require_knowledge_writeback: true
-  close_round_is_phase: true
-  require_phase_run_log: true
-MODREV
+  close_round_is_stage: true
+  require_stage_run_log: true
+POLICY
 
-echo "  Generated state.yaml (round $NEXT_ROUND, 37 phases)"
+echo "  Generated state.yaml (round $NEXT_ROUND, 8 stages)"
 
-# ── 9. Generate round-objective.yaml ──────────────────────────────
+# ── 10. Generate round-contract.yaml ──────────────────────────────
 
-cat > "$ROUND_DIR/round-objective.yaml" << OBJ
+cat > "$ROUND_DIR/round-contract.yaml" << OBJ
 schema_version: "1.0.0"
 round_id: $NEXT_ROUND
-raw_user_request: "$RAW_OBJECTIVE"
-normalized_objective: ""
+contract:
+  target: "$RAW_OBJECTIVE"
+  scope:
+    sections: []
+    claims: []
+    forbidden_scope: []
+  intensity: standard
+  required_outputs:
+    - evidence_ledger
+    - critique_ledger
+    - review_disposition
+    - revision_plan
+    - patch_plan
+    - patch_trace
+    - writing_diff
+    - knowledge_delta
+    - next_round_targets
+  success_criteria: []
 
-scope_policy:
-  type: full_paper_required
-  objective_may_limit_scope: false
-
-primary_risk:
-  risk_type: novelty_risk
-  description: ""
-  reviewer_impact: ""
-  linked_claim_id: ""
-  linked_section_anchor: ""
-
-coverage_required:
-  entire_paper: true
-  all_sections: true
-  all_core_claims: true
-  all_assumptions: true
-  all_baselines: true
-  all_evaluation_obligations: true
-
-success_criteria: []
+no_contract_reason: null
 OBJ
 
-echo "  Generated round-objective.yaml"
+echo "  Generated round-contract.yaml"
 
-# ── 10. Generate full-paper-coverage-plan.yaml ───────────────────
+# ── 11. Generate stage-contracts ──────────────────────────────────
 
-cat > "$ROUND_DIR/full-paper-coverage-plan.yaml" << COV
-schema_version: "1.0.0"
-round_id: $NEXT_ROUND
-paper_inventory:
-  sections: []
-  claims: []
-  assumptions: []
-  baselines: []
-  evaluation_items: []
-coverage_policy:
-  all_sections_required: true
-  all_claims_required: true
-  all_assumptions_required: true
-  all_baselines_required: true
-  all_evaluation_items_required: true
-objective_focus:
-  objective_id: "R$(printf "%03d" "$NEXT_ROUND")"
-  focus_type: ""
-  priority_weight: high
-non_focus_policy:
-  if_issue_found: record_as_secondary_finding
-  if_severe: create_patch_or_human_decision
-COV
-
-echo "  Generated full-paper-coverage-plan.yaml"
-
-# ── 11. Generate phase-contracts ──────────────────────────────────
-
-mkdir -p "$ROUND_DIR/phase-contracts"
-for i in $(seq 0 36); do
-    pid=$(yq -r ".phases[$i].id" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo "")
-    [ -z "$pid" ] && continue
+mkdir -p "$ROUND_DIR/stage-contracts"
+for i in $(seq 0 7); do
+    sid=$(yq -r ".stages[$i].id" "$MANIFEST_SNAPSHOT" 2>/dev/null || echo "")
+    [ -z "$sid" ] && continue
     order=$((i + 1))
-    contract_file="$ROUND_DIR/phase-contracts/$(printf "%02d" "$order")-${pid}.contract.yaml"
+    contract_file="$ROUND_DIR/stage-contracts/$(printf "%02d" "$order")-${sid}.contract.yaml"
 
     cat > "$contract_file" << CONTRACT
 schema_version: "1.0.0"
-phase_id: $pid
+stage_id: $sid
 order: $order
-contract_type: phase_execution
+contract_type: stage_execution
 required:
   inputs_exist: true
   outputs_exist: true
@@ -491,17 +357,17 @@ required:
   objective_binding_present: true
   full_paper_coverage_present: true
 forbidden:
-  skip_phase: true
+  skip_stage: true
   manual_state_edit: true
   out_of_scope_writes: true
 CONTRACT
 done
 
-echo "  Generated phase-contracts/ (37 files)"
+echo "  Generated stage-contracts/ (8 files)"
 
 # ── 12. Generate empty runtime files ──────────────────────────────
 
-cat > "$ROUND_DIR/phase-run-log.yaml" << PRL
+cat > "$ROUND_DIR/stage-run-log.yaml" << PRL
 schema_version: "1.0.0"
 events:
 PRL
@@ -523,21 +389,21 @@ jq --arg round "$NEXT_ROUND" --arg now "$NOW" \
     '.active_round = ($round | tonumber) | .total_rounds = ($round | tonumber) | .last_updated = $now' \
     "$STATE_FILE" > "$TMP_STATE" && mv "$TMP_STATE" "$STATE_FILE"
 
-# ── 14. Output phase 1 prompt ─────────────────────────────────────
+# ── 14. Output stage 1 prompt ─────────────────────────────────────
 
 echo ""
 echo "══ Paper Round $ROUND_NUM Started ══"
 echo "Project: $PROJECT_ID"
 echo "Round:   round-$ROUND_NUM"
 echo "Status:  open"
-echo "Phase:   1/37 snapshot_paper_state"
+echo "Stage:   1/8 s1_round_contract"
 echo ""
 
-PHASE1_PROMPT="$SKILL_HOME/prompts/phases/snapshot_paper_state.md"
-if [ -f "$PHASE1_PROMPT" ]; then
-    echo "── Phase 1 Prompt ──"
+STAGE1_PROMPT="$SKILL_HOME/prompts/stages/s1_round_contract.md"
+if [ -f "$STAGE1_PROMPT" ]; then
+    echo "── Stage 1 Prompt ──"
     echo ""
-    cat "$PHASE1_PROMPT"
+    cat "$STAGE1_PROMPT"
 else
-    echo "Phase 1 prompt not found at $PHASE1_PROMPT"
+    echo "Stage 1 prompt not found at $STAGE1_PROMPT"
 fi

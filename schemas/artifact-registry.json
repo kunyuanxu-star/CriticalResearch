@@ -10,13 +10,13 @@
       "tier": "L1",
       "description": "Round metadata and state file"
     },
-    "round_phase_state": {
+    "round_stage_state": {
       "path_template": "rounds/round-{round_num}/state.yaml",
       "schema": "schemas/round-state.schema.json",
       "validator": "cr-validate-schema",
       "gate": "hard",
       "tier": "L1",
-      "description": "Per-round phase state machine with required_inputs, required_outputs, and validators per phase",
+      "description": "Per-round stage state machine with required_inputs, required_outputs, and validators per stage",
       "modes": [
         "paper"
       ]
@@ -49,18 +49,18 @@
       "validator": "cr-validate-critique",
       "gate": "hard",
       "tier": "L1",
-      "description": "Structured critique entries — authoritative. critique.md is a human-readable report.",
+      "description": "Structured critique entries \u2014 authoritative. critique.md is a human-readable report.",
       "modes": [
         "paper"
       ]
     },
     "critique_disposition": {
-      "path_template": "rounds/round-{round_num}/dispositions.yaml",
-      "schema": "schemas/dispositions.schema.json",
+      "path_template": "rounds/round-{round_num}/review-disposition.yaml",
+      "schema": "schemas/review-disposition.schema.json",
       "validator": "cr-validate-paper-patches",
       "gate": "hard",
       "tier": "L1",
-      "description": "Disposition records linking critiques to patches/decisions",
+      "description": "Review disposition records linking critiques to patches/decisions",
       "modes": [
         "paper"
       ]
@@ -104,7 +104,7 @@
       "validator": "cr-validate-knowledge",
       "gate": "hard",
       "tier": "L1",
-      "description": "Structured YAML knowledge transaction — authoritative. knowledge-delta.md is a report."
+      "description": "Structured YAML knowledge transaction \u2014 authoritative. knowledge-delta.md is a report."
     },
     "knowledge_apply_log": {
       "path_template": "rounds/round-{round_num}/knowledge-apply-log.yaml",
@@ -123,7 +123,7 @@
       "validator": "cr-validate-patch-application",
       "gate": "hard",
       "tier": "L1",
-      "description": "Structured YAML record of draft changes — authoritative. writing-diff.md is a report.",
+      "description": "Structured YAML record of draft changes \u2014 authoritative. writing-diff.md is a report.",
       "modes": [
         "paper"
       ]
@@ -192,7 +192,7 @@
       "validator": null,
       "gate": "hard",
       "tier": "L2",
-      "description": "Round report — human-readable, not authoritative"
+      "description": "Round report \u2014 human-readable, not authoritative"
     },
     "sources": {
       "path_template": "rounds/round-{round_num}/sources.md",
@@ -200,7 +200,7 @@
       "validator": null,
       "gate": "soft",
       "tier": "L2",
-      "description": "Human-readable sources report — evidence-ledger.yaml is authoritative"
+      "description": "Human-readable sources report \u2014 evidence-ledger.yaml is authoritative"
     },
     "writing_diff": {
       "path_template": "rounds/round-{round_num}/writing-diff.md",
@@ -208,7 +208,7 @@
       "validator": null,
       "gate": "soft",
       "tier": "L2",
-      "description": "Human-readable diff report — writing-diff.yaml is authoritative"
+      "description": "Human-readable diff report \u2014 writing-diff.yaml is authoritative"
     },
     "search_log": {
       "path_template": "rounds/round-{round_num}/search-log.yaml",
@@ -238,7 +238,7 @@
       "validator": "cr-validate-evidence-claim-links",
       "gate": "hard",
       "tier": "L1",
-      "description": "Authoritative structured evidence — each item links source and claim",
+      "description": "Authoritative structured evidence \u2014 each item links source and claim",
       "modes": [
         "paper"
       ]
@@ -517,6 +517,72 @@
         "paper"
       ],
       "description": "Candidate risks and priorities for next round"
+    },
+    "round_contract": {
+      "path_template": "rounds/round-{round_num}/round-contract.yaml",
+      "schema": "schemas/round-contract.schema.json",
+      "validator": null,
+      "gate": "hard",
+      "tier": "L1",
+      "modes": [
+        "paper"
+      ],
+      "description": "Formalized user intent into target, scope, intensity, required outputs, forbidden scope, success criteria"
+    },
+    "claim_evidence_map": {
+      "path_template": "rounds/round-{round_num}/claim-evidence-map.yaml",
+      "schema": "schemas/claim-evidence-map.schema.json",
+      "validator": null,
+      "gate": "hard",
+      "tier": "L1",
+      "modes": [
+        "paper"
+      ],
+      "description": "Maps each claim to supporting, weakening, missing evidence and affected sections"
+    },
+    "revision_plan": {
+      "path_template": "rounds/round-{round_num}/revision-plan.yaml",
+      "schema": "schemas/revision-plan.schema.json",
+      "validator": null,
+      "gate": "hard",
+      "tier": "L1",
+      "modes": [
+        "paper"
+      ],
+      "description": "Claim-level, structure-level, and evidence-level revision decisions"
+    },
+    "patch_plan": {
+      "path_template": "rounds/round-{round_num}/patch-plan.yaml",
+      "schema": "schemas/patch-plan.schema.json",
+      "validator": null,
+      "gate": "hard",
+      "tier": "L1",
+      "modes": [
+        "paper"
+      ],
+      "description": "Concrete patch plan derived from revision-plan, scoped to writing strategy"
+    },
+    "patch_trace": {
+      "path_template": "rounds/round-{round_num}/patch-trace.yaml",
+      "schema": "schemas/patch-trace.schema.json",
+      "validator": null,
+      "gate": "hard",
+      "tier": "L1",
+      "modes": [
+        "paper"
+      ],
+      "description": "Traceability matrix: patch_id -> critique_id -> revision_decision -> writing_pattern -> status"
+    },
+    "round_summary": {
+      "path_template": "rounds/round-{round_num}/round-summary.yaml",
+      "schema": null,
+      "validator": null,
+      "gate": "hard",
+      "tier": "L1",
+      "modes": [
+        "paper"
+      ],
+      "description": "Round summary with all_stages_complete and remaining_risks"
     }
   },
   "validator_pipeline": {
@@ -536,21 +602,21 @@
       },
       {
         "order": 3,
-        "name": "cr-validate-phase-manifest-consistency",
+        "name": "cr-validate-stage-manifest-consistency",
         "gate": "hard",
-        "checks": "All phase definitions consistent with phase-manifest.yaml: 37 phases, close_round_is_phase, all prompts exist, running state required"
+        "checks": "All stage definitions consistent with stage-manifest.yaml: 8 stages, close_round_is_stage, all prompts exist, running state required"
       },
       {
         "order": 4,
         "name": "cr-validate-prompts",
         "gate": "hard",
-        "checks": "All phases have prompt files with required sections (Mission, Inputs, Outputs, Allowed/Forbidden Actions, Failure Conditions)"
+        "checks": "All stages have prompt files with required sections (Mission, Inputs, Outputs, Allowed/Forbidden Actions, Failure Conditions)"
       },
       {
         "order": 5,
         "name": "cr-validate-full-paper-coverage",
         "gate": "hard",
-        "checks": "Every phase covers full paper: all sections, claims, assumptions, baselines, evaluations. Objective is weighting lens, not scope limiter."
+        "checks": "Every stage covers full paper: all sections, claims, assumptions, baselines, evaluations. Objective is weighting lens, not scope limiter."
       },
       {
         "order": 6,
@@ -562,19 +628,19 @@
         "order": 7,
         "name": "cr-validate-objective-binding",
         "gate": "hard",
-        "checks": "Every completed phase demonstrates it addressed the round objective via objective_relevance field"
+        "checks": "Every completed stage demonstrates it addressed the round objective via objective_relevance field"
       },
       {
         "order": 8,
-        "name": "cr-validate-all-phases",
+        "name": "cr-validate-all-stages",
         "gate": "hard",
-        "checks": "All phases in phase_order complete with timestamps (dynamically reads phase_order)"
+        "checks": "All stages in stage_order complete with timestamps (dynamically reads stage_order)"
       },
       {
         "order": 9,
-        "name": "cr-validate-phase-run-log",
+        "name": "cr-validate-stage-run-log",
         "gate": "hard",
-        "checks": "Every completed phase has execution proof and matching output hashes"
+        "checks": "Every completed stage has execution proof and matching output hashes"
       },
       {
         "order": 11,
@@ -646,7 +712,7 @@
         "order": 21,
         "name": "cr-validate-knowledge-closure",
         "gate": "hard",
-        "checks": "Knowledge loop: load→use→feedback→delta→apply→reuse. Checks intended_use, applies_when/does_not_apply_when, before/after hashes."
+        "checks": "Knowledge loop: load\u2192use\u2192feedback\u2192delta\u2192apply\u2192reuse. Checks intended_use, applies_when/does_not_apply_when, before/after hashes."
       },
       {
         "order": 22,
@@ -694,13 +760,13 @@
         "order": 29,
         "name": "cr-validate-transaction-chain",
         "gate": "hard",
-        "checks": "Full S01-S37 causal chain: source->note->evidence->matrix->critique->disposition->patch->diff->knowledge"
+        "checks": "Full S01-S8 causal chain: source->note->evidence->matrix->critique->disposition->patch->diff->knowledge"
       },
       {
         "order": 30,
-        "name": "cr-validate-module-review",
+        "name": "cr-validate-human-gates",
         "gate": "hard",
-        "checks": "All M0-M7 module reviews exist and pass with no blocking findings"
+        "checks": "No pending human decisions in review-disposition.yaml"
       }
     ]
   }

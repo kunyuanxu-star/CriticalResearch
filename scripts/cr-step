@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# cr-step — Phase state machine for paper rounds.
+# cr-step — Stage state machine for paper rounds.
 # Usage: cr step <project> <subcommand> [args...]
 #
 # Subcommands:
-#   status         Show current phase and what's missing
+#   status         Show current stage and what's missing
 #   status --machine  Machine-readable output (for hook injection)
-#   current        Print current phase name only
-#   start          Set current phase to running
+#   current        Print current stage name only
+#   start          Set current stage to running
 #   advance        Auto-start (open->running) then validate and advance
-#   validate       Validate current phase only (no advance)
+#   validate       Validate current stage only (no advance)
 #   validate --stop-gate  Validate for stop hook (returns JSON)
-#   set-phase <p>  Manually set current phase (for repair)
+#   set-stage <s>  Manually set current stage (for repair)
 
 set -euo pipefail
 
@@ -23,12 +23,12 @@ usage() {
     echo "Usage: cr step <project> <subcommand> [args...]"
     echo ""
     echo "Subcommands:"
-    echo "  status          Show current phase and missing requirements"
-    echo "  current         Print current phase name only"
-    echo "  start           Set current phase to running (open->running)"
-    echo "  advance         Validate current phase and advance to next"
-    echo "  validate        Validate current phase without advancing"
-    echo "  set-phase <p>   Manually set current phase (repair only)"
+    echo "  status          Show current stage and missing requirements"
+    echo "  current         Print current stage name only"
+    echo "  start           Set current stage to running (open->running)"
+    echo "  advance         Validate current stage and advance to next"
+    echo "  validate        Validate current stage without advancing"
+    echo "  set-stage <s>   Manually set current stage (repair only)"
     exit 2
 }
 
@@ -63,32 +63,32 @@ fi
 
 # ── Helpers ──────────────────────────────────────────────────────
 
-get_current_phase() {
-    yq -r '.current_phase // "snapshot_paper_state"' "$STATE_FILE" 2>/dev/null || \
-        echo "snapshot_paper_state"
+get_current_stage() {
+    yq -r '.current_stage // "s1_round_contract"' "$STATE_FILE" 2>/dev/null || \
+        echo "s1_round_contract"
 }
 
-get_phase_status() {
-    local phase="$1"
-    yq -r ".phases.$phase.status // \"unknown\"" "$STATE_FILE" 2>/dev/null || echo "unknown"
+get_stage_status() {
+    local stage="$1"
+    yq -r ".stages.$stage.status // \"unknown\"" "$STATE_FILE" 2>/dev/null || echo "unknown"
 }
 
-get_next_phase() {
+get_next_stage() {
     local current="$1"
     local found=false
-    local phases
-    phases=$(yq -r '.phase_order // [] | .[]' "$STATE_FILE" 2>/dev/null)
-    # Fallback to map keys if phase_order not present (backward compat).
-    if [ -z "$phases" ]; then
-        phases=$(yq -r '.phases | keys | .[]' "$STATE_FILE" 2>/dev/null)
+    local stages
+    stages=$(yq -r '.stage_order // [] | .[]' "$STATE_FILE" 2>/dev/null)
+    # Fallback to map keys if stage_order not present (backward compat).
+    if [ -z "$stages" ]; then
+        stages=$(yq -r '.stages | keys | .[]' "$STATE_FILE" 2>/dev/null)
     fi
-    for p in $phases; do
-        [ -z "$p" ] && continue
+    for s in $stages; do
+        [ -z "$s" ] && continue
         if [ "$found" = true ]; then
-            echo "$p"
+            echo "$s"
             return
         fi
-        if [ "$p" = "$current" ]; then
+        if [ "$s" = "$current" ]; then
             found=true
         fi
     done
@@ -102,11 +102,11 @@ case "$SUBCMD" in
         MACHINE_MODE=false
         [ "${3:-}" = "--machine" ] && MACHINE_MODE=true
 
-        CURRENT=$(get_current_phase)
-        PHASE_STATUS=$(get_phase_status "$CURRENT")
+        CURRENT=$(get_current_stage)
+        STAGE_STATUS=$(get_stage_status "$CURRENT")
 
         # Collect missing outputs.
-        REQ=$(yq -r ".phases.$CURRENT.required_outputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
+        REQ=$(yq -r ".stages.$CURRENT.required_outputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
         MISSING=""
         for output in $REQ; do
             [ -z "$output" ] && continue
@@ -133,31 +133,31 @@ case "$SUBCMD" in
 
         MISSING=$(echo "$MISSING" | xargs)
 
-        # Count completed phases.
-        TOTAL_PHASES=$(yq -r '.phase_order | length // (.phases | keys | length)' "$STATE_FILE" 2>/dev/null || echo "14")
-        COMPLETED=$(yq -r '.phases | to_entries | map(select(.value.status == "complete")) | length' "$STATE_FILE" 2>/dev/null || echo "0")
+        # Count completed stages.
+        TOTAL_STAGES=$(yq -r '.stage_order | length // (.stages | keys | length)' "$STATE_FILE" 2>/dev/null || echo "8")
+        COMPLETED=$(yq -r '.stages | to_entries | map(select(.value.status == "complete")) | length' "$STATE_FILE" 2>/dev/null || echo "0")
 
         if [ "$MACHINE_MODE" = true ]; then
             echo "Project: $PROJECT"
             echo "Active round: round-$ROUND_NUM"
             echo "Workflow mode: $(yq -r '.workflow_mode // "paper"' "$STATE_FILE")"
-            echo "Current phase: $CURRENT ($PHASE_STATUS)"
-            echo "Progress: $COMPLETED/$TOTAL_PHASES phases complete"
+            echo "Current stage: $CURRENT ($STAGE_STATUS)"
+            echo "Progress: $COMPLETED/$TOTAL_STAGES stages complete"
             if [ -n "$MISSING" ]; then
                 echo "Missing:$MISSING"
             else
                 echo "Missing: none"
             fi
-            NEXT=$(get_next_phase "$CURRENT")
+            NEXT=$(get_next_stage "$CURRENT")
             if [ -n "$NEXT" ]; then
-                echo "Next phase: $NEXT ($(get_phase_status "$NEXT"))"
+                echo "Next stage: $NEXT ($(get_stage_status "$NEXT"))"
             fi
         else
             echo "Project: $PROJECT"
             echo "Active round: round-$ROUND_NUM"
             echo "Workflow mode: $(yq -r '.workflow_mode // "paper"' "$STATE_FILE")"
-            echo "Current phase: $CURRENT ($PHASE_STATUS)"
-            echo "Progress: $COMPLETED/$TOTAL_PHASES phases complete"
+            echo "Current stage: $CURRENT ($STAGE_STATUS)"
+            echo "Progress: $COMPLETED/$TOTAL_STAGES stages complete"
             echo ""
 
             if [ -n "$MISSING" ]; then
@@ -171,41 +171,41 @@ case "$SUBCMD" in
                 echo "All required outputs present. Run 'cr step $PROJECT advance' to proceed."
             fi
 
-            NEXT=$(get_next_phase "$CURRENT")
+            NEXT=$(get_next_stage "$CURRENT")
             if [ -n "$NEXT" ]; then
-                echo "Next phase: $NEXT ($(get_phase_status "$NEXT"))"
+                echo "Next stage: $NEXT ($(get_stage_status "$NEXT"))"
             fi
         fi
         ;;
 
     current)
-        get_current_phase
+        get_current_stage
         ;;
 
     start)
-        CURRENT=$(get_current_phase)
-        PHASE_STATUS=$(get_phase_status "$CURRENT")
+        CURRENT=$(get_current_stage)
+        STAGE_STATUS=$(get_stage_status "$CURRENT")
 
-        if [ "$PHASE_STATUS" != "open" ]; then
-            echo "Error: cannot start phase '$CURRENT' (status=$PHASE_STATUS, must be open)" >&2
+        if [ "$STAGE_STATUS" != "open" ]; then
+            echo "Error: cannot start stage '$CURRENT' (status=$STAGE_STATUS, must be open)" >&2
             exit 2
         fi
 
         # Validate transition open->running.
-        if [ -x "$SCRIPT_DIR/cr-validate-phase-transition" ]; then
-            "$SCRIPT_DIR/cr-validate-phase-transition" "$STATE_FILE" "$CURRENT" "$PHASE_STATUS" "running" || exit 2
+        if [ -x "$SCRIPT_DIR/cr-validate-stage-transition" ]; then
+            "$SCRIPT_DIR/cr-validate-stage-transition" "$STATE_FILE" "$CURRENT" "$STAGE_STATUS" "running" || exit 2
         fi
 
         NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-        yq -i ".phases.\"$CURRENT\".status = \"running\"" "$STATE_FILE" 2>/dev/null
-        yq -i ".phases.\"$CURRENT\".started_at = \"$NOW\"" "$STATE_FILE" 2>/dev/null
+        yq -i ".stages.\"$CURRENT\".status = \"running\"" "$STATE_FILE" 2>/dev/null
+        yq -i ".stages.\"$CURRENT\".started_at = \"$NOW\"" "$STATE_FILE" 2>/dev/null
 
-        # Write phase-run-log started event.
-        PHASE_ORDER=$(yq -r ".phase_order | to_entries | .[] | select(.value == \"$CURRENT\") | .key // 0" "$STATE_FILE" 2>/dev/null || echo "0")
-        PHASE_ORDER=$((PHASE_ORDER + 1))
+        # Write stage-run-log started event.
+        STAGE_ORDER=$(yq -r ".stage_order | to_entries | .[] | select(.value == \"$CURRENT\") | .key // 0" "$STATE_FILE" 2>/dev/null || echo "0")
+        STAGE_ORDER=$((STAGE_ORDER + 1))
 
         # Ensure run-log has schema header if empty or old format.
-        RUN_LOG="$ROUND_DIR/phase-run-log.yaml"
+        RUN_LOG="$ROUND_DIR/stage-run-log.yaml"
         if [ ! -s "$RUN_LOG" ] || ! grep -q '^schema_version:' "$RUN_LOG" 2>/dev/null; then
             cat > "$RUN_LOG" << 'HDR'
 schema_version: "1.0.0"
@@ -220,21 +220,21 @@ HDR
         fi
 
         {
-            echo "  - event: phase_started"
-            echo "    phase: $CURRENT"
-            echo "    order: $PHASE_ORDER"
+            echo "  - event: stage_started"
+            echo "    stage: $CURRENT"
+            echo "    order: $STAGE_ORDER"
             echo "    at: \"$NOW\""
             echo "    input_hashes:"
 
             # Read required_inputs from manifest snapshot (single source of truth).
-            MANIFEST="$ROUND_DIR/phase-manifest.snapshot.yaml"
+            MANIFEST="$ROUND_DIR/stage-manifest.snapshot.yaml"
             if [ -f "$MANIFEST" ]; then
-                # Find phase index in manifest.
-                PH_IDX=$(yq -r ".phases | to_entries | .[] | select(.value.id == \"$CURRENT\") | .key // -1" "$MANIFEST" 2>/dev/null || echo "-1")
-                if [ "$PH_IDX" -ge 0 ] 2>/dev/null; then
-                    IN_COUNT=$(yq -r ".phases[$PH_IDX].required_inputs | length // 0" "$MANIFEST" 2>/dev/null || echo 0)
+                # Find stage index in manifest.
+                ST_IDX=$(yq -r ".stages | to_entries | .[] | select(.value.id == \"$CURRENT\") | .key // -1" "$MANIFEST" 2>/dev/null || echo "-1")
+                if [ "$ST_IDX" -ge 0 ] 2>/dev/null; then
+                    IN_COUNT=$(yq -r ".stages[$ST_IDX].required_inputs | length // 0" "$MANIFEST" 2>/dev/null || echo 0)
                     for j in $(seq 0 $((IN_COUNT - 1))); do
-                        scoped_in=$(yq -r ".phases[$PH_IDX].required_inputs[$j].path // \"\"" "$MANIFEST" 2>/dev/null || echo "")
+                        scoped_in=$(yq -r ".stages[$ST_IDX].required_inputs[$j].path // \"\"" "$MANIFEST" 2>/dev/null || echo "")
                         [ -z "$scoped_in" ] && continue
                         h=$("$SCRIPT_DIR/cr-hash-artifact" "$PROJECT_DIR" "$ROUND_DIR" "$scoped_in" 2>/dev/null || echo "unknown")
                         echo "      \"$scoped_in\": \"$h\""
@@ -242,7 +242,7 @@ HDR
                 fi
             else
                 # Fallback to state.yaml bare paths (backward compat).
-                ALL_INPUTS=$(yq -r ".phases.\"$CURRENT\".required_inputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
+                ALL_INPUTS=$(yq -r ".stages.\"$CURRENT\".required_inputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
                 for inp in $ALL_INPUTS; do
                     [ -z "$inp" ] && continue
                     f="$ROUND_DIR/$inp"
@@ -258,37 +258,33 @@ HDR
                 echo "      {}"
             fi
         } >> "$RUN_LOG"
-        echo "Phase '$CURRENT' started (open -> running)"
+        echo "Stage '$CURRENT' started (open -> running)"
         ;;
 
     advance)
-        CURRENT=$(get_current_phase)
-        PHASE_STATUS=$(get_phase_status "$CURRENT")
-        echo "Current phase: $CURRENT ($PHASE_STATUS)"
+        CURRENT=$(get_current_stage)
+        STAGE_STATUS=$(get_stage_status "$CURRENT")
+        echo "Current stage: $CURRENT ($STAGE_STATUS)"
 
-        # Auto-start: if phase is open, set to running first.
-        if [ "$PHASE_STATUS" = "open" ]; then
-            echo "Auto-starting phase..."
-            "$0" "$PROJECT" start || { echo "Failed to start phase"; exit 2; }
-            PHASE_STATUS="running"
+        # Auto-start: if stage is open, set to running first.
+        if [ "$STAGE_STATUS" = "open" ]; then
+            echo "Auto-starting stage..."
+            "$0" "$PROJECT" start || { echo "Failed to start stage"; exit 2; }
+            STAGE_STATUS="running"
         fi
 
-        # Delegate to cr-complete-phase: validates, marks complete, unblocks next.
-        if [ -x "$SCRIPT_DIR/cr-complete-phase" ]; then
-            "$SCRIPT_DIR/cr-complete-phase" "$PROJECT_DIR" "$ROUND_DIR" "$CURRENT"
+        # Delegate to cr-complete-stage: validates, marks complete, unblocks next.
+        if [ -x "$SCRIPT_DIR/cr-complete-stage" ]; then
+            "$SCRIPT_DIR/cr-complete-stage" "$PROJECT_DIR" "$ROUND_DIR" "$CURRENT"
             EXIT_CODE=$?
-            if [ "$EXIT_CODE" -eq 3 ]; then
-                # Module review required — cr-complete-phase already printed the message.
-                exit 3
-            fi
             if [ "$EXIT_CODE" -ne 0 ]; then
                 exit "$EXIT_CODE"
             fi
             exit 0
         fi
 
-        # Fallback if cr-complete-phase not available.
-        echo "Error: cr-complete-phase not found." >&2
+        # Fallback if cr-complete-stage not available.
+        echo "Error: cr-complete-stage not found." >&2
         exit 2
         ;;
 
@@ -296,19 +292,19 @@ HDR
         STOP_GATE=false
         [ "${3:-}" = "--stop-gate" ] && STOP_GATE=true
 
-        CURRENT=$(get_current_phase)
-        PHASE_STATUS=$(get_phase_status "$CURRENT")
+        CURRENT=$(get_current_stage)
+        STAGE_STATUS=$(get_stage_status "$CURRENT")
 
         if [ "$STOP_GATE" = true ]; then
-            # Stop gate mode: check if current phase is complete enough to allow stopping.
-            if [ "$PHASE_STATUS" = "complete" ]; then
-                # Phase complete — allow stop.
+            # Stop gate mode: check if current stage is complete enough to allow stopping.
+            if [ "$STAGE_STATUS" = "complete" ]; then
+                # Stage complete — allow stop.
                 echo '{"decision":"allow"}'
                 exit 0
             fi
 
-            # Check if phase has required outputs present.
-            REQ=$(yq -r ".phases.$CURRENT.required_outputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
+            # Check if stage has required outputs present.
+            REQ=$(yq -r ".stages.$CURRENT.required_outputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
             MISSING_COUNT=0
             MISSING_LIST=""
             for output in $REQ; do
@@ -329,78 +325,78 @@ HDR
             done
 
             if [ "$MISSING_COUNT" -gt 0 ]; then
-                REASON="Phase '$CURRENT' ($PHASE_STATUS) has $MISSING_COUNT missing output(s):$MISSING_LIST. Complete the current phase before stopping. Run 'cr step $PROJECT status' to see required outputs."
+                REASON="Stage '$CURRENT' ($STAGE_STATUS) has $MISSING_COUNT missing output(s):$MISSING_LIST. Complete the current stage before stopping. Run 'cr step $PROJECT status' to see required outputs."
                 echo "{\"decision\":\"block\",\"reason\":\"$REASON\"}"
                 exit 2
             fi
 
-            # All outputs present but phase not marked complete — allow with note.
-            echo "{\"decision\":\"allow\"}"
+            # All outputs present but stage not marked complete — allow with note.
+            echo '{"decision":"allow"}'
             exit 0
         fi
 
-        # Normal validate mode: run phase validator.
-        if [ -x "$SCRIPT_DIR/cr-validate-phase" ]; then
-            exec "$SCRIPT_DIR/cr-validate-phase" "$PROJECT_DIR" "$ROUND_DIR" "$CURRENT"
+        # Normal validate mode: run stage validator.
+        if [ -x "$SCRIPT_DIR/cr-validate-stage" ]; then
+            exec "$SCRIPT_DIR/cr-validate-stage" "$PROJECT_DIR" "$ROUND_DIR" "$CURRENT"
         else
-            echo "cr-validate-phase not found." >&2
+            echo "cr-validate-stage not found." >&2
             exit 2
         fi
         ;;
 
-    set-phase)
+    set-stage)
         if [ "${CR_REPAIR_MODE:-0}" != "1" ]; then
-            echo "Error: set-phase is restricted to repair mode." >&2
+            echo "Error: set-stage is restricted to repair mode." >&2
             echo "  Set CR_REPAIR_MODE=1 to override." >&2
             echo "  This will write to repair-log.yaml." >&2
             exit 2
         fi
 
-        NEW_PHASE="${3:-}"
-        if [ -z "$NEW_PHASE" ]; then
-            echo "Usage: cr step <project> set-phase <phase_name>" >&2
+        NEW_STAGE="${3:-}"
+        if [ -z "$NEW_STAGE" ]; then
+            echo "Usage: cr step <project> set-stage <stage_name>" >&2
             exit 2
         fi
 
-        PHASE_EXISTS=$(yq -r ".phases.$NEW_PHASE.status // \"unknown\"" "$STATE_FILE" 2>/dev/null || echo "unknown")
-        if [ "$PHASE_EXISTS" = "unknown" ]; then
-            echo "Unknown phase: $NEW_PHASE" >&2
+        STAGE_EXISTS=$(yq -r ".stages.$NEW_STAGE.status // \"unknown\"" "$STATE_FILE" 2>/dev/null || echo "unknown")
+        if [ "$STAGE_EXISTS" = "unknown" ]; then
+            echo "Unknown stage: $NEW_STAGE" >&2
             exit 2
         fi
 
         # Block forward jumps when full_round_required is true.
         FULL_ROUND=$(yq -r '.execution_policy.full_round_required // false' "$STATE_FILE" 2>/dev/null || echo "false")
         if [ "$FULL_ROUND" = "true" ]; then
-            CURRENT=$(get_current_phase)
-            # Find indices in phase_order.
+            CURRENT=$(get_current_stage)
+            # Find indices in stage_order.
             CURRENT_IDX=-1
             NEW_IDX=-1
             IDX=0
-            while IFS= read -r p; do
-                [ -z "$p" ] && continue
-                [ "$p" = "$CURRENT" ] && CURRENT_IDX=$IDX
-                [ "$p" = "$NEW_PHASE" ] && NEW_IDX=$IDX
+            while IFS= read -r s; do
+                [ -z "$s" ] && continue
+                [ "$s" = "$CURRENT" ] && CURRENT_IDX=$IDX
+                [ "$s" = "$NEW_STAGE" ] && NEW_IDX=$IDX
                 IDX=$((IDX + 1))
-            done < <(yq -r '.phase_order[]' "$STATE_FILE" 2>/dev/null)
+            done < <(yq -r '.stage_order[]' "$STATE_FILE" 2>/dev/null)
             if [ "$NEW_IDX" -gt "$CURRENT_IDX" ] 2>/dev/null; then
-                echo "Error: Cannot jump forward from '$CURRENT' (phase $CURRENT_IDX) to '$NEW_PHASE' (phase $NEW_IDX)." >&2
-                echo "  set-phase in repair mode only allows backward or same-phase jumps." >&2
+                echo "Error: Cannot jump forward from '$CURRENT' (stage $CURRENT_IDX) to '$NEW_STAGE' (stage $NEW_IDX)." >&2
+                echo "  set-stage in repair mode only allows backward or same-stage jumps." >&2
                 echo "  Use 'cr step <project> advance' for forward progression." >&2
                 exit 2
             fi
         fi
 
-        PREV_PHASE=$(yq -r '.current_phase // "none"' "$STATE_FILE" 2>/dev/null || echo "none")
-        yq -i ".current_phase = \"$NEW_PHASE\"" "$STATE_FILE" 2>/dev/null || true
-        echo "Current phase set to: $NEW_PHASE"
+        PREV_STAGE=$(yq -r '.current_stage // "none"' "$STATE_FILE" 2>/dev/null || echo "none")
+        yq -i ".current_stage = \"$NEW_STAGE\"" "$STATE_FILE" 2>/dev/null || true
+        echo "Current stage set to: $NEW_STAGE"
 
         # Write repair log.
         NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
         cat >> "$ROUND_DIR/repair-log.yaml" << YAMLREP
 - timestamp: "$NOW"
-  operator: "cr-step set-phase"
-  previous_phase: "$PREV_PHASE"
-  new_phase: "$NEW_PHASE"
+  operator: "cr-step set-stage"
+  previous_stage: "$PREV_STAGE"
+  new_stage: "$NEW_STAGE"
   reason: "Manual repair via CR_REPAIR_MODE=1"
 YAMLREP
         echo "Repair recorded in repair-log.yaml"

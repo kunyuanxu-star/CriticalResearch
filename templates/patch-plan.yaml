@@ -1,0 +1,21 @@
+# Patch Plan
+# Concrete patch plan derived from revision-plan, scoped to writing strategy.
+# Produced in S5: Writing Strategy.
+
+schema_version: "1.0.0"
+round_id: 0
+patches: []
+# Example:
+#  - patch_id: PP-001
+#    revision_refs:
+#      - REV-001
+#    writing_pattern: strengthen_claim
+#    target_section: ""
+#    description: ""
+#    before_anchor: ""
+#    after_anchor: ""
+#    experiment_required: false
+#    human_decision_required: false
+#    status: planned
+
+no_patch_reason: null

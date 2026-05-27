@@ -1,0 +1,19 @@
+# Claim Evidence Map
+# Maps each claim to supporting / weakening / missing evidence and affected sections.
+# Produced in S2: Evidence Grounding.
+
+schema_version: "1.0.0"
+round_id: 0
+mappings: []
+# Example:
+#  - claim_id: CLM-001
+#    supporting_evidence:
+#      - E001
+#    weakening_evidence:
+#      - E002
+#    missing_evidence:
+#      - description: ""
+#        required_to_support: ""
+#        priority: high
+#    affected_sections:
+#      - ""

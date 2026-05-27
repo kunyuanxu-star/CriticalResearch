@@ -1,10 +1,60 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Writing Plan Schema",
-  "description": "Ordered patch-to-draft plan. Required by S27 plan_writing_changes.",
+  "description": "Ordered patch-to-draft plan with three levels: high_level (argument order), paragraph_level (rhetorical function per paragraph), sentence_level (claim/contrast/cause/result per sentence). Required by S5 writing_strategy.",
   "type": "object",
-  "required": ["schema_version"],
+  "required": ["schema_version", "round_id", "high_level", "paragraph_level", "sentence_level"],
   "properties": {
-    "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
+    "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "round_id": { "type": "integer", "minimum": 1 },
+    "high_level": {
+      "type": "object",
+      "required": ["argument_order"],
+      "properties": {
+        "argument_order": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["section", "function"],
+            "properties": {
+              "section": { "type": "string" },
+              "function": { "type": "string", "enum": ["setup", "problem", "method", "result", "implication", "limitation"] }
+            }
+          }
+        }
+      }
+    },
+    "paragraph_level": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["paragraph_id", "rhetorical_function"],
+        "properties": {
+          "paragraph_id": { "type": "string", "pattern": "^PARA-[0-9]{3}$" },
+          "rhetorical_function": {
+            "type": "string",
+            "enum": ["claim", "evidence", "contrast", "cause", "result", "transition", "qualification", "example"]
+          },
+          "target_section": { "type": "string" },
+          "linked_patch": { "type": "string", "pattern": "^PP-[0-9]{3}$" }
+        }
+      }
+    },
+    "sentence_level": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sentence_id", "function"],
+        "properties": {
+          "sentence_id": { "type": "string", "pattern": "^SENT-[0-9]{4}$" },
+          "function": {
+            "type": "string",
+            "enum": ["claim", "contrast", "cause", "result", "evidence", "qualification", "definition"]
+          },
+          "text": { "type": "string" },
+          "linked_claim": { "type": "string", "pattern": "^CLM-[0-9]{3}$" }
+        }
+      }
+    }
   }
 }

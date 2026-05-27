@@ -31,38 +31,38 @@ cr-start-paper-round e2e-bare "test bare key" > /dev/null 2>&1
 ROUND_DIR="e2e-bare/rounds/round-002"
 mkdir -p "$ROUND_DIR/_cr/knowledge"
 
-echo "schema_version: \"1.0.0\"" > "$ROUND_DIR/paper-state.yaml"
+echo "schema_version: \"1.0.0\"" > "$ROUND_DIR/round-contract.yaml"
 
 # ── Test 1: bare output hash key -> fail ──
 echo "── Test 1: bare output hash key -> fail ──"
-cat > "$ROUND_DIR/phase-run-log.yaml" << 'RL'
+cat > "$ROUND_DIR/stage-run-log.yaml" << 'RL'
 schema_version: "1.0.0"
 events:
-  - event: phase_started
-    phase: snapshot_paper_state
+  - event: stage_started
+    stage: s1_round_contract
     order: 1
     at: "2026-01-01T00:00:00Z"
     input_hashes:
       "project:writing/paper-draft.md": "abc"
       "project:state/claim-ledger.yaml": "def"
-  - event: phase_completed
-    phase: snapshot_paper_state
+  - event: stage_completed
+    stage: s1_round_contract
     order: 1
     at: "2026-01-01T00:01:00Z"
     status_transition:
       from: "running"
       to: complete
     validator:
-      path: "scripts/cr-validate-phase"
+      path: "scripts/cr-validate-stage"
       sha256: "test"
       exit_code: 0
     output_hashes:
-      "paper-state.yaml": "fff"
+      "round-contract.yaml": "fff"
 RL
 
-yq -i '.phases.snapshot_paper_state.status = "complete"' "$ROUND_DIR/state.yaml" 2>/dev/null || true
+yq -i '.stages.s1_round_contract.status = "complete"' "$ROUND_DIR/state.yaml" 2>/dev/null || true
 
-OUT=$(cr-validate-phase-run-log "$TEST_DIR/e2e-bare" "$ROUND_DIR" 2>&1 || true)
+OUT=$(cr-validate-stage-run-log "$TEST_DIR/e2e-bare" "$ROUND_DIR" 2>&1 || true)
 if echo "$OUT" | grep -q "bare key"; then
     pass "Validator rejects bare output hash key"
 else
@@ -73,32 +73,32 @@ echo ""
 
 # ── Test 2: bare input hash key -> fail ──
 echo "── Test 2: bare input hash key -> fail ──"
-cat > "$ROUND_DIR/phase-run-log.yaml" << 'RL2'
+cat > "$ROUND_DIR/stage-run-log.yaml" << 'RL2'
 schema_version: "1.0.0"
 events:
-  - event: phase_started
-    phase: snapshot_paper_state
+  - event: stage_started
+    stage: s1_round_contract
     order: 1
     at: "2026-01-01T00:00:00Z"
     input_hashes:
       "writing/paper-draft.md": "abc"
       "project:state/claim-ledger.yaml": "def"
-  - event: phase_completed
-    phase: snapshot_paper_state
+  - event: stage_completed
+    stage: s1_round_contract
     order: 1
     at: "2026-01-01T00:01:00Z"
     status_transition:
       from: "running"
       to: complete
     validator:
-      path: "scripts/cr-validate-phase"
+      path: "scripts/cr-validate-stage"
       sha256: "test"
       exit_code: 0
     output_hashes:
-      "round:paper-state.yaml": "fff"
+      "round:round-contract.yaml": "fff"
 RL2
 
-OUT=$(cr-validate-phase-run-log "$TEST_DIR/e2e-bare" "$ROUND_DIR" 2>&1 || true)
+OUT=$(cr-validate-stage-run-log "$TEST_DIR/e2e-bare" "$ROUND_DIR" 2>&1 || true)
 if echo "$OUT" | grep -q "bare key"; then
     pass "Validator rejects bare input hash key"
 else

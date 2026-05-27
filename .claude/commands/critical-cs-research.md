@@ -1,62 +1,79 @@
+---
+description: "Start enforced 8-stage CriticalResearch paper transaction"
+argument-hint: "<project> <objective>"
+allowed-tools:
+  - "Bash(cr-start-paper-round:*)"
+  - "Bash(cr step:*)"
+  - "Bash(cr close-round:*)"
+  - "Bash(cr-validate-stage:*)"
+  - "Bash(cr-validate-stage-run-log:*)"
+  - "Read"
+  - "Write"
+  - "Edit"
+  - "MultiEdit"
+  - "Grep"
+  - "Glob"
+  - "Task"
+  - "AskUserQuestion"
+---
+
 # /critical-cs-research
 
-The user argument is the primary focus of a mandatory full-paper CriticalResearch round.
+Start a new 8-stage paper research round for a CriticalResearch project.
 
-**You must not answer with advice only. You must execute a complete 37-phase paper transaction.**
+## Usage
 
-## Mandatory Execution Semantics
+```
+/critical-cs-research <project> <objective>
+```
 
-1. Treat the user argument as a round objective, not as a normal question.
-2. Create or resume the active paper round for the current project.
-3. Write the user argument into `round-objective.yaml` with `scope_policy.type = full_paper_required` and `objective_may_limit_scope = false`.
-4. Ensure `execution_policy.full_round_required = true`, `full_paper_required = true`, `allow_partial_stop = false`.
-5. Generate `full-paper-coverage-plan.yaml` with complete paper inventory.
-6. Execute every phase in `state.yaml.phase_order`, from the current phase to `close_round`.
-7. For every phase:
-   - Load the phase prompt from `prompts/phases/<phase>.md`.
-   - Read all `required_inputs`.
-   - Generate all `required_outputs` with substantive content (not placeholders).
-   - Cover the full paper — check every section, claim, assumption, baseline, evaluation item.
-   - Emphasize the user objective — give extra scrutiny to objective-related items.
-   - Write `full_paper_coverage` and `objective_relevance` in every output artifact.
-   - Run phase validators via `cr step <project> validate`.
-   - If validators fail: repair the outputs and retry. Do NOT advance past a failing phase.
-   - Run `cr step <project> advance` only after validation passes.
-8. Do not skip phases. Every phase in `phase_order` must be executed.
-9. Do not narrow the workflow to the user objective. The objective is a weighting lens, not a scope limiter.
-10. Do not stop until `cr close-round <project>` succeeds, unless:
-    - A human-decision blocker is recorded in `human-review-queue.yaml`, OR
-    - An unrecoverable tool error occurs and is recorded in `unrecoverable-error.yaml`.
+## Arguments
 
-## Phase Execution Checklist
+- `project`: Existing project ID in the workspace. Must have `writing/paper-draft.md`.
+- `objective`: A concise description of what this round should focus on.
 
-For each phase, verify before advancing:
-- [ ] Phase prompt loaded and understood
-- [ ] All required_inputs read
-- [ ] All required_outputs generated with substantive content
-- [ ] `full_paper_coverage` recorded (sections, claims, assumptions, baselines, evaluations checked)
-- [ ] `objective_relevance` recorded (level, explanation, objective-specific findings)
-- [ ] `cr step <project> validate` passes
-- [ ] Any validator failures repaired before advance
+## Execution Contract
 
-## Completion Response
+Parse arguments as:
 
-Only after close-round succeeds, respond with:
-- Round ID and workflow mode
-- User objective (from round-objective.yaml)
-- 37/37 phase completion status
-- Full-paper coverage summary (sections, claims, baselines, evaluations covered)
-- Key critiques generated (count by severity)
-- Patches applied or blocked
-- Experiment obligations generated
-- Knowledge deltas applied
-- Remaining risks and next-round targets
-- Any non-focus high-risk items discovered during full-paper pass
+```
+PROJECT=<first token>
+OBJECTIVE=<remaining text>
+```
 
-## Important
+Run exactly:
 
-The user objective is a weighting lens, not a scope limiter.
+```bash
+cr-start-paper-round "$PROJECT" "$OBJECTIVE"
+cr step "$PROJECT" status
+```
 
-Every phase must cover the full paper, not only the objective-related parts.
+Then execute the current stage. Do not summarize completion until `cr close-round "$PROJECT"` succeeds.
 
-If a phase seems unrelated to the objective, execute it anyway — the objective changes only what you emphasize, never what you skip.
+## Invariants (must not be violated)
+
+- **This command must never bypass `cr-start-paper-round`.** No direct state.yaml edits. No manual round directory creation.
+- **You must not stop until `cr close-round <project>` succeeds.** The Stop hook will block incomplete rounds.
+- **You must execute all 8 stages in order.** No skipping. No jumping forward.
+- **Each stage must be validated by `cr-complete-stage` before advancing.** Do not mark stages complete manually.
+
+## Typical session flow
+
+```
+/critical-cs-research my-paper "检查 introduction 和 evaluation"
+# Stage 1: s1_round_contract — 生成 round-contract.yaml
+# Stage 2: s2_evidence_grounding — 执行检索并生成 evidence-ledger.yaml
+# Stage 3: s3_critical_review — 生成 critique-ledger.yaml 和 review-disposition.yaml
+# Stage 4: s4_revision_strategy — 生成 revision-plan.yaml
+# Stage 5: s5_writing_strategy — 生成 writing-plan.yaml 和 patch-plan.yaml
+# Stage 6: s6_paper_patch — 应用补丁并生成 patch-trace.yaml
+# Stage 7: s7_knowledge_consolidation — 生成 knowledge-delta.yaml
+# Stage 8: s8_round_closure — 生成 next-round-targets.yaml
+cr close-round my-paper
+```
+
+## See also
+
+- `cr step <project> status` — Show current stage progress
+- `cr step <project> advance` — Validate current stage and move to next
+- `cr close-round <project>` — Close the round (8 stages must be complete)

@@ -83,8 +83,17 @@ else
 fi
 echo ""
 
-# ── Test 6: must have description in frontmatter ──
-echo "── Test 6: must have description in frontmatter ──"
+# ── Test 6: must reference 8-stage workflow ──
+echo "── Test 6: must reference 8-stage workflow ──"
+if grep -q '8-stage' "$CMD_FILE"; then
+    pass "References 8-stage workflow"
+else
+    fail "Missing 8-stage workflow reference"
+fi
+echo ""
+
+# ── Test 7: must have description in frontmatter ──
+echo "── Test 7: must have description in frontmatter ──"
 if echo "$FRONTMATTER" | grep -q '^description:'; then
     pass "frontmatter contains description"
 else
@@ -92,8 +101,8 @@ else
 fi
 echo ""
 
-# ── Test 7: must have argument-hint in frontmatter ──
-echo "── Test 7: must have argument-hint in frontmatter ──"
+# ── Test 8: must have argument-hint in frontmatter ──
+echo "── Test 8: must have argument-hint in frontmatter ──"
 if echo "$FRONTMATTER" | grep -q '^argument-hint:'; then
     pass "frontmatter contains argument-hint"
 else

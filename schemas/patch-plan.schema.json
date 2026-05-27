@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Patch Plan Schema",
+  "description": "Concrete patch plan derived from revision-plan, scoped to writing strategy. Maps revision decisions to concrete writing operations.",
+  "type": "object",
+  "required": ["schema_version", "round_id", "patches"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "round_id": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "patches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["patch_id", "revision_refs", "writing_pattern", "target_section", "description"],
+        "properties": {
+          "patch_id": {
+            "type": "string",
+            "pattern": "^PP-[0-9]{3}$"
+          },
+          "revision_refs": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "pattern": "^REV-[0-9]{3}$" }
+          },
+          "writing_pattern": {
+            "type": "string",
+            "enum": [
+              "add_paragraph",
+              "delete_paragraph",
+              "reorder_paragraphs",
+              "strengthen_claim",
+              "weaken_claim",
+              "reframe_claim",
+              "add_citation",
+              "add_figure",
+              "add_table",
+              "rewrite_section",
+              "split_section",
+              "merge_sections"
+            ]
+          },
+          "target_section": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 10
+          },
+          "before_anchor": {
+            "type": "string"
+          },
+          "after_anchor": {
+            "type": "string"
+          },
+          "experiment_required": {
+            "type": "boolean"
+          },
+          "human_decision_required": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["planned", "approved", "blocked", "applied", "rejected"]
+          }
+        }
+      }
+    },
+    "no_patch_reason": {
+      "type": "string",
+      "minLength": 10
+    }
+  }
+}

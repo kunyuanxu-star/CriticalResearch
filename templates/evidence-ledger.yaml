@@ -1,7 +1,21 @@
 # Evidence Ledger
 # Authoritative structured evidence for paper rounds.
 # Each evidence item must link to a source_id and at least one claim_id.
-# At least one item must weaken or contradict a core claim.
+# At least one item must have evidence_category: weakening.
 
 round_id: 0
 evidence: []
+# Example:
+#  - evidence_id: E001
+#    source_id: S001
+#    source_type: ""
+#    evidence_level: A
+#    evidence_category: weakening
+#    related_claims:
+#      - CLM-001
+#    relation: weakens
+#    direct_support: ""
+#    does_not_support: ""
+#    applicable_scenario: ""
+#    allowed_wording: ""
+#    forbidden_wording: ""

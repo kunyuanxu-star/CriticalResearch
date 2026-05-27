@@ -1,0 +1,26 @@
+# Review Disposition
+# Per-critique disposition: severity, evidence, decision, required_action, affected_sections.
+# Produced in S3: Critical Review.
+
+schema_version: "1.0.0"
+round_id: 0
+dispositions: []
+# Example:
+#  - disposition_id: DSP-001
+#    critique_id: CRT-001
+#    disposition_type: paper_patch
+#    linked_patch_id: PP-001
+#    justification: ""
+#    status: open
+#    severity: high
+#    required_action:
+#      action_type: strengthen
+#      target_section: ""
+#      rationale: ""
+#    affected_claims:
+#      - CLM-001
+#    affected_sections:
+#      - ""
+
+no_disposition_reason: null
+validated_critiques: []

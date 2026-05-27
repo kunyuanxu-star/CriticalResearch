@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Patch Trace Schema",
+  "description": "Traceability matrix: patch_id → critique_id → revision_decision → writing_pattern → status. Required by S6 validation.",
+  "type": "object",
+  "required": ["schema_version", "round_id", "traces"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "round_id": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "traces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["trace_id", "patch_id", "critique_id", "revision_decision", "writing_pattern", "status"],
+        "properties": {
+          "trace_id": {
+            "type": "string",
+            "pattern": "^TRC-[0-9]{3}$"
+          },
+          "patch_id": {
+            "type": "string",
+            "pattern": "^PP-[0-9]{3}$"
+          },
+          "critique_id": {
+            "type": "string",
+            "pattern": "^CRT-[0-9]{3}$"
+          },
+          "revision_decision": {
+            "type": "string",
+            "pattern": "^REV-[0-9]{3}$"
+          },
+          "writing_pattern": {
+            "type": "string",
+            "minLength": 3
+          },
+          "status": {
+            "type": "string",
+            "enum": ["planned", "applied", "validated", "rejected", "blocked"]
+          },
+          "validation_notes": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

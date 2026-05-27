@@ -18,11 +18,11 @@ export CR_SKILL_HOME="$SCRIPT_DIR/.."
 echo "══ CriticalResearch Release Gate ══"
 echo ""
 echo "Inv0: /critical-cs-research has UserPromptExpansion gate"
-echo "Inv1: phase can only advance via cr step advance"
-echo "Inv2: phase complete requires scoped run-log proof"
-echo "Inv3: M0-M7 review checkpoint blocks next module"
+echo "Inv1: stage can only advance via cr step advance"
+echo "Inv2: stage complete requires scoped run-log proof"
+echo "Inv3: human decision gate blocks round closure"
 echo "Inv4: Stop hook blocks incomplete / tampered round"
-echo "Inv5: close_round is the 37th formal phase"
+echo "Inv5: s8_round_closure is the 8th formal stage"
 echo ""
 
 # Helper: run a test suite and report.
@@ -50,7 +50,7 @@ run_suite "ConfigChange blocks removal" "$SCRIPT_DIR/test-config-change-blocks-h
 echo ""
 
 # Proof tests.
-run_suite "Phase-run-log required IO" "$SCRIPT_DIR/test-phase-run-log-required-io.sh"
+run_suite "Stage-run-log required IO" "$SCRIPT_DIR/test-stage-run-log-required-io.sh"
 run_suite "Scoped run-log IO"         "$SCRIPT_DIR/test-scoped-run-log-io.sh"
 run_suite "No bare hash key"          "$SCRIPT_DIR/test-no-bare-hash-key.sh"
 run_suite "Directory hash proof"      "$SCRIPT_DIR/test-directory-hash-proof.sh"
@@ -59,12 +59,12 @@ run_suite "Stop gate run-log mismatch" "$SCRIPT_DIR/test-stop-gate-run-log-misma
 echo ""
 
 # Workflow tests.
-run_suite "37-phase state-machine happy path" "$SCRIPT_DIR/test-37-phase-state-machine-happy-path.sh"
-run_suite "Module checkpoint"     "$SCRIPT_DIR/test-module-checkpoint.sh"
-run_suite "Module review gate"    "$SCRIPT_DIR/test-module-review-gate.sh"
+run_suite "8-stage state-machine happy path" "$SCRIPT_DIR/test-8-stage-state-machine-happy-path.sh"
+run_suite "8-stage happy path" "$SCRIPT_DIR/test-8-stage-happy-path.sh"
+run_suite "Close-round protocol"  "$SCRIPT_DIR/test-close-round-protocol.sh"
 run_suite "Close-round protocol"  "$SCRIPT_DIR/test-close-round-protocol.sh"
 run_suite "Full round enforcement" "$SCRIPT_DIR/test-full-round-enforcement.sh"
-run_suite "Structural vs semantic review" "$SCRIPT_DIR/test-review-structural-vs-semantic.sh"
+run_suite "Wrong stage write blocked" "$SCRIPT_DIR/test-wrong-stage-write-blocked.sh"
 echo ""
 
 # Summary.

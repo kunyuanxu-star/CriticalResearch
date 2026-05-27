@@ -1,0 +1,222 @@
+#!/usr/bin/env bash
+# cr-validate-stage — Validate that a specific stage's required outputs exist and pass schema checks.
+# Usage: cr-validate-stage <project_dir> <round_dir> <stage_name>
+# Returns 0 if stage is complete, 2 if requirements not met.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+ROUND_DIR="${2:-}"
+STAGE="${3:-}"
+
+if [ -z "$PROJECT_DIR" ] || [ -z "$ROUND_DIR" ] || [ -z "$STAGE" ]; then
+    echo "Usage: cr-validate-stage <project_dir> <round_dir> <stage>" >&2
+    exit 2
+fi
+
+STATE_FILE="$ROUND_DIR/state.yaml"
+if [ ! -f "$STATE_FILE" ]; then
+    fail "state.yaml not found in $ROUND_DIR"
+    cr_exit_summary
+fi
+
+# Check stage exists in state.yaml.
+STAGE_STATUS=$(yq -r ".stages.$STAGE.status // \"unknown\"" "$STATE_FILE" 2>/dev/null || echo "unknown")
+if [ "$STAGE_STATUS" = "unknown" ]; then
+    fail "Stage '$STAGE' not found in state.yaml"
+    cr_exit_summary
+fi
+
+# Check depends_on stages are complete.
+echo "Stage: $STAGE (status: $STAGE_STATUS)"
+DEPS=$(yq -r ".stages.$STAGE.depends_on // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
+for dep in $DEPS; do
+    [ -z "$dep" ] && continue
+    DEP_STATUS=$(yq -r ".stages.$dep.status // \"unknown\"" "$STATE_FILE" 2>/dev/null || echo "unknown")
+    if [ "$DEP_STATUS" != "complete" ]; then
+        fail "Dependency '$dep' is not complete (status: $DEP_STATUS)"
+    else
+        pass "Dependency '$dep' is complete"
+    fi
+done
+
+ALL_PRESENT=true
+
+# Check required inputs exist.
+PM=$(yq -r '.workflow_mode // ""' "$STATE_FILE" 2>/dev/null || echo "")
+INPUTS=$(yq -r ".stages.$STAGE.required_inputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
+for input in $INPUTS; do
+    [ -z "$input" ] && continue
+    case "$input" in
+        writing/*|state/*)
+            if [ -f "$PROJECT_DIR/$input" ]; then
+                pass "Input '$input' exists"
+            elif [ "$PM" = "paper" ]; then
+                fail "Input '$input' not found (required for paper mode)"
+                ALL_PRESENT=false
+            else
+                warn "Input '$input' not found"
+            fi
+            ;;
+        *)
+            if [ -f "$ROUND_DIR/$input" ]; then
+                pass "Input '$input' exists"
+            elif [ -d "$ROUND_DIR/$input" ]; then
+                pass "Input '$input/' exists"
+            elif [ "$PM" = "paper" ]; then
+                fail "Input '$input' not found (required for paper mode)"
+                ALL_PRESENT=false
+            else
+                warn "Input '$input' not found"
+            fi
+            ;;
+    esac
+done
+
+# Check required outputs exist.
+REQ=$(yq -r ".stages.$STAGE.required_outputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
+for output in $REQ; do
+    [ -z "$output" ] && continue
+    case "$output" in
+        *.yaml|*.md|*.json)
+            if [ -f "$ROUND_DIR/$output" ]; then
+                pass "Output '$output' exists"
+            elif [ -f "$PROJECT_DIR/$output" ]; then
+                pass "Output '$output' exists (project-level)"
+            else
+                fail "Output '$output' is missing"
+                ALL_PRESENT=false
+            fi
+            ;;
+        raw-sources)
+            if [ -d "$ROUND_DIR/raw-sources" ] && [ -n "$(ls -A "$ROUND_DIR/raw-sources" 2>/dev/null)" ]; then
+                pass "Output 'raw-sources/' exists and is non-empty"
+            else
+                fail "Output 'raw-sources/' is missing or empty"
+                ALL_PRESENT=false
+            fi
+            ;;
+        patches)
+            if [ -d "$ROUND_DIR/patches" ]; then
+                pass "Output 'patches/' exists"
+            else
+                fail "Output 'patches/' is missing"
+                ALL_PRESENT=false
+            fi
+            ;;
+        experiments)
+            if [ -d "$ROUND_DIR/experiments" ]; then
+                pass "Output 'experiments/' exists"
+            else
+                fail "Output 'experiments/' is missing"
+                ALL_PRESENT=false
+            fi
+            ;;
+        *)
+            warn "Unknown output type '$output' — skipping"
+            ;;
+    esac
+done
+
+# Stage-specific semantic validators.
+check_field_substantive() {
+    local file="$1" field_path="$2" label="${3:-$field_path}"
+    local val
+    val=$(yq -r "$field_path // \"\"" "$file" 2>/dev/null || echo "")
+    if [ -z "$val" ] || [ "$val" = "null" ] || [ "$val" = "TBD" ] || [ "$val" = "TODO" ] || [ "$val" = "test" ] || [ "$val" = "Test" ]; then
+        fail "$label is empty or placeholder in $file"
+        ALL_PRESENT=false
+    else
+        pass "$label: ${val:0:80}"
+    fi
+}
+
+check_array_content() {
+    local file="$1" query="$2" min="${3:-1}" label="${4:-items}"
+    [ ! -f "$file" ] && { fail "$file not found"; ALL_PRESENT=false; return; }
+    local count
+    count=$(yq -r "$query | length // 0" "$file" 2>/dev/null || echo "0")
+    if [ "${count:-0}" -lt "$min" ]; then
+        fail "$label: $count found, need >= $min"
+        ALL_PRESENT=false
+    else
+        pass "$label: $count"
+    fi
+}
+
+case "$STAGE" in
+    s1_round_contract)
+        check_field_substantive "$ROUND_DIR/round-contract.yaml" '.contract.target' "Round contract target"
+        check_array_content "$ROUND_DIR/round-contract.yaml" '.contract.success_criteria' 1 "Success criteria"
+        ;;
+
+    s2_evidence_grounding)
+        check_array_content "$ROUND_DIR/evidence-ledger.yaml" '.evidence' 1 "Evidence items"
+        if [ -f "$ROUND_DIR/evidence-ledger.yaml" ]; then
+            # Check at least one weakening evidence
+            WEAKENING=$(yq -r '[.evidence[] | select(.evidence_category == "weakening")] | length' "$ROUND_DIR/evidence-ledger.yaml" 2>/dev/null || echo "0")
+            if [ "$WEAKENING" -ge 1 ]; then
+                pass "Weakening evidence items: $WEAKENING"
+            else
+                fail "At least one weakening evidence item required"
+                ALL_PRESENT=false
+            fi
+        fi
+        ;;
+
+    s3_critical_review)
+        check_array_content "$ROUND_DIR/critique-ledger.yaml" '.critiques' 1 "Critiques"
+        if [ -f "$ROUND_DIR/critique-ledger.yaml" ]; then
+            # Check medium+ critiques have evidence_refs
+            CRITIQUE_COUNT=$(yq -r '.critiques | length // 0' "$ROUND_DIR/critique-ledger.yaml" 2>/dev/null || echo "0")
+            for i in $(seq 0 $((CRITIQUE_COUNT - 1))); do
+                severity=$(yq -r ".critiques[$i].severity // \"\"" "$ROUND_DIR/critique-ledger.yaml" 2>/dev/null || echo "")
+                evidence_refs=$(yq -r ".critiques[$i].evidence_refs | length // 0" "$ROUND_DIR/critique-ledger.yaml" 2>/dev/null || echo "0")
+                if [ "$severity" = "medium" ] || [ "$severity" = "high" ] || [ "$severity" = "fatal" ]; then
+                    if [ "$evidence_refs" -eq 0 ]; then
+                        fail "Medium+ critique $i missing evidence_refs"
+                        ALL_PRESENT=false
+                    fi
+                fi
+            done
+        fi
+        ;;
+
+    s4_revision_strategy)
+        check_array_content "$ROUND_DIR/revision-plan.yaml" '.revisions' 1 "Revisions"
+        ;;
+
+    s5_writing_strategy)
+        check_array_content "$ROUND_DIR/writing-plan.yaml" '.high_level.argument_order' 1 "Argument order"
+        ;;
+
+    s6_paper_patch)
+        if [ -f "$ROUND_DIR/writing-diff.yaml" ]; then
+            CHANGES=$(yq -r '.changes | length // 0' "$ROUND_DIR/writing-diff.yaml" 2>/dev/null || echo "0")
+            pass "Writing diff changes: $CHANGES"
+        fi
+        ;;
+
+    s7_knowledge_consolidation)
+        check_array_content "$ROUND_DIR/knowledge-delta.yaml" '.updates' 1 "Knowledge updates"
+        ;;
+
+    s8_round_closure)
+        check_array_content "$ROUND_DIR/next-round-targets.yaml" '.candidates' 1 "Next-round candidates"
+        ;;
+
+    *)
+        # Generic stage: file existence already checked above.
+        ;;
+esac
+
+if [ "$ALL_PRESENT" = true ]; then
+    pass "Stage '$STAGE' validation passed"
+    cr_exit_summary
+else
+    fail "Stage '$STAGE' validation failed"
+    cr_exit_summary
+fi

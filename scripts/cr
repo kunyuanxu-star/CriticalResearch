@@ -338,9 +338,9 @@ MD
             exit 1
         fi
 
-        # Phase 1: Pre-close — validate phases 1-36.
-        echo "── Phase 1: Pre-close validation (phases 1-36) ──"
-        if ! "$SCRIPT_DIR/cr-validate-all-phases" "$PROJECT_DIR" "$ROUND_DIR" preclose; then
+        # Phase 1: Pre-close — validate stages 1-7.
+        echo "── Phase 1: Pre-close validation (stages 1-7) ──"
+        if ! "$SCRIPT_DIR/cr-validate-all-stages" "$PROJECT_DIR" "$ROUND_DIR" preclose; then
             echo ""
             echo "Pre-close validation failed. Fix failures before closing."
             exit 1
@@ -400,41 +400,41 @@ YAML
 
         echo "  closure-report.yaml valid."
 
-        # Phase 3: Start and complete close_round (37th phase).
+        # Phase 3: Start and complete s8_round_closure (8th stage).
         echo ""
-        echo "── Phase 3: Completing close_round (37th phase) ──"
+        echo "── Phase 3: Completing s8_round_closure (8th stage) ──"
 
-        # Ensure close_round is the current phase and started.
-        CURRENT_PHASE=$(yq -r '.current_phase // ""' "$STATE_FILE" 2>/dev/null || echo "")
-        if [ "$CURRENT_PHASE" != "close_round" ]; then
-            echo "  Setting current_phase to close_round..."
-            yq -i '.current_phase = "close_round"' "$STATE_FILE" 2>/dev/null || true
+        # Ensure s8_round_closure is the current stage and started.
+        CURRENT_STAGE=$(yq -r '.current_stage // ""' "$STATE_FILE" 2>/dev/null || echo "")
+        if [ "$CURRENT_STAGE" != "s8_round_closure" ]; then
+            echo "  Setting current_stage to s8_round_closure..."
+            yq -i '.current_stage = "s8_round_closure"' "$STATE_FILE" 2>/dev/null || true
         fi
 
-        CLOSE_STATUS=$(yq -r '.phases.close_round.status // ""' "$STATE_FILE" 2>/dev/null || echo "")
+        CLOSE_STATUS=$(yq -r '.stages.s8_round_closure.status // ""' "$STATE_FILE" 2>/dev/null || echo "")
         if [ "$CLOSE_STATUS" = "open" ]; then
-            echo "  Starting close_round phase..."
+            echo "  Starting s8_round_closure stage..."
             "$SCRIPT_DIR/cr-step" "$PROJECT" start || {
-                echo "Failed to start close_round phase."
+                echo "Failed to start s8_round_closure stage."
                 exit 1
             }
         elif [ "$CLOSE_STATUS" != "running" ] && [ "$CLOSE_STATUS" != "complete" ]; then
-            echo "Error: close_round has unexpected status: $CLOSE_STATUS" >&2
+            echo "Error: s8_round_closure has unexpected status: $CLOSE_STATUS" >&2
             exit 1
         fi
 
         if [ "$CLOSE_STATUS" != "complete" ]; then
-            if ! "$SCRIPT_DIR/cr-complete-phase" "$PROJECT_DIR" "$ROUND_DIR" close_round; then
+            if ! "$SCRIPT_DIR/cr-complete-stage" "$PROJECT_DIR" "$ROUND_DIR" s8_round_closure; then
                 echo ""
-                echo "Failed to complete close_round phase. Fix required outputs and retry."
+                echo "Failed to complete s8_round_closure stage. Fix required outputs and retry."
                 exit 1
             fi
         fi
 
-        # Phase 4: Post-close — validate all 37 phases.
+        # Phase 4: Post-close — validate all 8 stages.
         echo ""
-        echo "── Phase 4: Post-close validation (37/37 phases) ──"
-        if ! "$SCRIPT_DIR/cr-validate-all-phases" "$PROJECT_DIR" "$ROUND_DIR" postclose; then
+        echo "── Phase 4: Post-close validation (8/8 stages) ──"
+        if ! "$SCRIPT_DIR/cr-validate-all-stages" "$PROJECT_DIR" "$ROUND_DIR" postclose; then
             echo ""
             echo "Post-close validation failed."
             exit 1
@@ -449,29 +449,29 @@ YAML
             exit 1
         fi
 
-        # Phase 6: Validate phase-run-log.
+        # Phase 6: Validate stage-run-log.
         echo ""
-        echo "── Phase 6: Phase run log validation ──"
-        if [ -x "$SCRIPT_DIR/cr-validate-phase-run-log" ]; then
-            if ! "$SCRIPT_DIR/cr-validate-phase-run-log" "$PROJECT_DIR" "$ROUND_DIR"; then
+        echo "── Phase 6: Stage run log validation ──"
+        if [ -x "$SCRIPT_DIR/cr-validate-stage-run-log" ]; then
+            if ! "$SCRIPT_DIR/cr-validate-stage-run-log" "$PROJECT_DIR" "$ROUND_DIR"; then
                 echo ""
-                echo "Phase run log validation failed."
+                echo "Stage run log validation failed."
                 exit 1
             fi
         else
-            echo "  Warning: cr-validate-phase-run-log not found — skipping"
+            echo "  Warning: cr-validate-stage-run-log not found — skipping"
         fi
 
         # Update closure-report with final timestamps.
         if [ -f "$CLOSURE" ]; then
             yq -i ".closed_at = \"$NOW\"" "$CLOSURE" 2>/dev/null || true
-            yq -i ".phase_closure.close_round_completed = true" "$CLOSURE" 2>/dev/null || true
+            yq -i ".stage_closure.s8_round_closure_completed = true" "$CLOSURE" 2>/dev/null || true
             yq -i ".validator_summary.postclose_status = \"pass\"" "$CLOSURE" 2>/dev/null || true
         fi
 
         # Mark round as closed.
         if [ -f "$STATE_FILE" ]; then
-            yq -i ".current_phase = \"close_round\" | .status = \"complete\"" "$STATE_FILE" 2>/dev/null || true
+            yq -i ".current_stage = \"s8_round_closure\" | .status = \"complete\"" "$STATE_FILE" 2>/dev/null || true
         fi
 
         # Mark round complete.
@@ -543,18 +543,18 @@ YAML
         exec "$SCRIPT_DIR/cr-step" "$PROJECT" "$SUB" "${3:-}" "${4:-}"
         ;;
 
-    complete-phase)
+    complete-stage|complete-phase)
         PROJECT="${1:-}"
-        PHASE="${2:-}"
-        if [ -z "$PROJECT" ] || [ -z "$PHASE" ]; then
-            echo "Usage: cr complete-phase <project> <phase>" >&2
+        STAGE="${2:-}"
+        if [ -z "$PROJECT" ] || [ -z "$STAGE" ]; then
+            echo "Usage: cr complete-stage <project> <stage>" >&2
             exit 2
         fi
         PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
         ACTIVE_RND=$(jq -r '.active_round // 0' "$PROJECT_DIR/state/project-state.json" 2>/dev/null || echo "0")
         ROUND_NUM=$(printf "%03d" "$ACTIVE_RND")
         ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
-        exec "$SCRIPT_DIR/cr-complete-phase" "$PROJECT_DIR" "$ROUND_DIR" "$PHASE"
+        exec "$SCRIPT_DIR/cr-complete-stage" "$PROJECT_DIR" "$ROUND_DIR" "$STAGE"
         ;;
 
     run-round)
