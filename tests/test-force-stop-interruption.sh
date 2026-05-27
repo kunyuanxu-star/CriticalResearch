@@ -24,7 +24,7 @@ cr start e2e-force > /dev/null 2>&1
 jq '.active_round = null' e2e-force/state/project-state.json > e2e-force/state/project-state.json.tmp && \
     mv e2e-force/state/project-state.json.tmp e2e-force/state/project-state.json
 
-echo "# test paper" > e2e-force/writing/paper-draft.md
+echo "# test paper" > e2e-force/documents/paper.md
 echo "schema_version: \"1.0.0\"" > e2e-force/state/claim-ledger.yaml
 
 cr-start-paper-round e2e-force "test force stop" > /dev/null 2>&1

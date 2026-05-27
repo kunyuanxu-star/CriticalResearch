@@ -24,7 +24,7 @@ cr start e2e-log > /dev/null 2>&1
 jq '.active_round = null' e2e-log/state/project-state.json > e2e-log/state/project-state.json.tmp && \
     mv e2e-log/state/project-state.json.tmp e2e-log/state/project-state.json
 
-echo "# test paper" > e2e-log/writing/paper-draft.md
+echo "# test paper" > e2e-log/documents/paper.md
 echo "schema_version: \"1.0.0\"" > e2e-log/state/claim-ledger.yaml
 
 cr-start-paper-round e2e-log "test run log" > /dev/null 2>&1
@@ -32,7 +32,7 @@ ROUND_DIR="e2e-log/rounds/round-002"
 
 # Compute real hashes for scoped paths.
 REAL_HASH_OUT=$(cr-hash-artifact "$TEST_DIR/e2e-log" "$ROUND_DIR" "round:round-contract.yaml" 2>/dev/null || echo "")
-REAL_HASH_IN1=$(cr-hash-artifact "$TEST_DIR/e2e-log" "$ROUND_DIR" "project:writing/paper-draft.md" 2>/dev/null || echo "")
+REAL_HASH_IN1=$(cr-hash-artifact "$TEST_DIR/e2e-log" "$ROUND_DIR" "project:documents/paper.md" 2>/dev/null || echo "")
 REAL_HASH_IN2=$(cr-hash-artifact "$TEST_DIR/e2e-log" "$ROUND_DIR" "project:state/claim-ledger.yaml" 2>/dev/null || echo "")
 
 # ── Test 1: state complete but no started event → fail ──
@@ -74,7 +74,7 @@ events:
     order: 2
     at: "2026-01-01T00:00:00Z"
     input_hashes:
-      "project:writing/paper-draft.md": "abc"
+      "project:documents/paper.md": "abc"
       "project:state/claim-ledger.yaml": "def"
   - event: stage_completed
     stage: s1_round_contract
@@ -109,7 +109,7 @@ events:
     order: 1
     at: "2026-01-01T00:00:02Z"
     input_hashes:
-      "project:writing/paper-draft.md": "abc"
+      "project:documents/paper.md": "abc"
       "project:state:claim-ledger.yaml": "def"
   - event: stage_completed
     stage: s1_round_contract
@@ -144,7 +144,7 @@ events:
     order: 1
     at: "2026-01-01T00:00:00Z"
     input_hashes:
-      "project:writing/paper-draft.md": "abc"
+      "project:documents/paper.md": "abc"
       "project:state/claim-ledger.yaml": "def"
   - event: stage_completed
     stage: s1_round_contract
@@ -179,7 +179,7 @@ events:
     order: 1
     at: "2026-01-01T00:00:00Z"
     input_hashes:
-      "project:writing/paper-draft.md": "abc"
+      "project:documents/paper.md": "abc"
       "project:state/claim-ledger.yaml": "def"
   - event: stage_completed
     stage: s1_round_contract
@@ -208,7 +208,7 @@ echo ""
 echo "── Test 6: valid started+completed with matching hashes → pass ──"
 # Recompute hashes after Test 5 may have modified the file.
 REAL_HASH_OUT=$(cr-hash-artifact "$TEST_DIR/e2e-log" "$ROUND_DIR" "round:round-contract.yaml" 2>/dev/null || echo "")
-REAL_HASH_IN1=$(cr-hash-artifact "$TEST_DIR/e2e-log" "$ROUND_DIR" "project:writing/paper-draft.md" 2>/dev/null || echo "")
+REAL_HASH_IN1=$(cr-hash-artifact "$TEST_DIR/e2e-log" "$ROUND_DIR" "project:documents/paper.md" 2>/dev/null || echo "")
 REAL_HASH_IN2=$(cr-hash-artifact "$TEST_DIR/e2e-log" "$ROUND_DIR" "project:state/claim-ledger.yaml" 2>/dev/null || echo "")
 cat > "$ROUND_DIR/stage-run-log.yaml" << HDR
 schema_version: "1.0.0"
@@ -218,7 +218,7 @@ events:
     order: 1
     at: "2026-01-01T00:00:00Z"
     input_hashes:
-      "project:writing/paper-draft.md": "$REAL_HASH_IN1"
+      "project:documents/paper.md": "$REAL_HASH_IN1"
       "project:state/claim-ledger.yaml": "$REAL_HASH_IN2"
   - event: stage_completed
     stage: s1_round_contract

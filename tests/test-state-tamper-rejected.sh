@@ -43,7 +43,7 @@ events:
     order: 1
     at: "2026-01-01T00:00:00Z"
     input_hashes:
-      "project:writing/paper-draft.md": "abc"
+      "project:documents/paper.md": "abc"
       "project:state/claim-ledger.yaml": "def"
 HDR
 
@@ -75,7 +75,7 @@ events:
     order: 1
     at: "2026-01-01T00:00:00Z"
     input_hashes:
-      "project:writing/paper-draft.md": "abc"
+      "project:documents/paper.md": "abc"
       "project:state/claim-ledger.yaml": "def"
   - event: stage_completed
     stage: s1_round_contract

@@ -28,7 +28,7 @@ cr start e2e-test > /dev/null 2>&1
 
 # Paper rounds require prerequisite files.
 mkdir -p e2e-test/writing e2e-test/state
-echo "# test paper" > e2e-test/writing/paper-draft.md
+echo "# test paper" > e2e-test/documents/paper.md
 echo "schema_version: \"1.0.0\"" > e2e-test/state/claim-ledger.yaml
 
 # Clear any active round from cr start so cr-start-paper-round can create a new one.

@@ -45,11 +45,11 @@ else
     fail "state/project-state.json not found — project state file required"
 fi
 
-# writing/paper-draft.md (or presentation-draft.md) must exist.
-if [ -f "$PROJECT_DIR/writing/paper-draft.md" ] || [ -f "$PROJECT_DIR/writing/presentation-draft.md" ]; then
-    pass "writing/ draft file exists"
+# writing/paper-draft.md (or presentation-draft.md) or documents/*.md must exist.
+if [ -f "$PROJECT_DIR/writing/paper-draft.md" ] || [ -f "$PROJECT_DIR/writing/presentation-draft.md" ] || [ -n "$(find "$PROJECT_DIR/documents" -maxdepth 1 -name '*.md' 2>/dev/null)" ]; then
+    pass "document draft file exists"
 else
-    fail "writing/paper-draft.md (or presentation-draft.md) not found"
+    fail "documents/*.md or writing/paper-draft.md not found"
 fi
 
 # literature/ directory must exist.

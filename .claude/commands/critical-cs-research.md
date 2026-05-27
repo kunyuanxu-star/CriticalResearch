@@ -1,8 +1,8 @@
 ---
-description: "Start enforced 8-stage CriticalResearch paper transaction"
-argument-hint: "<project> <objective>"
+description: "Start enforced 8-stage CriticalResearch document transaction"
+argument-hint: "<project> [<objective>] [--doc <doc-id>]"
 allowed-tools:
-  - "Bash(cr-start-paper-round:*)"
+  - "Bash(cr-start-round:*)"
   - "Bash(cr step:*)"
   - "Bash(cr close-round:*)"
   - "Bash(cr-validate-stage:*)"
@@ -24,13 +24,14 @@ Start a new 8-stage paper research round for a CriticalResearch project.
 ## Usage
 
 ```
-/critical-cs-research <project> <objective>
+/critical-cs-research <project> <objective> [--doc <doc-id>]
 ```
 
 ## Arguments
 
-- `project`: Existing project ID in the workspace. Must have `writing/paper-draft.md`.
+- `project`: Existing project ID in the workspace. Must have at least one document in `documents/`.
 - `objective`: A concise description of what this round should focus on.
+- `--doc`: Document ID to target (paper, proposal, survey, design-doc). Defaults to `paper`.
 
 ## Execution Contract
 
@@ -38,13 +39,14 @@ Parse arguments as:
 
 ```
 PROJECT=<first token>
-OBJECTIVE=<remaining text>
+OBJECTIVE=<remaining text before --doc>
+DOC_FLAG=<value after --doc> (default: paper)
 ```
 
 Run exactly:
 
 ```bash
-cr-start-paper-round "$PROJECT" "$OBJECTIVE"
+cr-start-round "$PROJECT" "$OBJECTIVE" --doc "$DOC_FLAG"
 cr step "$PROJECT" status
 ```
 
@@ -52,7 +54,7 @@ Then execute the current stage. Do not summarize completion until `cr close-roun
 
 ## Invariants (must not be violated)
 
-- **This command must never bypass `cr-start-paper-round`.** No direct state.yaml edits. No manual round directory creation.
+- **This command must never bypass `cr-start-round`.** No direct state.yaml edits. No manual round directory creation.
 - **You must not stop until `cr close-round <project>` succeeds.** The Stop hook will block incomplete rounds.
 - **You must execute all 8 stages in order.** No skipping. No jumping forward.
 - **Each stage must be validated by `cr-complete-stage` before advancing.** Do not mark stages complete manually.

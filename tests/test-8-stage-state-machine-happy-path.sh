@@ -27,7 +27,7 @@ jq '.active_round = null' e2e-state/state/project-state.json > e2e-state/state/p
     mv e2e-state/state/project-state.json.tmp e2e-state/state/project-state.json
 
 mkdir -p e2e-state/writing e2e-state/state
-echo "# test paper" > e2e-state/writing/paper-draft.md
+echo "# test paper" > e2e-state/documents/paper.md
 echo "schema_version: \"1.0.0\"" > e2e-state/state/claim-ledger.yaml
 
 cr-start-paper-round e2e-state "test state machine" > /dev/null 2>&1

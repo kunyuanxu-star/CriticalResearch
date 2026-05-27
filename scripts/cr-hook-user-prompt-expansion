@@ -74,11 +74,11 @@ EOF
 fi
 
 # Validate: project must have prerequisite files.
-if [ ! -f "$PROJECT_DIR/writing/paper-draft.md" ]; then
+if [ ! -f "$PROJECT_DIR/documents/paper.md" ] && [ ! -f "$PROJECT_DIR/writing/paper-draft.md" ]; then
     cat << EOF
 {
   "decision": "block",
-  "reason": "Project '$PROJECT' missing writing/paper-draft.md. Paper rounds require a draft."
+  "reason": "Project '$PROJECT' missing documents/paper.md. Paper rounds require a draft."
 }
 EOF
     exit 0

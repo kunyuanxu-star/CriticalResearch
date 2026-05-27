@@ -35,9 +35,10 @@ usage() {
     echo "Usage: cr <command> [args...]"
     echo ""
     echo "Commands:"
-    echo "  start <topic>         Create a new research project and first round"
-    echo "  continue              Read active project, output next-round task prompt"
-    echo "  round <project>       Open a new round for the given project"
+    echo "  start <topic>              Create a new research project and first round"
+    echo "  continue                  Read active project, output next-round task prompt"
+    echo "  round <project> [--doc]  Open a new round targeting a document"
+    echo "  document <add|list>      Manage project documents"
     echo "  close-round <project>         Validate and close the active round"
     echo "  validate <project>            Run all project invariant checks"
     echo "  migrate-to-paper-mode <proj>  Scaffold paper mode directories"
@@ -82,7 +83,7 @@ case "$COMMAND" in
         fi
 
         echo "Creating research project: $PROJECT_ID"
-        mkdir -p "$PROJECT_DIR"/{state,literature,writing,rounds}
+        mkdir -p "$PROJECT_DIR"/{state,literature,documents,rounds,evidence/{sources,notes,ledgers},knowledge/cards,reviews,revisions}
 
         # Parse --profile flag if present.
         PAPER_PROFILE="systems"
@@ -99,6 +100,11 @@ paper_profile: $PAPER_PROFILE
 created_at: $NOW
 description: "Research project: $TOPIC"
 schema_version: "1.0.0"
+documents:
+  - id: paper
+    type: paper
+    path: documents/paper.md
+    status: active
 YAML
 
         # Create project-state.json.
@@ -116,13 +122,14 @@ YAML
 JSON
 
                 # Create initial claim ledger.
+        # Create initial claim ledger.
         cat > "$PROJECT_DIR/state/claim-ledger.yaml" << YAML
 schema_version: "1.0.0"
 claims: []
 YAML
 
-        # Create initial paper draft with complete structure.
-        cat > "$PROJECT_DIR/writing/paper-draft.md" << MD
+        # Create initial paper draft with complete structure in documents/.
+        cat > "$PROJECT_DIR/documents/paper.md" << MD
 # $PROJECT_ID — Research Paper Draft
 
 <!-- anchor: abstract -->
@@ -188,6 +195,12 @@ YAML
 
 MD
 
+        # Backward compat: create writing/ symlink for legacy tools.
+        if [ ! -e "$PROJECT_DIR/writing" ]; then
+            ln -s documents "$PROJECT_DIR/writing" 2>/dev/null || true
+        fi
+
+
         # Create round-001.
         "$SCRIPT_DIR/cr-new-round" "$PROJECT_DIR" "setup"
 
@@ -240,13 +253,18 @@ MD
         shift 2>/dev/null || true
 
         MODE_FLAG=""
+        DOC_FLAG=""
         OBJECTIVE=""
 
-        # Parse --mode flag and capture remaining args as objective.
+        # Parse --mode, --doc flags and capture remaining args as objective.
         while [ $# -gt 0 ]; do
             case "$1" in
                 --mode)
                     MODE_FLAG="${2:-}"
+                    shift 2
+                    ;;
+                --doc)
+                    DOC_FLAG="${2:-}"
                     shift 2
                     ;;
                 *)
@@ -261,8 +279,13 @@ MD
             esac
         done
 
+        # Backward compat: --mode paper implies --doc paper
+        if [ "$MODE_FLAG" = "paper" ] && [ -z "$DOC_FLAG" ]; then
+            DOC_FLAG="paper"
+        fi
+
         if [ -z "$PROJECT" ]; then
-            echo "Usage: cr round <project> [--mode paper|deep|standard|triage] [objective]" >&2
+            echo "Usage: cr round <project> [--doc <doc-id>] [objective]" >&2
             exit 2
         fi
 
@@ -272,18 +295,22 @@ MD
             exit 1
         fi
 
-        # ── Paper mode: ONLY via cr-start-paper-round ──
-        if [ "$MODE_FLAG" = "paper" ]; then
+        # ── Document-targeted round: via cr-start-round ──
+        if [ -n "$DOC_FLAG" ]; then
             if [ -z "$OBJECTIVE" ]; then
-                echo "Usage: cr round <project> --mode paper \"<objective>\"" >&2
+                echo "Usage: cr round <project> --doc <doc-id> \"<objective>\"" >&2
                 exit 2
             fi
-            # Check prerequisites.
-            if [ ! -f "$PROJECT_DIR/writing/paper-draft.md" ]; then
-                echo "Error: writing/paper-draft.md not found. Paper rounds require a draft." >&2
+            # Determine document path: prefer documents/, fall back to legacy writing/
+            DOC_PATH="documents/${DOC_FLAG}.md"
+            if [ ! -f "$PROJECT_DIR/$DOC_PATH" ] && [ -f "$PROJECT_DIR/writing/paper-draft.md" ]; then
+                DOC_PATH="writing/paper-draft.md"
+            fi
+            if [ ! -f "$PROJECT_DIR/$DOC_PATH" ]; then
+                echo "Error: $DOC_PATH not found. Document rounds require a draft." >&2
                 exit 1
             fi
-            exec "$SCRIPT_DIR/cr-start-paper-round" "$PROJECT" "$OBJECTIVE"
+            exec "$SCRIPT_DIR/cr-start-round" "$PROJECT" "$OBJECTIVE" --doc "$DOC_FLAG"
         fi
 
         # Validate project manifest first.
@@ -501,9 +528,8 @@ YAML
 
         PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
         "$SCRIPT_DIR/cr-validate-project" "$PROJECT_DIR"
-
-        # Also validate current round if active.
         ACTIVE_RND=$(jq -r '.active_round // 0' "$PROJECT_DIR/state/project-state.json" 2>/dev/null || echo 0)
+
         if [ "$ACTIVE_RND" != "null" ] && [ "$ACTIVE_RND" -gt 0 ]; then
             ROUND_NUM=$(printf "%03d" "$ACTIVE_RND")
             ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
@@ -517,6 +543,70 @@ YAML
                 fi
             fi
         fi
+        ;;
+
+    document)
+        DOC_SUB="${1:-}"
+        shift 2>/dev/null || true
+        case "$DOC_SUB" in
+            add)
+                PROJECT="${1:-}"
+                DOC_TYPE="${2:-}"
+                if [ -z "$PROJECT" ] || [ -z "$DOC_TYPE" ]; then
+                    echo "Usage: cr document add <project> <type>" >&2
+                    echo "  type: paper | proposal | survey | design-doc" >&2
+                    exit 2
+                fi
+                PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
+                if [ ! -d "$PROJECT_DIR" ]; then
+                    echo "Project not found: $PROJECT_DIR" >&2
+                    exit 1
+                fi
+                case "$DOC_TYPE" in
+                    paper|proposal|survey|design-doc)
+                        DOC_ID="$DOC_TYPE"
+                        DOC_PATH="documents/$DOC_ID.md"
+                        if [ -f "$PROJECT_DIR/$DOC_PATH" ]; then
+                            echo "Document already exists: $DOC_PATH" >&2
+                            exit 1
+                        fi
+                        echo "# ${PROJECT} — ${DOC_TYPE^} Document" > "$PROJECT_DIR/$DOC_PATH"
+                        # Register in project.yaml if yq available, else append roughly.
+                        if command -v yq &>/dev/null; then
+                            yq -i ".documents += [{\"id\": \"$DOC_ID\", \"type\": \"$DOC_TYPE\", \"path\": \"$DOC_PATH\", \"status\": \"active\"}]" "$PROJECT_DIR/project.yaml" 2>/dev/null || true
+                        else
+                            echo "  (Register $DOC_ID in project.yaml manually if yq unavailable)" >&2
+                        fi
+                        echo "Created $DOC_PATH and registered in project."
+                        ;;
+                    *)
+                        echo "Unknown document type: $DOC_TYPE" >&2
+                        exit 2
+                        ;;
+                esac
+                ;;
+            list)
+                PROJECT="${1:-}"
+                if [ -z "$PROJECT" ]; then
+                    echo "Usage: cr document list <project>" >&2
+                    exit 2
+                fi
+                PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
+                if [ -f "$PROJECT_DIR/project.yaml" ]; then
+                    echo "Documents in $PROJECT:"
+                    yq -r '.documents[]? | "  - \(.id) (\(.type)): \(.path) [\(.status)]"' "$PROJECT_DIR/project.yaml" 2>/dev/null || echo "  (no documents registered)"
+                else
+                    echo "Project not found: $PROJECT_DIR" >&2
+                    exit 1
+                fi
+                ;;
+            *)
+                echo "Usage: cr document <add|list> [args...]" >&2
+                echo "  add <project> <type>   Create and register a new document"
+                echo "  list <project>         List registered documents"
+                exit 2
+                ;;
+        esac
         ;;
 
     migrate-to-paper-mode)

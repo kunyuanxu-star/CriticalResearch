@@ -55,7 +55,9 @@ Start a conversation with Claude Code and the skill activates automatically when
 ```bash
 # Project lifecycle
 cr workspace init                # Initialize a Research workspace
-cr start my-topic                # Create a new research project
+cr start my-topic                # Create a new research project with default paper document
+cr document add my-topic proposal # Add a proposal document to the project
+cr document list my-topic         # List all documents in the project
 cr continue                      # Show next-round task prompt
 cr status                        # Show workspace and project status
 
@@ -65,12 +67,14 @@ cr status                        # Show workspace and project status
                                    # Cannot stop until round closes or hard blocker recorded.
 
 # Round lifecycle (CLI)
-cr round my-topic --mode paper   # Open a new paper-mode round (8-stage strict state machine)
-cr step my-topic status          # Show current stage and missing outputs
-cr step my-topic advance         # Validate current stage and advance to next
-cr step my-topic validate        # Validate current stage without advancing
-cr close-round my-topic          # Validate and close the active round
-cr validate my-topic             # Run all project invariant checks
+cr round my-topic --doc paper     # Open a new round targeting documents/paper.md
+cr round my-topic --doc proposal  # Open a round targeting documents/proposal.md
+cr step my-topic status           # Show current stage and missing outputs
+cr step my-topic advance          # Validate current stage and advance to next
+cr step my-topic validate         # Validate current stage without advancing
+cr close-round my-topic           # Validate and close the active round
+cr validate my-topic              # Run all project invariant checks
+
 
 # Automated stage runner (validates and advances, does not generate artifacts)
 cr run-round my-topic            # Advance through all 8 stages (validates only)
@@ -103,9 +107,22 @@ Paper mode enforces: ≥5 search queries across 5 mandatory query classes, ≥5 
 ├── hooks/                # Stop/PreToolUse/PostToolUse hooks for enforcement
 ├── templates/            # Domain-neutral artifact templates
 ├── schemas/              # JSON schemas for all artifacts + artifact registry
+├── prompts/              # Core stage prompts + document-type adapters
+│   ├── core/             # Generic S1–S8 stage prompts
+│   └── adapters/         # Document-type overlays (paper, proposal, survey, design-doc)
 ├── references/           # Domain profiles, evidence standards, role lenses
-├── workflow/             # Universal paper round execution guide
+├── workflow/             # Universal round execution guide
 └── agents/               # Sub-agent instruction sets
+
+projects/
+├── <project-id>/
+│   ├── project.yaml          # Project metadata + document registry
+│   ├── state/
+│   ├── documents/            # Target documents (paper.md, proposal.md, ...)
+│   ├── evidence/             # Shared evidence base
+│   ├── knowledge/            # Project-level persistent knowledge
+│   ├── rounds/               # Per-round artifacts
+│   └── writing/              # Backward-compat symlink → documents/
 ```
 
 ## Multi-Project Parallelism

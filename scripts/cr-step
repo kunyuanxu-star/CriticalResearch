@@ -140,6 +140,7 @@ case "$SUBCMD" in
         if [ "$MACHINE_MODE" = true ]; then
             echo "Project: $PROJECT"
             echo "Active round: round-$ROUND_NUM"
+            echo "Document target: $(yq -r '.document_target // "paper"' "$STATE_FILE")"
             echo "Workflow mode: $(yq -r '.workflow_mode // "paper"' "$STATE_FILE")"
             echo "Current stage: $CURRENT ($STAGE_STATUS)"
             echo "Progress: $COMPLETED/$TOTAL_STAGES stages complete"
@@ -155,6 +156,7 @@ case "$SUBCMD" in
         else
             echo "Project: $PROJECT"
             echo "Active round: round-$ROUND_NUM"
+            echo "Document target: $(yq -r '.document_target // "paper"' "$STATE_FILE")"
             echo "Workflow mode: $(yq -r '.workflow_mode // "paper"' "$STATE_FILE")"
             echo "Current stage: $CURRENT ($STAGE_STATUS)"
             echo "Progress: $COMPLETED/$TOTAL_STAGES stages complete"

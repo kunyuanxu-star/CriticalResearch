@@ -26,7 +26,7 @@ jq '.active_round = null' e2e-stop/state/project-state.json > e2e-stop/state/pro
     mv e2e-stop/state/project-state.json.tmp e2e-stop/state/project-state.json
 
 mkdir -p e2e-stop/writing e2e-stop/state
-echo "# test paper" > e2e-stop/writing/paper-draft.md
+echo "# test paper" > e2e-stop/documents/paper.md
 echo "schema_version: \"1.0.0\"" > e2e-stop/state/claim-ledger.yaml
 
 cr-start-paper-round e2e-stop "test stop mismatch" > /dev/null 2>&1
@@ -37,7 +37,7 @@ mkdir -p "$ROUND_DIR/_cr/knowledge"
 echo "schema_version: \"1.0.0\"" > "$ROUND_DIR/round-contract.yaml"
 
 # Mark stage complete and create a run-log with correct hashes.
-H1=$(cr-hash-artifact "$TEST_DIR/e2e-stop" "$ROUND_DIR" "project:writing/paper-draft.md" 2>/dev/null || echo "")
+H1=$(cr-hash-artifact "$TEST_DIR/e2e-stop" "$ROUND_DIR" "project:documents/paper.md" 2>/dev/null || echo "")
 H2=$(cr-hash-artifact "$TEST_DIR/e2e-stop" "$ROUND_DIR" "project:state/claim-ledger.yaml" 2>/dev/null || echo "")
 H3=$(cr-hash-artifact "$TEST_DIR/e2e-stop" "$ROUND_DIR" "round:round-contract.yaml" 2>/dev/null || echo "")
 
@@ -49,7 +49,7 @@ events:
     order: 1
     at: "2026-01-01T00:00:00Z"
     input_hashes:
-      "project:writing/paper-draft.md": "$H1"
+      "project:documents/paper.md": "$H1"
       "project:state/claim-ledger.yaml": "$H2"
   - event: stage_completed
     stage: s1_round_contract

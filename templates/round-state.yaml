@@ -3,6 +3,8 @@ project_id: ""
 round_id: 0
 workflow_mode: paper
 status: open
+document_target: paper
+document_type: paper
 current_stage: s1_round_contract
 
 required_research: true

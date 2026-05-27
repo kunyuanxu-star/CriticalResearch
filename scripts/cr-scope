@@ -664,8 +664,8 @@ YAML
             case "$fb" in
                 *_draft|*paper-draft*|edit_draft)
                     case "$REL_PATH" in
-                        */writing/paper-draft.md|*/paper-draft.md)
-                            echo "DENY:Stage '$CURRENT_STAGE' forbids draft editing. Use s6_paper_patch to modify paper-draft.md."
+                        */writing/paper-draft.md|*/paper-draft.md|*/documents/*.md)
+                            echo "DENY:Stage '$CURRENT_STAGE' forbids draft editing. Use s6_paper_patch to modify the target document."
                             exit 1
                             ;;
                     esac

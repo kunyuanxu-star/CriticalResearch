@@ -64,7 +64,7 @@ echo '{"active_round": null}' > "$TEST_DIR/test-workspace/test-proj/state/projec
 
 OUT=$(cd "$TEST_DIR/test-workspace" && CR_SKILL_HOME="$SCRIPT_DIR/.." run_hook '{"commandText":"/critical-cs-research test-proj test objective"}')
 if echo "$OUT" | grep '"decision"' | grep -q '"block"'; then
-    if echo "$OUT" | grep -q "paper-draft.md"; then
+    if echo "$OUT" | grep -q "documents/paper.md"; then
         pass "Block when paper-draft.md missing"
     else
         fail "Block but wrong reason"
@@ -77,8 +77,8 @@ echo ""
 
 # ── Test 4: active_round exists → block ──
 echo "── Test 4: active_round exists → block ──"
-mkdir -p "$TEST_DIR/test-workspace/test-proj2/writing" "$TEST_DIR/test-workspace/test-proj2/state"
-echo "# test" > "$TEST_DIR/test-workspace/test-proj2/writing/paper-draft.md"
+mkdir -p "$TEST_DIR/test-workspace/test-proj2/documents" "$TEST_DIR/test-workspace/test-proj2/state"
+echo "# test" > "$TEST_DIR/test-workspace/test-proj2/documents/paper.md"
 echo "schema_version: \"1.0.0\"" > "$TEST_DIR/test-workspace/test-proj2/state/claim-ledger.yaml"
 echo '{"active_round": 1}' > "$TEST_DIR/test-workspace/test-proj2/state/project-state.json"
 
@@ -97,8 +97,8 @@ echo ""
 
 # ── Test 5: valid args → allow with additionalContext ──
 echo "── Test 5: valid args → allow with additionalContext ──"
-mkdir -p "$TEST_DIR/test-workspace/test-proj3/writing" "$TEST_DIR/test-workspace/test-proj3/state"
-echo "# test" > "$TEST_DIR/test-workspace/test-proj3/writing/paper-draft.md"
+mkdir -p "$TEST_DIR/test-workspace/test-proj3/documents" "$TEST_DIR/test-workspace/test-proj3/state"
+echo "# test" > "$TEST_DIR/test-workspace/test-proj3/documents/paper.md"
 echo "schema_version: \"1.0.0\"" > "$TEST_DIR/test-workspace/test-proj3/state/claim-ledger.yaml"
 echo '{"active_round": null}' > "$TEST_DIR/test-workspace/test-proj3/state/project-state.json"
 

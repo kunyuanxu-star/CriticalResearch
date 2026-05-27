@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "https://critical-research/schemas/document-registry.schema.json",
+  "title": "Document Registry",
+  "description": "Schema for the documents list within project.yaml.",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "type": "object",
+    "required": ["id", "type", "path"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "description": "Document identifier (e.g., paper, proposal, survey, design-doc).",
+        "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+      },
+      "type": {
+        "type": "string",
+        "description": "Document type determining which adapter to load.",
+        "enum": ["paper", "proposal", "survey", "design-doc"]
+      },
+      "path": {
+        "type": "string",
+        "description": "Relative path to the document within the project.",
+        "pattern": "^documents/[a-z0-9-]+\\.md$"
+      },
+      "status": {
+        "type": "string",
+        "description": "Document lifecycle status.",
+        "enum": ["active", "archived", "draft"],
+        "default": "active"
+      }
+    },
+    "additionalProperties": false
+  }
+}

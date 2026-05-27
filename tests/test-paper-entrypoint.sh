@@ -24,7 +24,7 @@ cr workspace init > /dev/null 2>&1
 # ── Test 1: cr round --mode paper creates valid round ──
 echo "── Test 1: cr round <project> --mode paper \"<obj>\" ──"
 cr start test-proj > /dev/null 2>&1
-echo "# test paper" > test-proj/writing/paper-draft.md
+echo "# test paper" > test-proj/documents/paper.md
 
 # Close round-001 so we can start a new paper round.
 jq '.active_round = null' test-proj/state/project-state.json > test-proj/state/project-state.json.tmp && \

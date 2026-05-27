@@ -27,7 +27,7 @@ jq '.active_round = null' e2e-happy/state/project-state.json > e2e-happy/state/p
     mv e2e-happy/state/project-state.json.tmp e2e-happy/state/project-state.json
 
 mkdir -p e2e-happy/writing e2e-happy/state
-cat > e2e-happy/writing/paper-draft.md << 'PAPER'
+cat > e2e-happy/documents/paper.md << 'PAPER'
 # Test Paper
 
 ## Introduction
@@ -60,8 +60,8 @@ ROUND_DIR="e2e-happy/rounds/round-002"
 echo "── Creating minimal artifacts ──"
 
 mkdir -p "$ROUND_DIR/raw-sources" "$ROUND_DIR/source-notes" "$ROUND_DIR/patches" "$ROUND_DIR/experiments"
-mkdir -p "$ROUND_DIR/writing"
-cp e2e-happy/writing/paper-draft.md "$ROUND_DIR/writing/paper-draft.md"
+mkdir -p "$ROUND_DIR/documents"
+cp e2e-happy/documents/paper.md "$ROUND_DIR/documents/paper.md"
 
 for f in round-contract.yaml evidence-ledger.yaml claim-evidence-map.yaml search-log.yaml critique-ledger.yaml review-disposition.yaml revision-plan.yaml writing-plan.yaml patch-plan.yaml writing-diff.yaml patch-trace.yaml experiment-obligations.yaml knowledge-delta.yaml knowledge-apply-log.yaml next-round-targets.yaml round-summary.yaml; do
     echo "schema_version: \"1.0.0\"" > "$ROUND_DIR/$f"

@@ -24,7 +24,7 @@ jq '.active_round = null' e2e-bare/state/project-state.json > e2e-bare/state/pro
     mv e2e-bare/state/project-state.json.tmp e2e-bare/state/project-state.json
 
 mkdir -p e2e-bare/writing e2e-bare/state
-echo "# test paper" > e2e-bare/writing/paper-draft.md
+echo "# test paper" > e2e-bare/documents/paper.md
 echo "schema_version: \"1.0.0\"" > e2e-bare/state/claim-ledger.yaml
 
 cr-start-paper-round e2e-bare "test bare key" > /dev/null 2>&1
@@ -43,7 +43,7 @@ events:
     order: 1
     at: "2026-01-01T00:00:00Z"
     input_hashes:
-      "project:writing/paper-draft.md": "abc"
+      "project:documents/paper.md": "abc"
       "project:state/claim-ledger.yaml": "def"
   - event: stage_completed
     stage: s1_round_contract
@@ -81,7 +81,7 @@ events:
     order: 1
     at: "2026-01-01T00:00:00Z"
     input_hashes:
-      "writing/paper-draft.md": "abc"
+      "documents/paper.md": "abc"
       "project:state/claim-ledger.yaml": "def"
   - event: stage_completed
     stage: s1_round_contract

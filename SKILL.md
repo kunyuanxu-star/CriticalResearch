@@ -21,8 +21,7 @@ The workflow works across computer-science areas without defaulting to any singl
 
 Every round must improve the paper.
 
-The primary artifact is `writing/paper-draft.md`. Reports, notes, ledgers, and knowledge cards are supporting artifacts — not the final product.
-
+The primary artifact is the **target document** in `documents/<doc-id>.md`. Reports, notes, ledgers, and knowledge cards are supporting artifacts — not the final product. A project may contain multiple documents (paper, proposal, survey, design-doc). Each round targets exactly one document.
 ## Universal Research Object Model
 
 For every project, identify:
@@ -83,10 +82,11 @@ Paper mode is the primary workflow. In this mode:
 10. Every closure must expose **unresolved issues and next-round candidates**.
 
 To use paper mode: `cr round <project> --mode paper`
-
+To use paper mode: `cr round <project> --doc paper`
+To use other document types: `cr round <project> --doc proposal|survey|design-doc`
 **Validator pipeline**: cr-validate-schema → cr-validate-artifacts → cr-validate-stage-manifest-consistency → cr-validate-prompts → cr-validate-full-paper-coverage → cr-validate-round-contract → cr-validate-objective-binding → cr-validate-all-stages → cr-validate-stage-run-log → cr-validate-ids → cr-validate-research → cr-validate-source-integrity → cr-validate-evidence-claim-links → cr-validate-critique → cr-validate-references → cr-validate-anchors → cr-validate-paper-patches → cr-validate-experiments → cr-validate-patch-application → cr-validate-knowledge → cr-validate-knowledge-closure → cr-validate-human-gates → cr-validate-paper-completeness → cr-validate-claim-evidence-matrix → cr-validate-argument-flow → cr-validate-claim-paper-alignment → cr-validate-reviewer-readiness → cr-validate-transaction-chain
 
-**Key invariants**: Every round preserves a complete paper draft. Critique→Disposition→Revision→Patch→Trace→Knowledge Delta chain is enforced. Round cannot close with pending human decisions or missing knowledge delta. Recorded patches require draft edit evidence.
+**Key invariants**: Every round preserves a complete target document. Critique→Disposition→Revision→Patch→Trace→Knowledge Delta chain is enforced. Round cannot close with pending human decisions or missing knowledge delta. Recorded patches require draft edit evidence.
 
 See `workflow/universal-paper-round.md` for the full round execution guide.
 
@@ -94,17 +94,12 @@ See `workflow/universal-paper-round.md` for the full round execution guide.
 
 - **Inv1**: Every round must start from an explicit **Round Contract**. No research without a signed contract.
 - **Inv2**: Every major critique must be grounded in **evidence, paper text, domain convention, or venue standard**. No sourceless criticism.
-- **Inv3**: Every accepted critique must produce a **revision decision**. Critique must not idle.
-- **Inv4**: Every paper patch must trace back to a **critique, revision decision, or writing strategy**. No free-form editing.
-- **Inv5**: Every round must produce a **knowledge delta**. Round-local learning must escape into the global knowledge base.
-- **Inv6**: Every closure must expose **unresolved issues and next-round candidates**. The round must be a gateway, not a wall.
-- **Inv7**: A round is invalid unless it updates or explicitly blocks the complete paper draft.
-- **Inv8**: Every medium, high, or fatal critique must produce a paper patch.
-- **Inv9**: Every paper patch must name affected paper regions.
-- **Inv10**: Every core claim must have an evaluation contract or a recorded reason why it is not yet evaluable.
-- **Inv11**: Every accepted paper patch must be reflected in `paper-draft.md`, `writing-diff.yaml`, and patch lifecycle state.
-- **Inv12**: Decisions affecting thesis, baseline, assumptions, contribution, or evaluation priority must enter the Human Judgment Gate.
-- **Inv13**: Do not close or summarize a round until required validators pass.
+- **Inv2**: Every major critique must be grounded in **evidence, document text, domain convention, or venue standard**. No sourceless criticism.
+- **Inv4**: Every document patch must trace back to a **critique, revision decision, or writing strategy**. No free-form editing.
+- **Inv7**: A round is invalid unless it updates or explicitly blocks the complete target document.
+- **Inv8**: Every medium, high, or fatal critique must produce a document patch.
+- **Inv9**: Every document patch must name affected document regions.
+- **Inv11**: Every accepted document patch must be reflected in the target document, `writing-diff.yaml`, and patch lifecycle state.
 - **Inv14**: Do not claim that the research is complete unless the user explicitly says stop, finalize, or satisfied.
 
 ## Research Posture

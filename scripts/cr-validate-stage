@@ -51,7 +51,7 @@ INPUTS=$(yq -r ".stages.$STAGE.required_inputs // [] | .[]" "$STATE_FILE" 2>/dev
 for input in $INPUTS; do
     [ -z "$input" ] && continue
     case "$input" in
-        writing/*|state/*)
+        writing/*|state/*|documents/*)
             if [ -f "$PROJECT_DIR/$input" ]; then
                 pass "Input '$input' exists"
             elif [ "$PM" = "paper" ]; then
@@ -146,6 +146,8 @@ check_array_content() {
         pass "$label: $count"
     fi
 }
+# Determine document type from round state.
+DOCUMENT_TYPE=$(yq -r '.document_type // "paper"' "$STATE_FILE" 2>/dev/null || echo "paper")
 
 case "$STAGE" in
     s1_round_contract)
@@ -210,6 +212,37 @@ case "$STAGE" in
 
     *)
         # Generic stage: file existence already checked above.
+        ;;
+esac
+# Document-type-specific semantic checks.
+case "$DOCUMENT_TYPE" in
+    proposal)
+        case "$STAGE" in
+            s1_round_contract)
+                check_field_substantive "$ROUND_DIR/round-contract.yaml" '.contract.problem_statement' "Problem statement"
+                check_array_content "$ROUND_DIR/round-contract.yaml" '.contract.milestones' 3 "Milestones"
+                ;;
+            s2_evidence_grounding)
+                check_array_content "$ROUND_DIR/evidence-ledger.yaml" '.evidence' 1 "Evidence items"
+                ;;
+        esac
+        ;;
+    design-doc)
+        case "$STAGE" in
+            s3_critical_review)
+                check_array_content "$ROUND_DIR/critique-ledger.yaml" '.critiques' 1 "Critiques"
+                ;;
+        esac
+        ;;
+    survey)
+        case "$STAGE" in
+            s2_evidence_grounding)
+                check_array_content "$ROUND_DIR/evidence-ledger.yaml" '.sources_reviewed' 5 "Sources reviewed"
+                ;;
+        esac
+        ;;
+    paper|*)
+        # Existing paper checks are already in the stage cases above.
         ;;
 esac
 

@@ -13,10 +13,10 @@ execution_policy:
 stages:
 - order: 1
   id: s1_round_contract
-  prompt: prompts/stages/s1_round_contract.md
+  prompt: prompts/core/s1_round_contract.md
   dependencies: []
   required_inputs:
-  - path: project:writing/paper-draft.md
+  - path: project:documents/paper.md
     type: markdown
   - path: project:state/claim-ledger.yaml
     type: yaml
@@ -38,13 +38,13 @@ stages:
   no_op_allowed: false
 - order: 2
   id: s2_evidence_grounding
-  prompt: prompts/stages/s2_evidence_grounding.md
+  prompt: prompts/core/s2_evidence_grounding.md
   dependencies:
   - s1_round_contract
   required_inputs:
   - path: round:round-contract.yaml
     type: yaml
-  - path: project:writing/paper-draft.md
+  - path: project:documents/paper.md
     type: markdown
   - path: project:state/claim-ledger.yaml
     type: yaml
@@ -78,7 +78,7 @@ stages:
   coverage_exemption_reason_required: true
 - order: 3
   id: s3_critical_review
-  prompt: prompts/stages/s3_critical_review.md
+  prompt: prompts/core/s3_critical_review.md
   dependencies:
   - s2_evidence_grounding
   required_inputs:
@@ -86,7 +86,7 @@ stages:
     type: yaml
   - path: round:claim-evidence-map.yaml
     type: yaml
-  - path: project:writing/paper-draft.md
+  - path: project:documents/paper.md
     type: markdown
   - path: round:round-contract.yaml
     type: yaml
@@ -111,7 +111,7 @@ stages:
   no_op_allowed: false
 - order: 4
   id: s4_revision_strategy
-  prompt: prompts/stages/s4_revision_strategy.md
+  prompt: prompts/core/s4_revision_strategy.md
   dependencies:
   - s3_critical_review
   required_inputs:
@@ -136,13 +136,13 @@ stages:
   no_op_allowed: true
 - order: 5
   id: s5_writing_strategy
-  prompt: prompts/stages/s5_writing_strategy.md
+  prompt: prompts/core/s5_writing_strategy.md
   dependencies:
   - s4_revision_strategy
   required_inputs:
   - path: round:revision-plan.yaml
     type: yaml
-  - path: project:writing/paper-draft.md
+  - path: project:documents/paper.md
     type: markdown
   required_outputs:
   - path: round:writing-plan.yaml
@@ -164,7 +164,7 @@ stages:
   no_op_allowed: true
 - order: 6
   id: s6_paper_patch
-  prompt: prompts/stages/s6_paper_patch.md
+  prompt: prompts/core/s6_paper_patch.md
   dependencies:
   - s5_writing_strategy
   required_inputs:
@@ -172,10 +172,10 @@ stages:
     type: yaml
   - path: round:writing-plan.yaml
     type: yaml
-  - path: project:writing/paper-draft.md
+  - path: project:documents/paper.md
     type: markdown
   required_outputs:
-  - path: project:writing/paper-draft.md
+  - path: project:documents/paper.md
     type: markdown
     no_schema_reason: "Markdown paper draft has no JSON schema."
   - path: round:writing-diff.yaml
@@ -188,7 +188,7 @@ stages:
     type: yaml
     schema: schemas/experiment-obligations.schema.json
   allowed_write_scopes:
-  - project:writing/paper-draft.md
+  - project:documents/paper.md
   - round:writing-diff.yaml
   - round:patch-trace.yaml
   - round:experiment-obligations.yaml
@@ -203,7 +203,7 @@ stages:
   no_op_allowed: true
 - order: 7
   id: s7_knowledge_consolidation
-  prompt: prompts/stages/s7_knowledge_consolidation.md
+  prompt: prompts/core/s7_knowledge_consolidation.md
   dependencies:
   - s6_paper_patch
   required_inputs:
@@ -235,7 +235,7 @@ stages:
   coverage_exemption_reason_required: true
 - order: 8
   id: s8_round_closure
-  prompt: prompts/stages/s8_round_closure.md
+  prompt: prompts/core/s8_round_closure.md
   dependencies:
   - s7_knowledge_consolidation
   required_inputs:
