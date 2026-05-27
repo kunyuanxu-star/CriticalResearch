@@ -49,10 +49,10 @@ read_doc_registry() {
     if [ ! -f "$reg" ]; then
         die "documents/registry.yaml not found in project"
     fi
-    DOC_TYPE=$(yq -r ".documents.\"$doc_id\".type // \"\"" "$reg" 2>/dev/null || echo "")
-    DOC_PATH=$(yq -r ".documents.\"$doc_id\".path // \"\"" "$reg" 2>/dev/null || echo "")
-    DOC_DEFAULT_WORKFLOW=$(yq -r ".documents.\"$doc_id\".default_workflow // \"\"" "$reg" 2>/dev/null || echo "")
-    DOC_UNITS=$(yq -r ".documents.\"$doc_id\".units // \"\"" "$reg" 2>/dev/null || echo "")
+    DOC_TYPE=$(yq -r ".documents[] | select(.id == \"$doc_id\") | .type // \"\"" "$reg" 2>/dev/null || echo "")
+    DOC_PATH=$(yq -r ".documents[] | select(.id == \"$doc_id\") | .path // \"\"" "$reg" 2>/dev/null || echo "")
+    DOC_DEFAULT_WORKFLOW=$(yq -r ".documents[] | select(.id == \"$doc_id\") | .default_workflow // \"\"" "$reg" 2>/dev/null || echo "")
+    DOC_UNITS=$(yq -r ".documents[] | select(.id == \"$doc_id\") | .units // \"\"" "$reg" 2>/dev/null || echo "")
     if [ -z "$DOC_TYPE" ]; then
         die "document '$doc_id' not found in documents/registry.yaml"
     fi
@@ -239,9 +239,9 @@ mutable_document:
   path: $DOC_PATH
 
 target_units:
-  primary:
-CONT
+  primary: []
 
+CONT
     if [ -n "$UNIT_ID" ]; then
         echo "    - $UNIT_ID" >> "$ROUND_DIR/contract.yaml"
     fi
@@ -290,7 +290,8 @@ CONT
 project_id: $PROJECT_ID
 round_id: $ROUND_ID
 workflow_id: $WORKFLOW_ID
-status: active
+schema_version: "2.0.0"
+status: running
 current_stage: $FIRST_STAGE
 started_at: $NOW
 stage_order:
@@ -329,7 +330,7 @@ STAGE
     local new_total=$((total_rounds + 1))
 
     jq \
-        --arg ar "$ROUND_ID" \
+        --argjson ar "$NEXT_ROUND" \
         --argjson tr "$new_total" \
         --arg lu "$NOW" \
         '.active_round = $ar | .total_rounds = $tr | .last_updated = $lu' \
@@ -379,7 +380,8 @@ cmd_status() {
         exit 0
     fi
 
-    ROUND_DIR="$PROJECT_DIR/rounds/$ACTIVE_ROUND"
+    ROUND_NUM=$(printf "%03d" "$ACTIVE_ROUND")
+    ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
     if [ ! -d "$ROUND_DIR" ]; then
         die "active round directory not found: $ROUND_DIR"
     fi
@@ -476,7 +478,8 @@ cmd_close() {
         die "no active round for project '$PROJECT_ID'"
     fi
 
-    ROUND_DIR="$PROJECT_DIR/rounds/$ACTIVE_ROUND"
+    ROUND_NUM=$(printf "%03d" "$ACTIVE_ROUND")
+    ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
     if [ ! -d "$ROUND_DIR" ]; then
         die "active round directory not found: $ROUND_DIR"
     fi
@@ -534,7 +537,12 @@ cmd_close() {
                 local validator_ok=true
                 for validator in "${VALIDATORS[@]}"; do
                     [ -z "$validator" ] && continue
-                    local validator_script="$SCRIPT_DIR/${validator}"
+                    local validator_script=""
+                    if [ -x "$SKILL_HOME/workflows/$wf_id/validators/$validator" ]; then
+                        validator_script="$SKILL_HOME/workflows/$wf_id/validators/$validator"
+                    elif [ -x "$SKILL_HOME/engine/validators/$validator" ]; then
+                        validator_script="$SKILL_HOME/engine/validators/$validator"
+                    fi
                     if [ -x "$validator_script" ]; then
                         echo "  Running: $validator"
                         if ! "$validator_script" "$PROJECT_DIR" "$ROUND_DIR" 2>&1; then

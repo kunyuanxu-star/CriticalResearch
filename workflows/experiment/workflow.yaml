@@ -17,6 +17,16 @@ stage_order:
   - apply_experiment_patch
   - knowledge_delta
   - closure
+prompt_pack:
+  contract: workflows/experiment/prompts/01-contract.md
+  experiment_state: workflows/experiment/prompts/02-experiment-state.md
+  hypothesis_design: workflows/experiment/prompts/03-methodology-design.md
+  experiment_critical_review: workflows/experiment/prompts/04-experiment-critical-review.md
+  experiment_execution: workflows/experiment/prompts/05-experiment-plan.md
+  apply_experiment_patch: workflows/experiment/prompts/07-apply-experiment-patch.md
+  knowledge_delta: workflows/experiment/prompts/09-knowledge-delta.md
+  closure: workflows/experiment/prompts/10-closure.md
+
 
 patch_schema: workflows/experiment/schemas/experiment-patch.schema.json
 

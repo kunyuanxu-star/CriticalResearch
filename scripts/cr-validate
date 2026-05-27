@@ -94,10 +94,10 @@ if [ -n "$ROUND_DIR" ] && [ -d "$ROUND_DIR" ]; then
     STATE_FILE="$ROUND_DIR/workflow-state.yaml"
 
     if [ -f "$CONTRACT_FILE" ]; then
-        run_validator "Round Contract"      "$ENGINE_VALIDATORS/cr-validate-round-contract" "$ROUND_DIR"
-        run_validator "Single Mutable Doc"  "$ENGINE_VALIDATORS/cr-validate-single-mutable-document" "$ROUND_DIR"
-        run_validator "Target Units"        "$ENGINE_VALIDATORS/cr-validate-target-units" "$ROUND_DIR"
-        run_validator "Readonly Context"    "$ENGINE_VALIDATORS/cr-validate-readonly-context" "$ROUND_DIR"
+        run_validator "Round Contract"      "$ENGINE_VALIDATORS/cr-validate-round-contract" "$CONTRACT_FILE"
+        run_validator "Single Mutable Doc"  "$ENGINE_VALIDATORS/cr-validate-single-mutable-document" "$CONTRACT_FILE"
+        run_validator "Target Units"        "$ENGINE_VALIDATORS/cr-validate-target-units" "$CONTRACT_FILE"
+        run_validator "Readonly Context"    "$ENGINE_VALIDATORS/cr-validate-readonly-context" "$CONTRACT_FILE"
     fi
 
     if [ -f "$STATE_FILE" ]; then
@@ -121,14 +121,14 @@ if [ -n "$ROUND_DIR" ] && [ -d "$ROUND_DIR" ]; then
         if [ -n "$WORKFLOW_ID" ] && [ -f "$SKILL_HOME/workflows/$WORKFLOW_ID/workflow.yaml" ]; then
             echo "── Workflow: $WORKFLOW_ID ──"
             # Run workflow-specific validators listed in workflow.yaml
-            WF_VALIDATORS=$(grep -A 50 '^validators:' "$SKILL_HOME/workflows/$WORKFLOW_ID/workflow.yaml" 2>/dev/null | grep '^  - ' | sed 's/  - //' || echo "")
+            WF_VALIDATORS=$(yq -r '.validators[] // ""' "$SKILL_HOME/workflows/$WORKFLOW_ID/workflow.yaml" 2>/dev/null || echo "")
             for v in $WF_VALIDATORS; do
                 # Check workflow validators dir first, then engine validators
                 WF_VAL="$SKILL_HOME/workflows/$WORKFLOW_ID/validators/$v"
                 if [ -x "$WF_VAL" ]; then
-                    run_validator "$v" "$WF_VAL" "$ROUND_DIR"
+                    run_validator "$v" "$WF_VAL" "$CONTRACT_FILE"
                 elif [ -x "$ENGINE_VALIDATORS/$v" ]; then
-                    run_validator "$v" "$ENGINE_VALIDATORS/$v" "$ROUND_DIR"
+                    run_validator "$v" "$ENGINE_VALIDATORS/$v" "$CONTRACT_FILE"
                 else
                     echo "  [SKIP] Validator not found: $v"
                 fi

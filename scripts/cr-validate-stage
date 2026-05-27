@@ -17,9 +17,9 @@ if [ -z "$PROJECT_DIR" ] || [ -z "$ROUND_DIR" ] || [ -z "$STAGE" ]; then
     exit 2
 fi
 
-STATE_FILE="$ROUND_DIR/state.yaml"
+STATE_FILE="$ROUND_DIR/workflow-state.yaml"
 if [ ! -f "$STATE_FILE" ]; then
-    fail "state.yaml not found in $ROUND_DIR"
+    fail "workflow-state.yaml not found in $ROUND_DIR"
     cr_exit_summary
 fi
 
@@ -146,105 +146,81 @@ check_array_content() {
         pass "$label: $count"
     fi
 }
-# Determine document type from round state.
+# ── Generic output-content validation ────────────────────────────
+# Check content quality of any known output files present in the round.
+# Stage-agnostic: validates whatever files exist regardless of workflow.
+
+# Determine document type from state.
 DOCUMENT_TYPE=$(yq -r '.document_type // "paper"' "$STATE_FILE" 2>/dev/null || echo "paper")
 
-case "$STAGE" in
-    s1_round_contract)
-        check_field_substantive "$ROUND_DIR/round-contract.yaml" '.contract.target' "Round contract target"
-        check_array_content "$ROUND_DIR/round-contract.yaml" '.contract.success_criteria' 1 "Success criteria"
-        ;;
+CONTRACT="$ROUND_DIR/contract.yaml"
+if [ -f "$CONTRACT" ]; then
+    check_field_substantive "$CONTRACT" '.objective // ""' "Round objective"
+fi
 
-    s2_evidence_grounding)
-        check_array_content "$ROUND_DIR/evidence-ledger.yaml" '.evidence' 1 "Evidence items"
-        if [ -f "$ROUND_DIR/evidence-ledger.yaml" ]; then
-            # Check at least one weakening evidence
-            WEAKENING=$(yq -r '[.evidence[] | select(.evidence_category == "weakening")] | length' "$ROUND_DIR/evidence-ledger.yaml" 2>/dev/null || echo "0")
-            if [ "$WEAKENING" -ge 1 ]; then
-                pass "Weakening evidence items: $WEAKENING"
-            else
-                fail "At least one weakening evidence item required"
+EVIDENCE="$ROUND_DIR/evidence-ledger.yaml"
+if [ -f "$EVIDENCE" ]; then
+    check_array_content "$EVIDENCE" '.evidence' 1 "Evidence items"
+    WEAKENING=$(yq -r '[.evidence[] | select(.evidence_category == "weakening")] | length' "$EVIDENCE" 2>/dev/null || echo "0")
+    if [ "$WEAKENING" -ge 1 ]; then
+        pass "Weakening evidence items: $WEAKENING"
+    else
+        fail "At least one weakening evidence item required"
+        ALL_PRESENT=false
+    fi
+fi
+
+CRITIQUE="$ROUND_DIR/critique-ledger.yaml"
+if [ -f "$CRITIQUE" ]; then
+    check_array_content "$CRITIQUE" '.critiques' 1 "Critiques"
+    CRITIQUE_COUNT=$(yq -r '.critiques | length // 0' "$CRITIQUE" 2>/dev/null || echo "0")
+    for i in $(seq 0 $((CRITIQUE_COUNT - 1))); do
+        severity=$(yq -r ".critiques[$i].severity // \"\"" "$CRITIQUE" 2>/dev/null || echo "")
+        evidence_refs=$(yq -r ".critiques[$i].evidence_refs | length // 0" "$CRITIQUE" 2>/dev/null || echo "0")
+        if [ "$severity" = "medium" ] || [ "$severity" = "high" ] || [ "$severity" = "fatal" ]; then
+            if [ "$evidence_refs" -eq 0 ]; then
+                fail "Medium+ critique $i missing evidence_refs"
                 ALL_PRESENT=false
             fi
         fi
-        ;;
+    done
+fi
 
-    s3_critical_review)
-        check_array_content "$ROUND_DIR/critique-ledger.yaml" '.critiques' 1 "Critiques"
-        if [ -f "$ROUND_DIR/critique-ledger.yaml" ]; then
-            # Check medium+ critiques have evidence_refs
-            CRITIQUE_COUNT=$(yq -r '.critiques | length // 0' "$ROUND_DIR/critique-ledger.yaml" 2>/dev/null || echo "0")
-            for i in $(seq 0 $((CRITIQUE_COUNT - 1))); do
-                severity=$(yq -r ".critiques[$i].severity // \"\"" "$ROUND_DIR/critique-ledger.yaml" 2>/dev/null || echo "")
-                evidence_refs=$(yq -r ".critiques[$i].evidence_refs | length // 0" "$ROUND_DIR/critique-ledger.yaml" 2>/dev/null || echo "0")
-                if [ "$severity" = "medium" ] || [ "$severity" = "high" ] || [ "$severity" = "fatal" ]; then
-                    if [ "$evidence_refs" -eq 0 ]; then
-                        fail "Medium+ critique $i missing evidence_refs"
-                        ALL_PRESENT=false
-                    fi
-                fi
-            done
-        fi
-        ;;
+REVISION="$ROUND_DIR/revision-plan.yaml"
+if [ -f "$REVISION" ]; then
+    check_array_content "$REVISION" '.revisions' 1 "Revisions"
+fi
 
-    s4_revision_strategy)
-        check_array_content "$ROUND_DIR/revision-plan.yaml" '.revisions' 1 "Revisions"
-        ;;
+WRITING="$ROUND_DIR/writing-plan.yaml"
+if [ -f "$WRITING" ]; then
+    check_array_content "$WRITING" '.high_level.argument_order' 1 "Argument order"
+fi
 
-    s5_writing_strategy)
-        check_array_content "$ROUND_DIR/writing-plan.yaml" '.high_level.argument_order' 1 "Argument order"
-        ;;
+WRITING_DIFF="$ROUND_DIR/writing-diff.yaml"
+if [ -f "$WRITING_DIFF" ]; then
+    CHANGES=$(yq -r '.changes | length // 0' "$WRITING_DIFF" 2>/dev/null || echo "0")
+    pass "Writing diff changes: $CHANGES"
+fi
 
-    s6_paper_patch)
-        if [ -f "$ROUND_DIR/writing-diff.yaml" ]; then
-            CHANGES=$(yq -r '.changes | length // 0' "$ROUND_DIR/writing-diff.yaml" 2>/dev/null || echo "0")
-            pass "Writing diff changes: $CHANGES"
-        fi
-        ;;
+KNOWLEDGE="$ROUND_DIR/knowledge-delta.yaml"
+if [ -f "$KNOWLEDGE" ]; then
+    check_array_content "$KNOWLEDGE" '.updates' 1 "Knowledge updates"
+fi
 
-    s7_knowledge_consolidation)
-        check_array_content "$ROUND_DIR/knowledge-delta.yaml" '.updates' 1 "Knowledge updates"
-        ;;
+NEXT_TARGETS="$ROUND_DIR/next-round-targets.yaml"
+if [ -f "$NEXT_TARGETS" ]; then
+    check_array_content "$NEXT_TARGETS" '.candidates' 1 "Next-round candidates"
+fi
 
-    s8_round_closure)
-        check_array_content "$ROUND_DIR/next-round-targets.yaml" '.candidates' 1 "Next-round candidates"
-        ;;
+PATCH="$ROUND_DIR/patch-trace.yaml"
+if [ -f "$PATCH" ]; then
+    check_array_content "$PATCH" '.patches' 1 "Patch entries"
+fi
 
-    *)
-        # Generic stage: file existence already checked above.
-        ;;
-esac
-# Document-type-specific semantic checks.
-case "$DOCUMENT_TYPE" in
-    proposal)
-        case "$STAGE" in
-            s1_round_contract)
-                check_field_substantive "$ROUND_DIR/round-contract.yaml" '.contract.problem_statement' "Problem statement"
-                check_array_content "$ROUND_DIR/round-contract.yaml" '.contract.milestones' 3 "Milestones"
-                ;;
-            s2_evidence_grounding)
-                check_array_content "$ROUND_DIR/evidence-ledger.yaml" '.evidence' 1 "Evidence items"
-                ;;
-        esac
-        ;;
-    design-doc)
-        case "$STAGE" in
-            s3_critical_review)
-                check_array_content "$ROUND_DIR/critique-ledger.yaml" '.critiques' 1 "Critiques"
-                ;;
-        esac
-        ;;
-    survey)
-        case "$STAGE" in
-            s2_evidence_grounding)
-                check_array_content "$ROUND_DIR/evidence-ledger.yaml" '.sources_reviewed' 5 "Sources reviewed"
-                ;;
-        esac
-        ;;
-    paper|*)
-        # Existing paper checks are already in the stage cases above.
-        ;;
-esac
+DIFF="$ROUND_DIR/document-diff.yaml"
+if [ -f "$DIFF" ]; then
+    check_array_content "$DIFF" '.diffs' 1 "Document diffs"
+fi
 
 if [ "$ALL_PRESENT" = true ]; then
     pass "Stage '$STAGE' validation passed"

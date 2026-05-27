@@ -7,6 +7,17 @@ workflow_id: paper
 target_document_types:
   - paper
 
+prompt_pack:
+  contract: workflows/paper/prompts/01-contract.md
+  paper_state: workflows/paper/prompts/02-paper-state.md
+  claim_evidence_grounding: workflows/paper/prompts/03-claim-evidence-grounding.md
+  reviewer_critique: workflows/paper/prompts/04-reviewer-critique.md
+  writing_strategy: workflows/paper/prompts/05-writing-strategy.md
+  revision_plan: workflows/paper/prompts/06-revision-plan.md
+  apply_paper_patch: workflows/paper/prompts/07-apply-paper-patch.md
+  claim_alignment: workflows/paper/prompts/08-claim-alignment.md
+  knowledge_delta: workflows/paper/prompts/09-knowledge-delta.md
+  closure: workflows/paper/prompts/10-closure.md
 stage_order:
   - contract
   - paper_state

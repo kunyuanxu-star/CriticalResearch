@@ -16,6 +16,16 @@ stage_order:
   - apply_proposal_patch
   - knowledge_delta
   - closure
+prompt_pack:
+  contract: workflows/proposal/prompts/01-contract.md
+  problem_state: workflows/proposal/prompts/02-proposal-state.md
+  feasibility_research: workflows/proposal/prompts/03-feasibility-research.md
+  proposal_critical_review: workflows/proposal/prompts/04-proposal-critical-review.md
+  scope_strategy: workflows/proposal/prompts/05-scope-strategy.md
+  apply_proposal_patch: workflows/proposal/prompts/07-apply-proposal-patch.md
+  knowledge_delta: workflows/proposal/prompts/09-knowledge-delta.md
+  closure: workflows/proposal/prompts/10-closure.md
+
 
 patch_schema: workflows/proposal/schemas/proposal-patch.schema.json
 

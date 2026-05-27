@@ -49,10 +49,10 @@ find_active_round() {
 }
 
 ROUND_DIR="$(find_active_round)"
-STATE_FILE="$ROUND_DIR/state.yaml"
+STATE_FILE="$ROUND_DIR/workflow-state.yaml"
 
 if [ ! -f "$STATE_FILE" ]; then
-    echo "Error: state.yaml not found in $ROUND_DIR" >&2
+    echo "Error: workflow-state.yaml not found in $ROUND_DIR" >&2
     exit 1
 fi
 

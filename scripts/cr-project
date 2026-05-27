@@ -120,7 +120,7 @@ cmd_init() {
     NOW="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
     # Create directory structure
-    mkdir -p "$WORKSPACE_ROOT/$PROJECT_ID"/{documents,units,knowledge/cards,rounds}
+    mkdir -p "$WORKSPACE_ROOT/$PROJECT_ID"/{documents,units,knowledge/cards,rounds,state}
 
     # Create project.yaml
     cat > "$WORKSPACE_ROOT/$PROJECT_ID/project.yaml" << YAML
@@ -129,13 +129,26 @@ domain: $domain
 created_at: $NOW
 description: ""
 schema_version: "2.0.0"
-documents: []
 YAML
+
+    # Create state/project-state.json
+    cat > "$WORKSPACE_ROOT/$PROJECT_ID/state/project-state.json" << JSON
+{
+  "project_id": "$PROJECT_ID",
+  "status": "active",
+  "active_round": null,
+  "total_rounds": 0,
+  "evidence_saturation": 0.0,
+  "open_gaps": 0,
+  "last_updated": "$NOW",
+  "schema_version": "2.0.0"
+}
+JSON
 
     # Create documents/registry.yaml
     cat > "$WORKSPACE_ROOT/$PROJECT_ID/documents/registry.yaml" << YAML
 schema_version: "2.0.0"
-documents: []
+documents:
 YAML
 
     # Set as active project
@@ -194,11 +207,12 @@ cmd_status() {
     echo "Rounds:"
     if [ -d "$PROJECT_DIR/rounds" ] && [ -n "$(ls -A "$PROJECT_DIR/rounds" 2>/dev/null)" ]; then
         for rd in "$PROJECT_DIR/rounds"/round-*; do
-            if [ -f "$rd/round.yaml" ]; then
+            if [ -f "$rd/contract.yaml" ]; then
                 local rstatus rid
-                rstatus=$(grep -E '^status:' "$rd/round.yaml" 2>/dev/null | sed 's/^status: *//')
-                rid=$(grep -E '^round_id:' "$rd/round.yaml" 2>/dev/null | sed 's/^round_id: *//')
-                echo "  - round-$rid ($rstatus)"
+                rstatus=$(grep -E '^status:' "$rd/workflow-state.yaml" 2>/dev/null | head -1 | sed 's/^status: *//')
+                [ -z "$rstatus" ] && rstatus="active"
+                rid=$(grep -E '^round_id:' "$rd/workflow-state.yaml" 2>/dev/null | sed 's/^round_id: *//')
+                echo "  - $rid ($rstatus)"
             fi
         done
     else

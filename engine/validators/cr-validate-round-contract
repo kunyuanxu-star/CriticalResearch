@@ -31,7 +31,7 @@ def validate_round_contract(contract: dict, project_root: str) -> list[str]:
     # Required fields
     for field in ["schema_version", "round_id", "project_id", "workflow",
                    "mutable_document", "target_units", "scope_policy",
-                   "user_objective", "required_outputs", "success_criteria"]:
+                   "objective", "required_outputs", "success_criteria"]:
         if field not in contract:
             errs.append(f"Missing required field: {field}")
 

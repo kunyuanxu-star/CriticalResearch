@@ -34,7 +34,7 @@ def validate_target_units(contract_path: str, project_root: str) -> list[str]:
             registry_units.add(key)
 
     target_units = contract.get("target_units", {})
-    all_target_units = list(target_units.get("primary", [])) + list(target_units.get("secondary", []))
+    all_target_units = list(target_units.get("primary") or []) + list(target_units.get("secondary") or [])
 
     for unit in all_target_units:
         if unit not in registry_units:

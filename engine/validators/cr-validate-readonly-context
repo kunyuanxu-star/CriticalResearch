@@ -9,11 +9,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/../../scripts/cr-common.sh"
 
-ROUND_DIR="${1:-}"
+ROUND_ARG="${1:-}"
 
-if [ -z "$ROUND_DIR" ]; then
-    echo "Usage: cr-validate-readonly-context <round_dir>" >&2
+if [ -z "$ROUND_ARG" ]; then
+    echo "Usage: cr-validate-readonly-context <round_dir|contract.yaml>" >&2
     exit 2
+fi
+
+# Accept either a round directory or a contract.yaml file.
+if [ -f "$ROUND_ARG" ] && [ "$(basename "$ROUND_ARG")" = "contract.yaml" ]; then
+    ROUND_DIR="$(dirname "$ROUND_ARG")"
+else
+    ROUND_DIR="$ROUND_ARG"
 fi
 
 CONTRACT="$ROUND_DIR/contract.yaml"
