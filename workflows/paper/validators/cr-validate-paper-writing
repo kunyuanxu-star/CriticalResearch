@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# cr-validate-paper-writing — Check writing quality: flag vague claims without definitions.
+# Scans paper.md for terms like "better", "efficient", "secure", "significant",
+# "robust", "state-of-the-art", "novel", "fast" used without quantifiers or citations.
+# Usage: cr-validate-paper-writing <round_dir>
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../../scripts/cr-common.sh"
+ROUND_DIR="${1:-}"
+[ -z "$ROUND_DIR" ] && { echo "Usage: cr-validate-paper-writing <round_dir>" >&2; exit 2; }
+echo "── Paper Writing Quality ──"
+
+PROJECT_DIR="${ROUND_DIR}/../.."
+PAPER=""
+for candidate in "$PROJECT_DIR/writing/paper-draft.md" "$PROJECT_DIR/documents/paper.md"; do
+    [ -f "$candidate" ] && { PAPER="$candidate"; break; }
+done
+[ -z "$PAPER" ] && { fail "paper.md not found (tried writing/paper-draft.md, documents/paper.md)"; cr_exit_summary; }
+
+# Vague terms to flag — each as a grep pattern
+VAGUE_TERMS="better|efficient|secure|significant|robust|state.of.the.art|novel|fast"
+# Lines with vague terms but without a quantifier, citation, or definition nearby
+# A line is OK if it also contains: a number, %, [, defined, measured, compared, outperforms by, reduces by
+DEFINED_PATTERN='[0-9]+|[0-9]+\.[0-9]+|[0-9]+%|\[[0-9]+\]|defined as|measured by|compared|outperforms by|reduces by|improves by'
+
+VAGUE_COUNT=0
+while IFS= read -r line; do
+    line_num=$(echo "$line" | cut -d: -f1)
+    text=$(echo "$line" | cut -d: -f2-)
+    # Skip headings, captions, and comments
+    echo "$text" | grep -qiE '^[[:space:]]*#' && continue
+    echo "$text" | grep -qiE '^[[:space:]]*!' && continue
+    # If the line has a vague term but no definition marker, flag it
+    if echo "$text" | grep -qiE "$VAGUE_TERMS"; then
+        if ! echo "$text" | grep -qiE "$DEFINED_PATTERN"; then
+            warn "Line $line_num: vague claim — '$(echo "$text" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | head -c 80)'"
+            VAGUE_COUNT=$((VAGUE_COUNT + 1))
+        fi
+    fi
+done < <(grep -niE "$VAGUE_TERMS" "$PAPER" 2>/dev/null || true)
+
+if [ "$VAGUE_COUNT" -eq 0 ]; then
+    pass "No vague claims detected"
+else
+    fail "$VAGUE_COUNT vague claim(s) without quantifier, citation, or definition"
+fi
+
+cr_exit_summary

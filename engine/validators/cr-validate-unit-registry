@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# cr-validate-unit-registry — V2 unit registry consistency validator.
+# Checks .units.yaml files match document registry, units have required
+# fields, and no duplicate unit IDs exist.
+#
+# Usage: cr-validate-unit-registry <project_dir>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../scripts/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+
+if [ -z "$PROJECT_DIR" ]; then
+    echo "Usage: cr-validate-unit-registry <project_dir>" >&2
+    exit 2
+fi
+
+[ -d "$PROJECT_DIR" ] || { fail "Project directory not found: $PROJECT_DIR"; cr_exit_summary; }
+
+UNITS_DIR="$PROJECT_DIR/units"
+REGISTRY="$PROJECT_DIR/documents/registry.yaml"
+
+echo ""
+echo "══ Unit Registry Validation ══"
+
+[ -d "$UNITS_DIR" ] || { fail "units/ directory not found"; cr_exit_summary; }
+[ -f "$REGISTRY" ] || { fail "documents/registry.yaml not found"; cr_exit_summary; }
+
+REGISTRY_DOC_IDS=$(grep '^  - id:' "$REGISTRY" | sed 's/.*- id: *//' | sort)
+
+UNIT_FILES=$(find "$UNITS_DIR" -maxdepth 1 -name '*.units.yaml' -type f 2>/dev/null | sort || true)
+[ -n "$UNIT_FILES" ] || { fail "No .units.yaml files found in units/"; cr_exit_summary; }
+
+ALL_UNIT_IDS=""
+for f in $UNIT_FILES; do
+    [ -f "$f" ] || continue
+    DOC_ID=$(basename "$f" .units.yaml)
+
+    if echo "$REGISTRY_DOC_IDS" | grep -qx "$DOC_ID"; then
+        pass "Unit file '$DOC_ID.units.yaml' matches registered document"
+    else
+        fail "Unit file '$DOC_ID.units.yaml' has no matching document in registry"
+    fi
+
+    grep -q '^units:' "$f" || { fail "$DOC_ID.units.yaml: missing 'units:' key"; continue; }
+
+    # Unit entries are at 2-space indent under the 'units:' array
+    FILE_UNIT_IDS=$(grep '^  - id:' "$f" | sed 's/.*- id: *//' || true)
+    [ -n "$FILE_UNIT_IDS" ] || { fail "$DOC_ID.units.yaml: no units defined"; continue; }
+
+    while IFS= read -r uid; do
+        [ -z "$uid" ] && continue
+        # Extract unit block: from "  - id: <uid>" to next "  - " or end of units section
+        BLOCK=$(sed -n "/^  - id: *${uid}$/,/^  - /p" "$f" || true)
+        # Unit fields are at 4-space indent within the array item
+        for field in title status; do
+            if echo "$BLOCK" | grep -q "^    ${field}:"; then
+                pass "$DOC_ID.units.yaml: unit '$uid' has '$field'"
+            else
+                fail "$DOC_ID.units.yaml: unit '$uid' missing '$field'"
+            fi
+        done
+    done <<< "$FILE_UNIT_IDS"
+
+    ALL_UNIT_IDS="${ALL_UNIT_IDS}${FILE_UNIT_IDS}"$'\n'
+done
+
+# ── No duplicate unit IDs across all files ──
+DUPS=$(echo "$ALL_UNIT_IDS" | sed '/^$/d' | sort | uniq -d || true)
+if [ -z "$DUPS" ]; then
+    pass "No duplicate unit IDs across all .units.yaml files"
+else
+    for dup in $DUPS; do
+        fail "Duplicate unit ID: '$dup' appears in multiple files"
+    done
+fi
+
+cr_exit_summary

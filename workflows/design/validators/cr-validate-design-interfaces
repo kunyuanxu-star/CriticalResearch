@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# cr-validate-design-interfaces — Validate interfaces are documented.
+# Checks design-state.yaml for non-empty interfaces array with well-formed entries.
+#
+# Usage: cr-validate-design-interfaces <round_dir>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../../scripts/cr-common.sh"
+
+ROUND_DIR="${1:-}"
+[ -z "$ROUND_DIR" ] && { echo "Usage: cr-validate-design-interfaces <round_dir>" >&2; exit 2; }
+
+echo "══ Design Interfaces: $(basename "$ROUND_DIR") ══"
+
+STATE_FILE="$ROUND_DIR/design-state.yaml"
+[ ! -f "$STATE_FILE" ] && { fail "design-state.yaml not found"; cr_exit_summary; }
+pass "design-state.yaml present"
+
+ALL_PASSED=true
+
+IFC_COUNT=$(yq -r '.interfaces | length // 0' "$STATE_FILE" 2>/dev/null || echo "0")
+if [ "${IFC_COUNT:-0}" -eq 0 ]; then
+    fail "No interfaces documented in design-state.yaml"
+    cr_exit_summary
+fi
+
+pass "$IFC_COUNT interface(s) documented"
+
+for i in $(seq 0 $((IFC_COUNT - 1))); do
+    IFCID=$(yq -r ".interfaces[$i].interface_id // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
+    CONTRACT=$(yq -r ".interfaces[$i].contract // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
+    PRECOUNT=$(yq -r ".interfaces[$i].preconditions | length // 0" "$STATE_FILE" 2>/dev/null || echo "0")
+    POSTCOUNT=$(yq -r ".interfaces[$i].postconditions | length // 0" "$STATE_FILE" 2>/dev/null || echo "0")
+
+    [ -z "$CONTRACT" ] || [ "$CONTRACT" = "null" ] && { fail "$IFCID: missing contract"; ALL_PASSED=false; }
+    [ -n "$CONTRACT" ] && [ "$CONTRACT" != "null" ] && [ ${#CONTRACT} -lt 10 ] && { fail "$IFCID: contract too short (<10 chars)"; ALL_PASSED=false; }
+    [ "${PRECOUNT:-0}" -eq 0 ] && { fail "$IFCID: no preconditions"; ALL_PASSED=false; }
+    [ "${POSTCOUNT:-0}" -eq 0 ] && { fail "$IFCID: no postconditions"; ALL_PASSED=false; }
+done
+
+[ "$ALL_PASSED" = false ] && cr_exit_summary
+pass "Design interfaces validation passed"
+cr_exit_summary

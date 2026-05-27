@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# cr-hook-pre-tool-use — PreToolUse hook: enforce write boundaries.
+# cr-hook-pre-tool-use — PreToolUse hook: enforce write boundaries v2.
 # Called before every Write/Edit/MultiEdit/Bash operation.
 # Every write must be proven to belong to the current session scope.
+# Additionally enforces: writes to documents/ only target the active round's
+# mutable document.
 #
 # Exit codes:
 #   0 — allowed
@@ -14,6 +16,35 @@ source "$SCRIPT_DIR/cr-common.sh"
 
 WORKSPACE_ROOT="$(cr_workspace_root)"
 SCOPE_CLI="$SCRIPT_DIR/cr-scope"
+
+# ── v2: Mutable-document boundary enforcement ───────────────────
+
+# Resolve the single mutable document from the active round's contract.yaml.
+# Returns the relative path (e.g., "documents/survey.md") or empty string.
+resolve_mutable_document_path() {
+    local active_proj=""
+    if [ -f "$WORKSPACE_ROOT/_cr/active-project" ]; then
+        active_proj=$(cat "$WORKSPACE_ROOT/_cr/active-project")
+    fi
+    [ -z "$active_proj" ] && return
+    local proj_dir="$WORKSPACE_ROOT/$active_proj"
+    [ -d "$proj_dir" ] || return
+    local round_dir=""
+    if [ -f "$proj_dir/state/project-state.json" ]; then
+        local ar
+        ar=$(jq -r '.active_round // ""' "$proj_dir/state/project-state.json" 2>/dev/null || echo "")
+        if [ -n "$ar" ] && [ "$ar" != "null" ]; then
+            round_dir="$proj_dir/rounds/round-$(printf "%03d" "$ar")"
+        fi
+    fi
+    [ -n "$round_dir" ] && [ -d "$round_dir" ] || round_dir=$(find "$proj_dir/rounds" -maxdepth 1 -type d -name 'round-*' 2>/dev/null | sort -V | tail -1 || echo "")
+    [ -n "$round_dir" ] && [ -d "$round_dir" ] || return
+    local contract="$round_dir/contract.yaml"
+    [ -f "$contract" ] || return
+    grep -A3 'mutable_document:' "$contract" 2>/dev/null | grep 'path:' | sed 's/.*path: *//' | tr -d '"' | xargs
+}
+
+MUTABLE_DOC_PATH="$(resolve_mutable_document_path)"
 
 deny() {
     local reason="$1"
@@ -66,7 +97,20 @@ case "$TOOL_NAME" in
                 *) deny "$RESULT" ;;
             esac
 
-            # Per-phase write boundary check (Inv3-Inv6 enforcement).
+            # v2: Mutable-document boundary — block writes to non-mutable documents.
+            if [ -n "$MUTABLE_DOC_PATH" ]; then
+                case "$file_path" in
+                    */projects/*/documents/*)
+                        local doc_part
+                        doc_part=$(echo "$file_path" | grep -oE 'documents/[^/]+\.md' 2>/dev/null || echo "")
+                        if [ -n "$doc_part" ] && [ "$doc_part" != "$MUTABLE_DOC_PATH" ]; then
+                            deny "Cross-document write blocked: target is '$doc_part' but active round mutable document is '$MUTABLE_DOC_PATH'. Only writes to the mutable document, round artifacts, and project knowledge are allowed."
+                        fi
+                        ;;
+                esac
+            fi
+
+            # Per-phase write boundary check.
             PHASE_RESULT=$("$SCOPE_CLI" phase-check "$file_path" 2>/dev/null || echo "DENY:phase check failed")
             case "$PHASE_RESULT" in
                 ALLOW*) ;;
@@ -90,22 +134,17 @@ case "$TOOL_NAME" in
             allow
         fi
 
-        # Git commands: only explicit read-only subcommands (status, diff, log,
-        # show, blame, rev-parse, branch, remote) are allowed — they were caught
-        # by test-readonly above. Any other git invocation is denied, regardless
-        # of form (git -C, command git, /usr/bin/git, env git, etc.).
+        # Git commands: only explicit read-only subcommands are allowed.
         case "$CMD" in
             *git*|*Git*|*GIT*)
-                deny "Git command blocked: '${CMD:0:120}'. Only read-only git (status, diff, log, show, blame, rev-parse, branch, remote) is allowed. For git commit, run 'cr scope audit' first."
+                deny "Git command blocked: '${CMD:0:120}'. Only read-only git (status, diff, log, show, blame, rev-parse, branch, remote) is allowed."
                 ;;
         esac
 
         # Extract candidate file paths from the command string.
-        # Matches absolute paths, ~/ paths, relative paths with slashes.
         CMD_PATHS=$(echo "$CMD" | grep -oE '(~?/[A-Za-z0-9._-][A-Za-z0-9._/-]*|[A-Za-z0-9_-]+/[A-Za-z0-9._/-]+)' 2>/dev/null || true)
 
         if [ -z "$CMD_PATHS" ]; then
-            # No recognizable paths — check for dangerous mutation patterns.
             case "$CMD" in
                 *">"*|*">>"*|*"tee "*|*"dd "*|*"cp "*|*"mv "*|*"rm "*|*"touch "*|*"mkdir "*|\
                 *"sed -i"*|*"perl -pi"*|*"python"*"open"*|*"node"*"writeFile"*)

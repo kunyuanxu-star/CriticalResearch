@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# cr-validate-workflow-state — V2 workflow state validator.
+# Checks stage_order consistency, stages map coverage, and current_stage.
+#
+# Usage: cr-validate-workflow-state <round_dir>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../scripts/cr-common.sh"
+
+ROUND_DIR="${1:-}"
+
+if [ -z "$ROUND_DIR" ]; then
+    echo "Usage: cr-validate-workflow-state <round_dir>" >&2
+    exit 2
+fi
+
+[ -d "$ROUND_DIR" ] || { fail "Round directory not found: $ROUND_DIR"; cr_exit_summary; }
+
+STATE="$ROUND_DIR/workflow-state.yaml"
+ROUND_NAME="$(basename "$ROUND_DIR")"
+
+echo ""
+echo "══ Workflow State Validation: $ROUND_NAME ══"
+
+[ -f "$STATE" ] || { fail "workflow-state.yaml not found"; cr_exit_summary; }
+pass "workflow-state.yaml exists"
+
+# Schema validation
+SCHEMA="$(cr_schema_path "workflow-state.schema.json")"
+[ -n "$SCHEMA" ] && cr_validate_schema "$STATE" "$SCHEMA" "yaml" || true
+
+# Extract stage_order array
+STAGE_ORDER=$(grep -A30 '^stage_order:' "$STATE" | grep '^  - ' | sed 's/.*- *//')
+[ -n "$STAGE_ORDER" ] || { fail "stage_order is empty or missing"; cr_exit_summary; }
+
+# Extract stages map keys (lines with just the key followed by colon at 2-space indent)
+STAGE_KEYS=$(grep -B1 'status:' "$STATE" | grep '^  [a-z]' | sed 's/:$//' | sed 's/^  //')
+
+# Every stage in stage_order must appear in stages map
+while IFS= read -r stage; do
+    echo "$STAGE_KEYS" | grep -qx "$stage" \
+        && pass "Stage '$stage' in stage_order → stages map" \
+        || fail "Stage '$stage' in stage_order missing from stages map"
+done <<< "$STAGE_ORDER"
+
+# Stages in map but not in order (warn only)
+while IFS= read -r skey; do
+    echo "$STAGE_ORDER" | grep -qx "$skey" \
+        || warn "Stage '$skey' in stages map but not in stage_order"
+done <<< "$STAGE_KEYS"
+
+# current_stage validity
+CURRENT=$(grep '^current_stage:' "$STATE" | sed 's/.*current_stage: *//')
+if [ -n "$CURRENT" ]; then
+    echo "$STAGE_ORDER" | grep -qx "$CURRENT" \
+        && pass "current_stage '$CURRENT' is valid" \
+        || fail "current_stage '$CURRENT' not in stage_order"
+else
+    fail "current_stage not set"
+fi
+
+cr_exit_summary

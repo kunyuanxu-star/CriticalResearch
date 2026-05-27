@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# cr-validate-design-invariants — Validate design invariants are declared.
+# Checks design-state.yaml for non-empty invariants array with well-formed entries.
+#
+# Usage: cr-validate-design-invariants <round_dir>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../../scripts/cr-common.sh"
+
+ROUND_DIR="${1:-}"
+[ -z "$ROUND_DIR" ] && { echo "Usage: cr-validate-design-invariants <round_dir>" >&2; exit 2; }
+
+echo "══ Design Invariants: $(basename "$ROUND_DIR") ══"
+
+STATE_FILE="$ROUND_DIR/design-state.yaml"
+[ ! -f "$STATE_FILE" ] && { fail "design-state.yaml not found"; cr_exit_summary; }
+pass "design-state.yaml present"
+
+ALL_PASSED=true
+
+INV_COUNT=$(yq -r '.invariants | length // 0' "$STATE_FILE" 2>/dev/null || echo "0")
+if [ "${INV_COUNT:-0}" -eq 0 ]; then
+    fail "No invariants declared in design-state.yaml"
+    cr_exit_summary
+fi
+
+pass "$INV_COUNT invariant(s) declared"
+
+for i in $(seq 0 $((INV_COUNT - 1))); do
+    IID=$(yq -r ".invariants[$i].invariant_id // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
+    ISTMT=$(yq -r ".invariants[$i].statement // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
+    ICLS=$(yq -r ".invariants[$i].classification // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
+    IENF=$(yq -r ".invariants[$i].enforcement_mechanism // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
+
+    [ -z "$ISTMT" ] || [ "$ISTMT" = "null" ] && { fail "$IID: missing statement"; ALL_PASSED=false; }
+    [ -n "$ISTMT" ] && [ "$ISTMT" != "null" ] && [ ${#ISTMT} -lt 10 ] && { fail "$IID: statement too short (<10 chars)"; ALL_PASSED=false; }
+    [ -z "$ICLS" ] || [ "$ICLS" = "null" ] && { fail "$IID: missing classification"; ALL_PASSED=false; }
+    [ -z "$IENF" ] || [ "$IENF" = "null" ] && { fail "$IID: missing enforcement_mechanism"; ALL_PASSED=false; }
+done
+
+[ "$ALL_PASSED" = false ] && cr_exit_summary
+pass "Design invariants validation passed"
+cr_exit_summary

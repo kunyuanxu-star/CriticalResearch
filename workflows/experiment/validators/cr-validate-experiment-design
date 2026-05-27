@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# cr-validate-experiment-design — Experiment design validation.
+# Usage: cr-validate-experiment-design <round_dir>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../../scripts/cr-common.sh"
+
+ROUND_DIR="${1:-}"
+if [ -z "$ROUND_DIR" ]; then
+    echo "Usage: cr-validate-experiment-design <round_dir>" >&2
+    exit 2
+fi
+
+echo "── Experiment Design Validation ──"
+
+METHOD_FILE="$ROUND_DIR/methodology-design.yaml"
+[ ! -f "$METHOD_FILE" ] && { fail "methodology-design.yaml not found"; cr_exit_summary; }
+
+# Design type with justification >= 20 chars.
+DESIGN_TYPE=$(yq -r '.design.type // ""' "$METHOD_FILE" 2>/dev/null || echo "")
+DESIGN_JUST=$(yq -r '.design.justification // ""' "$METHOD_FILE" 2>/dev/null || echo "")
+[ -z "$DESIGN_TYPE" ] || [ "$DESIGN_TYPE" = "null" ] && fail "design.type is missing" || {
+    echo "between-subjects within-subjects mixed quasi-experimental observational" | grep -qw "$DESIGN_TYPE" && pass "design.type: $DESIGN_TYPE" || warn "design.type '$DESIGN_TYPE' unrecognized"
+}
+[ -z "$DESIGN_JUST" ] || [ "$DESIGN_JUST" = "null" ] || [ ${#DESIGN_JUST} -lt 20 ] && fail "design.justification missing or too short (min 20 chars)" || pass "design.justification: ${#DESIGN_JUST} chars"
+
+# Manipulation and measurement protocols.
+MANIP_COUNT=$(yq -r '.manipulation_protocols | length // 0' "$METHOD_FILE" 2>/dev/null || echo "0")
+MEAS_COUNT=$(yq -r '.measurement_protocols | length // 0' "$METHOD_FILE" 2>/dev/null || echo "0")
+[ "${MANIP_COUNT:-0}" -eq 0 ] && fail "manipulation_protocols is empty" || pass "manipulation_protocols: $MANIP_COUNT protocol(s)"
+[ "${MEAS_COUNT:-0}" -eq 0 ] && fail "measurement_protocols is empty" || pass "measurement_protocols: $MEAS_COUNT protocol(s)"
+
+# Control protocol.
+CTRL_COND=$(yq -r '.control_protocol.control_condition // ""' "$METHOD_FILE" 2>/dev/null || echo "")
+[ -z "$CTRL_COND" ] || [ "$CTRL_COND" = "null" ] && fail "control_protocol.control_condition is missing" || pass "control_protocol: control condition defined"
+
+# Validity threats for all four types.
+for vtype in internal external construct statistical_conclusion; do
+    VT_COUNT=$(yq -r ".validity_threats.${vtype} | length // 0" "$METHOD_FILE" 2>/dev/null || echo "0")
+    [ "${VT_COUNT:-0}" -eq 0 ] && fail "validity_threats.${vtype}: no threats documented" || pass "validity_threats.${vtype}: $VT_COUNT threat(s)"
+done
+
+cr_exit_summary

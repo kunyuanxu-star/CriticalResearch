@@ -1,6 +1,6 @@
 # CriticalResearch
 
-A domain-general, computer-science-specific critical research loop as a Claude Code skill with an **enforced 8-stage state machine**. It decomposes claims, grounds evidence in real external search, finds counterexamples, generates research gaps, produces paper patches with experiment obligations, distills reusable knowledge, and produces evidence-backed conclusions — looping indefinitely until all stages are complete and validators pass.
+A domain-general, computer-science-specific critical research loop as a Claude Code skill with a **workflow-specific project engine**. It decomposes claims, grounds evidence in real external search, finds counterexamples, generates research gaps, produces document patches, distills reusable knowledge, and produces evidence-backed conclusions — looping indefinitely until all workflow stages are complete and validators pass.
 
 Covers: OS, networking, security, databases, PL/compilers, architecture, AI infrastructure, distributed systems, software engineering, HCI/CSCW, and technical systems work.
 
@@ -12,7 +12,7 @@ Covers: OS, networking, security, databases, PL/compilers, architecture, AI infr
 - Git
 - Bash (macOS / Linux)
 - jq (brew/apt install jq)
-- yq (brew/apt install yq) — required for paper mode
+- yq (brew/apt install yq)
 
 ### Quick Install
 
@@ -24,7 +24,7 @@ bash install.sh
 # Then initialize your research workspace:
 cd ~/Research
 cr workspace init
-cr start my-topic
+cr project init my-topic --domain systems
 ```
 
 The installer:
@@ -54,75 +54,87 @@ Start a conversation with Claude Code and the skill activates automatically when
 
 ```bash
 # Project lifecycle
-cr workspace init                # Initialize a Research workspace
-cr start my-topic                # Create a new research project with default paper document
-cr document add my-topic proposal # Add a proposal document to the project
-cr document list my-topic         # List all documents in the project
-cr continue                      # Show next-round task prompt
-cr status                        # Show workspace and project status
+cr workspace init                  # Initialize a Research workspace
+cr project init my-topic --domain systems  # Create a new research project
+cr project status my-topic         # Show project status
+cr project list                    # List all projects
+
+# Document management
+cr document add my-topic survey --type survey --path documents/survey.md
+cr document add my-topic design --type design-doc --path documents/design-doc.md
+cr document list my-topic          # List all documents in the project
+cr document status my-topic survey # Show document status
+
+# Unit management
+cr unit add my-topic survey survey.taxonomy --title "Taxonomy"
+cr unit list my-topic survey       # List units in a document
+cr unit status my-topic survey survey.taxonomy
 
 # Full-Round Execution (Claude Code)
-/critical-cs-research <objective>  # Start mandatory full-paper 8-stage transaction
-                                   # The objective is a weighting lens, not a scope limiter.
-                                   # Cannot stop until round closes or hard blocker recorded.
+/critical-cs-research <project> --workflow <id> --doc <id> [--unit <id>] [--mode <mode>] <objective>
 
 # Round lifecycle (CLI)
-cr round my-topic --doc paper     # Open a new round targeting documents/paper.md
-cr round my-topic --doc proposal  # Open a round targeting documents/proposal.md
-cr step my-topic status           # Show current stage and missing outputs
-cr step my-topic advance          # Validate current stage and advance to next
-cr step my-topic validate         # Validate current stage without advancing
-cr close-round my-topic           # Validate and close the active round
-cr validate my-topic              # Run all project invariant checks
+cr round start my-topic --workflow survey --doc survey --unit survey.taxonomy --mode deep --objective "Research taxonomy"
+cr round status my-topic           # Show round status
+cr round close my-topic            # Validate and close the active round
 
+# Stage management
+cr stage status my-topic           # Show current stage and missing outputs
+cr stage advance my-topic          # Validate current stage and advance to next
+cr stage validate my-topic         # Validate current stage without advancing
 
-# Automated stage runner (validates and advances, does not generate artifacts)
-cr run-round my-topic            # Advance through all 8 stages (validates only)
+# Validation
+cr validate my-topic               # Run all project invariant checks
+cr validate my-topic --round round-017  # Run validators for a specific round
 ```
 
-## Workflow Modes
+## Workflow Types
+
+| Workflow | Target Document | Use Case |
+|----------|----------------|----------|
+| **survey** | survey.md | Literature survey, taxonomy construction, systematic review |
+| **design** | design-doc.md | System design, architecture document, interface specification |
+| **paper** | paper.md | Academic paper — claims, evidence, evaluation, arguments |
+| **proposal** | proposal.md | Research proposal, grant proposal, project plan |
+| **experiment** | experiment-plan.md | Experiment design, methodology, validation plan |
 
 | Mode | Use Case | Claims | Evidence | Can Close Round? |
-|---|---|---|---|---|
+|------|----------|--------|----------|-----------------|
 | **Triage** | Quick screening, idea feasibility | ≤3 | Internal knowledge only | No — triage only |
 | **Standard** | Regular research, design review | 4–10 | 1 search pass required | Yes |
 | **Deep** | Journal-grade review, full rebuttal | >10 | Deep search + concurrent | Yes |
-| **Paper** | Full paper round: 8-stage strict state machine | Any | Deep search + raw sources + evidence ledger + weakening evidence | Yes — requires all stages complete |
 
-**Paper mode** is the only executable paper workflow. It uses an 8-stage strict state machine:
+Each workflow defines its own stage order in `workflows/<id>/workflow.yaml`. A round enters exactly one workflow, declares exactly one mutable document, and modifies one or more units inside that document.
 
-S1 Round Contract → S2 Evidence Grounding → S3 Critical Review → S4 Revision Strategy → S5 Writing Strategy → S6 Paper Patch → S7 Knowledge Consolidation → S8 Round Closure
-
-A paper round is a controlled paper transaction: round contract → evidence grounding → critical review → revision strategy → writing strategy → paper patch → knowledge consolidation → round closure.
-
-Paper mode enforces: ≥5 search queries across 5 mandatory query classes, ≥5 raw source snapshots with sha256 hashes, ≥5 normalized evidence items, ≥2 S/A-level evidence, ≥1 weakening or contradicting evidence, no skipped stages, no pending human decisions, and full transaction-chain integrity.
-
-`cr run-round` validates and advances stages; it does not generate artifacts. The agent/user must create required outputs for each stage.
+`cr stage advance` validates and advances stages; it does not generate artifacts. The agent/user must create required outputs for each stage.
 
 ## Project Structure
 
 ```
-├── SKILL.md              # Skill definition (Claude Code entry point — thin)
-├── scripts/              # CLI tools (cr, step, research, validators, guards)
-├── hooks/                # Stop/PreToolUse/PostToolUse hooks for enforcement
+├── SKILL.md              # Skill definition (Claude Code entry point)
+├── README.md             # This file
+├── engine/               # Engine: scripts, validators, schemas
+│   ├── scripts/          # CLI tools (cr, cr-project, cr-document, cr-unit, cr-round, cr-stage, cr-validate)
+│   ├── validators/       # Engine-level validators
+│   └── schemas/          # JSON schemas for v2 artifacts
+├── workflows/            # Per-workflow definitions
+│   ├── survey/           # Survey workflow: workflow.yaml, prompts/, schemas/, validators/
+│   ├── design/           # Design workflow
+│   ├── paper/            # Paper workflow
+│   ├── proposal/         # Proposal workflow
+│   └── experiment/       # Experiment workflow
 ├── templates/            # Domain-neutral artifact templates
-├── schemas/              # JSON schemas for all artifacts + artifact registry
-├── prompts/              # Core stage prompts + document-type adapters
-│   ├── core/             # Generic S1–S8 stage prompts
-│   └── adapters/         # Document-type overlays (paper, proposal, survey, design-doc)
 ├── references/           # Domain profiles, evidence standards, role lenses
-├── workflow/             # Universal round execution guide
+├── hooks/                # Stop/PreToolUse/PostToolUse hooks for enforcement
 └── agents/               # Sub-agent instruction sets
 
 projects/
 ├── <project-id>/
 │   ├── project.yaml          # Project metadata + document registry
-│   ├── state/
-│   ├── documents/            # Target documents (paper.md, proposal.md, ...)
-│   ├── evidence/             # Shared evidence base
+│   ├── documents/            # Target documents + registry.yaml
+│   ├── units/                # Unit registries per document
 │   ├── knowledge/            # Project-level persistent knowledge
-│   ├── rounds/               # Per-round artifacts
-│   └── writing/              # Backward-compat symlink → documents/
+│   └── rounds/               # Per-round artifacts (contracts, ledgers, patches, deltas)
 ```
 
 ## Multi-Project Parallelism

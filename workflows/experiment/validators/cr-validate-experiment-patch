@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# cr-validate-experiment-patch — Experiment patch payload validation.
+# Usage: cr-validate-experiment-patch <round_dir>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../../scripts/cr-common.sh"
+
+ROUND_DIR="${1:-}"
+if [ -z "$ROUND_DIR" ]; then
+    echo "Usage: cr-validate-experiment-patch <round_dir>" >&2
+    exit 2
+fi
+
+echo "── Experiment Patch Validation ──"
+
+PATCHES_DIR="$ROUND_DIR/patches"
+if [ ! -d "$PATCHES_DIR" ]; then
+    warn "patches/ directory not found"
+    cr_exit_summary
+fi
+
+PATCH_FILES=$(find "$PATCHES_DIR" -name 'PP-*.yaml' -type f 2>/dev/null || echo "")
+[ -z "$PATCH_FILES" ] && { warn "no PP-*.yaml patches found"; cr_exit_summary; }
+
+for patch_file in $PATCH_FILES; do
+    PATCH_ID=$(basename "$patch_file" .yaml)
+    HAS_EXPERIMENT=$(yq -r '.experiment // "missing"' "$patch_file" 2>/dev/null || echo "missing")
+    [ "$HAS_EXPERIMENT" = "missing" ] || [ "$HAS_EXPERIMENT" = "null" ] && { fail "$PATCH_ID: missing 'experiment' payload section"; continue; }
+
+    MC_COUNT=$(yq -r '.experiment.methodology_changes | length // 0' "$patch_file" 2>/dev/null || echo "0")
+    if [ "${MC_COUNT:-0}" -eq 0 ]; then
+        fail "$PATCH_ID: experiment.methodology_changes is empty"
+    else
+        for mci in $(seq 0 $((MC_COUNT - 1))); do
+            MC_VAL=$(yq -r ".experiment.methodology_changes[$mci]" "$patch_file" 2>/dev/null || echo "")
+            [ ${#MC_VAL} -lt 5 ] && fail "$PATCH_ID: methodology_change[$mci] too short (min 5 chars)"
+        done
+    fi
+
+    VC_COUNT=$(yq -r '.experiment.variable_changes | length // 0' "$patch_file" 2>/dev/null || echo "0")
+    [ "${VC_COUNT:-0}" -eq 0 ] && fail "$PATCH_ID: experiment.variable_changes is empty" || pass "$PATCH_ID: $MC_COUNT methodology_change(s), $VC_COUNT variable_change(s)"
+done
+
+cr_exit_summary

@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-# Backward-compat wrapper for cr-start-round.
-# Usage: cr-start-paper-round <project> <objective>
-# This is equivalent to: cr-start-round <project> <objective> --doc paper
-set -euo pipefail
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-exec "$SCRIPT_DIR/cr-start-round" "$@" --doc paper

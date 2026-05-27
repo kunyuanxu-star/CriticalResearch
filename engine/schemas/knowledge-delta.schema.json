@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "https://critical-research/schemas/knowledge-delta.schema.json",
+  "title": "Knowledge Delta v2",
+  "description": "Structured knowledge extracted from a round for reuse across rounds and documents.",
+  "type": "object",
+  "required": ["schema_version", "round_id", "deltas"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "round_id": {
+      "type": "string",
+      "pattern": "^round-[0-9]{3}$"
+    },
+    "no_delta_justification": {
+      "type": "string",
+      "minLength": 10,
+      "description": "If no knowledge was extracted, explain why."
+    },
+    "deltas": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["delta_id", "type", "summary"],
+        "properties": {
+          "delta_id": {
+            "type": "string",
+            "pattern": "^KD-[0-9]{3}$"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["claim", "terminology", "related_work", "design_decision", "evaluation_obligation", "open_question", "writing_pattern", "review_knowledge"]
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 10
+          },
+          "source_critiques": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "target_knowledge_file": {
+            "type": "string"
+          },
+          "maturity": {
+            "type": "string",
+            "enum": ["candidate", "used", "validated", "canonical"]
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,26 +1,19 @@
 #!/usr/bin/env bash
-# cr — CriticalResearch CLI dispatcher.
-# Deterministic state management for the research workflow.
+# cr — CriticalResearch CLI dispatcher v2.
+# Workflow-specific project engine — routes to sub-command scripts.
 #
 # Usage: cr <command> [args...]
 #
 # Commands:
-#   start <topic>             Create a new research project and first round
-#   continue                  Read active project, output next-round task prompt
-#   round <project> [--mode]  Open a new round (--mode paper for paper mode)
-#   close-round <project>     Validate and close the active round
-#   validate <project>        Run all project invariant checks
-#   migrate-to-paper <proj>   Scaffold paper mode directories for a project
-#   promote-knowledge         Check thinking cards for promotion eligibility
-#   ask-next <round> <proj>   Show next pending human judgment question
-#   step <project> <sub>     Phase state machine (status, current, advance, validate)
-#   complete-phase <proj> <p> Validate and mark a phase complete (only path)
-#   run-round <project>      Auto-advance through all phases until close
-#   research <project> <sub> Research plan, run, ingest, normalize
-#   apply-knowledge <round>  Execute knowledge writeback to global bank
+#   project <sub>            Project lifecycle (init, status, list)
+#   document <sub>           Document management (add, list, status)
+#   unit <sub>               Unit management (add, list, status)
+#   round <sub>              Round lifecycle (start, status, close)
+#   stage <sub>              Stage state machine (status, advance, validate)
+#   validate <project>       Run project invariant checks
 #   scope <subcommand>       Session scope management (open, close, check, status, audit)
 #   workspace init            Initialize Research workspace with _cr/ structure
-#   workspace scan            List all research-* projects in workspace
+#   workspace scan            List all projects in workspace
 #   status                    Show workspace and active project status
 
 set -euo pipefail
@@ -35,25 +28,35 @@ usage() {
     echo "Usage: cr <command> [args...]"
     echo ""
     echo "Commands:"
-    echo "  start <topic>              Create a new research project and first round"
-    echo "  continue                  Read active project, output next-round task prompt"
-    echo "  round <project> [--doc]  Open a new round targeting a document"
-    echo "  document <add|list>      Manage project documents"
-    echo "  close-round <project>         Validate and close the active round"
-    echo "  validate <project>            Run all project invariant checks"
-    echo "  migrate-to-paper-mode <proj>  Scaffold paper mode directories"
-    echo "  promote-knowledge             Check thinking cards for promotion"
-    echo "  step <project> <sub>          Phase state machine (status, current, advance, validate)"
-    echo "  complete-phase <project> <ph>  Validate and mark a phase complete"
-    echo "  run-round <project>           Auto-advance through all phases"
-    echo "  research <project> <sub>      Research plan, run, ingest, normalize"
-    echo "  apply-knowledge <round-dir>   Execute knowledge writeback to global bank"
-    echo "  scope <subcommand>            Session scope (open, close, check, status, audit)"
-    echo "  workspace init                Initialize Research workspace"
-    echo "  workspace scan                List research projects in workspace"
-    echo "  status                        Show workspace and active project status"
+    echo "  project init <id> --domain <domain>   Create a new research project"
+    echo "  project status <project>              Show project status"
+    echo "  project list                          List all projects"
     echo ""
-    echo "Run 'cr' from within a Research workspace directory."
+    echo "  document add <project> <id> --type <type> --path <path>"
+    echo "  document list <project>               List documents in project"
+    echo "  document status <project> <doc-id>    Show document status"
+    echo ""
+    echo "  unit add <project> <doc-id> <unit-id> --title <title>"
+    echo "  unit list <project> <doc-id>          List units in document"
+    echo "  unit status <project> <doc-id> <unit-id>"
+    echo ""
+    echo "  round start <project> --workflow <id> --doc <id> [--unit <id>] [--mode <mode>] --objective <text>"
+    echo "  round status <project>                Show round status"
+    echo "  round close <project>                 Validate and close active round"
+    echo ""
+    echo "  stage status <project>                Show current stage and required outputs"
+    echo "  stage advance <project>               Validate and advance to next stage"
+    echo "  stage validate <project>              Validate current stage without advancing"
+    echo ""
+    echo "  validate <project>                    Run all engine and workflow validators"
+    echo "  validate <project> --round <round-id> Run validators for specific round"
+    echo ""
+    echo "  scope <subcommand>                    Session scope management"
+    echo "  workspace init                        Initialize Research workspace"
+    echo "  workspace scan                        List projects in workspace"
+    echo "  status                                Show workspace and project status"
+    echo ""
+    echo "Run 'cr' from within a Research workspace directory (containing _cr/)."
     exit 2
 }
 
@@ -61,766 +64,119 @@ usage() {
 WORKSPACE_ROOT="$(cr_workspace_root)"
 
 case "$COMMAND" in
-    start)
-        TOPIC="${1:-}"
-        if [ -z "$TOPIC" ]; then
-            echo "Usage: cr start <topic>" >&2
-            echo "  topic: a short, lowercase identifier with hyphens (e.g., 'framevm', 'cache-study')" >&2
-            exit 2
-        fi
-
-        # Sanitize topic to a valid project_id: lowercase, replace spaces/underscores with hyphens.
-        PROJECT_ID=$(echo "$TOPIC" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
-        if [ -z "$PROJECT_ID" ] || [ ${#PROJECT_ID} -lt 2 ]; then
-            echo "Error: topic '$TOPIC' sanitizes to invalid project_id '$PROJECT_ID'. Use letters, numbers, hyphens." >&2
-            exit 2
-        fi
-
-        PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT_ID"
-        if [ -d "$PROJECT_DIR" ]; then
-            echo "Error: project directory already exists: $PROJECT_DIR" >&2
-            exit 2
-        fi
-
-        echo "Creating research project: $PROJECT_ID"
-        mkdir -p "$PROJECT_DIR"/{state,literature,documents,rounds,evidence/{sources,notes,ledgers},knowledge/cards,reviews,revisions}
-
-        # Parse --profile flag if present.
-        PAPER_PROFILE="systems"
-        if [ "${2:-}" = "--profile" ]; then
-            PAPER_PROFILE="${3:-systems}"
-        fi
-
-        # Create project.yaml with valid defaults.
-        NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-        cat > "$PROJECT_DIR/project.yaml" << YAML
-project_id: $PROJECT_ID
-target_standard: "SOSP/OSDI-level systems conference"
-paper_profile: $PAPER_PROFILE
-created_at: $NOW
-description: "Research project: $TOPIC"
-schema_version: "1.0.0"
-documents:
-  - id: paper
-    type: paper
-    path: documents/paper.md
-    status: active
-YAML
-
-        # Create project-state.json.
-        cat > "$PROJECT_DIR/state/project-state.json" << JSON
-{
-  "project_id": "$PROJECT_ID",
-  "status": "active",
-  "active_round": 1,
-  "total_rounds": 1,
-  "evidence_saturation": 0.0,
-  "open_gaps": 0,
-  "last_updated": "$NOW",
-  "schema_version": "1.0.0"
-}
-JSON
-
-                # Create initial claim ledger.
-        # Create initial claim ledger.
-        cat > "$PROJECT_DIR/state/claim-ledger.yaml" << YAML
-schema_version: "1.0.0"
-claims: []
-YAML
-
-        # Create initial paper draft with complete structure in documents/.
-        cat > "$PROJECT_DIR/documents/paper.md" << MD
-# $PROJECT_ID — Research Paper Draft
-
-<!-- anchor: abstract -->
-## Abstract
-
-
-
-<!-- anchor: introduction -->
-## Introduction
-
-
-
-<!-- anchor: background -->
-## Background
-
-
-
-<!-- anchor: motivation -->
-## Motivation
-
-
-
-<!-- anchor: design -->
-## Design
-
-
-
-<!-- anchor: implementation -->
-## Implementation Plan
-
-
-
-<!-- anchor: evaluation_plan -->
-## Evaluation Plan
-
-
-
-<!-- anchor: related_work -->
-## Related Work
-
-
-
-<!-- anchor: discussion -->
-## Discussion and Limitations
-
-
-
-<!-- anchor: conclusion -->
-## Conclusion
-
-
-
-## Appendix A. Claim-Evidence Map
-
-
-
-## Appendix B. Experiment Matrix
-
-
-
-## Appendix C. Open Risks
-
-
-MD
-
-        # Backward compat: create writing/ symlink for legacy tools.
-        if [ ! -e "$PROJECT_DIR/writing" ]; then
-            ln -s documents "$PROJECT_DIR/writing" 2>/dev/null || true
-        fi
-
-
-        # Create round-001.
-        "$SCRIPT_DIR/cr-new-round" "$PROJECT_DIR" "setup"
-
-        # Set as active project.
-        mkdir -p "$WORKSPACE_ROOT/_cr"
-        echo "$PROJECT_ID" > "$WORKSPACE_ROOT/_cr/active-project"
-
-        echo ""
-        echo "Project '$PROJECT_ID' created at $PROJECT_DIR"
-        echo "Run 'cr status' to see current state."
+    project)
+        exec "$SCRIPT_DIR/cr-project" "$@"
         ;;
-
-    continue)
-        ACTIVE_PROJECT_FILE="$WORKSPACE_ROOT/_cr/active-project"
-        if [ ! -f "$ACTIVE_PROJECT_FILE" ]; then
-            echo "No active project. Run 'cr start <topic>' first." >&2
-            exit 1
-        fi
-
-        ACTIVE_PROJECT=$(cat "$ACTIVE_PROJECT_FILE")
-        PROJECT_DIR="$WORKSPACE_ROOT/$ACTIVE_PROJECT"
-
-        if [ ! -d "$PROJECT_DIR" ]; then
-            echo "Active project directory not found: $PROJECT_DIR" >&2
-            exit 1
-        fi
-
-        echo "Active project: $ACTIVE_PROJECT"
-
-        # Read project state.
-        if [ -f "$PROJECT_DIR/state/project-state.json" ]; then
-            echo "Status: $(jq -r '.status' "$PROJECT_DIR/state/project-state.json")"
-            echo "Total rounds: $(jq -r '.total_rounds' "$PROJECT_DIR/state/project-state.json")"
-            echo "Open gaps: $(jq -r '.open_gaps' "$PROJECT_DIR/state/project-state.json")"
-            ACTIVE_RND=$(jq -r '.active_round // "none"' "$PROJECT_DIR/state/project-state.json")
-            echo "Active round: $ACTIVE_RND"
-        fi
-
-        echo ""
-        echo "── Next Round Task Prompt ──"
-        echo "Continue research on '$ACTIVE_PROJECT'."
-        echo "1. Review open gaps and select the highest-priority gap."
-        echo "2. Run 'cr round $ACTIVE_PROJECT' to open a new round."
-        echo "3. Execute research: search for evidence, critique claims, update writing."
-        echo "4. Run 'cr close-round $ACTIVE_PROJECT' when done."
-        ;;
-
-    round)
-        PROJECT="${1:-}"
-        shift 2>/dev/null || true
-
-        MODE_FLAG=""
-        DOC_FLAG=""
-        OBJECTIVE=""
-
-        # Parse --mode, --doc flags and capture remaining args as objective.
-        while [ $# -gt 0 ]; do
-            case "$1" in
-                --mode)
-                    MODE_FLAG="${2:-}"
-                    shift 2
-                    ;;
-                --doc)
-                    DOC_FLAG="${2:-}"
-                    shift 2
-                    ;;
-                *)
-                    # Remaining args form the objective.
-                    if [ -z "$OBJECTIVE" ]; then
-                        OBJECTIVE="$1"
-                    else
-                        OBJECTIVE="$OBJECTIVE $1"
-                    fi
-                    shift
-                    ;;
-            esac
-        done
-
-        # Backward compat: --mode paper implies --doc paper
-        if [ "$MODE_FLAG" = "paper" ] && [ -z "$DOC_FLAG" ]; then
-            DOC_FLAG="paper"
-        fi
-
-        if [ -z "$PROJECT" ]; then
-            echo "Usage: cr round <project> [--doc <doc-id>] [objective]" >&2
-            exit 2
-        fi
-
-        PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
-        if [ ! -d "$PROJECT_DIR" ]; then
-            echo "Project directory not found: $PROJECT_DIR" >&2
-            exit 1
-        fi
-
-        # ── Document-targeted round: via cr-start-round ──
-        if [ -n "$DOC_FLAG" ]; then
-            if [ -z "$OBJECTIVE" ]; then
-                echo "Usage: cr round <project> --doc <doc-id> \"<objective>\"" >&2
-                exit 2
-            fi
-            # Determine document path: prefer documents/, fall back to legacy writing/
-            DOC_PATH="documents/${DOC_FLAG}.md"
-            if [ ! -f "$PROJECT_DIR/$DOC_PATH" ] && [ -f "$PROJECT_DIR/writing/paper-draft.md" ]; then
-                DOC_PATH="writing/paper-draft.md"
-            fi
-            if [ ! -f "$PROJECT_DIR/$DOC_PATH" ]; then
-                echo "Error: $DOC_PATH not found. Document rounds require a draft." >&2
-                exit 1
-            fi
-            exec "$SCRIPT_DIR/cr-start-round" "$PROJECT" "$OBJECTIVE" --doc "$DOC_FLAG"
-        fi
-
-        # Validate project manifest first.
-        echo "Validating project manifest..."
-        "$SCRIPT_DIR/cr-validate-project" "$PROJECT_DIR" || {
-            echo "Project validation failed. Fix issues before starting a new round." >&2
-            exit 1
-        }
-
-        # Determine round type from current state.
-        TOTAL_ROUNDS=$(jq -r '.total_rounds // 1' "$PROJECT_DIR/state/project-state.json")
-        if [ "$TOTAL_ROUNDS" -eq 0 ]; then
-            ROUND_TYPE="setup"
-        else
-            ROUND_TYPE="discovery"
-        fi
-
-        "$SCRIPT_DIR/cr-new-round" "$PROJECT_DIR" "$ROUND_TYPE" ${MODE_FLAG:+--mode "$MODE_FLAG"}
-        echo ""
-        echo "Round ready. Begin research execution."
-        ;;
-
-    close-round)
-        PROJECT="${1:-}"
-        if [ -z "$PROJECT" ]; then
-            echo "Usage: cr close-round <project>" >&2
-            exit 2
-        fi
-
-        PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
-        if [ ! -d "$PROJECT_DIR" ]; then
-            echo "Project directory not found: $PROJECT_DIR" >&2
-            exit 1
-        fi
-
-        ACTIVE_RND=$(jq -r '.active_round // 0' "$PROJECT_DIR/state/project-state.json")
-        if [ "$ACTIVE_RND" = "null" ] || [ "$ACTIVE_RND" -eq 0 ]; then
-            echo "No active round to close." >&2
-            exit 1
-        fi
-
-        ROUND_NUM=$(printf "%03d" "$ACTIVE_RND")
-        ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
-
-        echo "Closing round $ACTIVE_RND for project '$PROJECT'..."
-        echo ""
-
-        PIPELINE="$SCRIPT_DIR/cr-run-validator-pipeline"
-        STATE_FILE="$ROUND_DIR/state.yaml"
-        if [ ! -x "$PIPELINE" ]; then
-            echo "Error: cr-run-validator-pipeline not found or not executable" >&2
-            exit 1
-        fi
-
-        # Phase 1: Pre-close — validate stages 1-7.
-        echo "── Phase 1: Pre-close validation (stages 1-7) ──"
-        if ! "$SCRIPT_DIR/cr-validate-all-stages" "$PROJECT_DIR" "$ROUND_DIR" preclose; then
-            echo ""
-            echo "Pre-close validation failed. Fix failures before closing."
-            exit 1
-        fi
-
-        # Phase 2: Generate closure-report.yaml draft BEFORE completing close_round.
-        echo ""
-        echo "── Phase 2: Generating closure-report draft ──"
-        CLOSURE="$ROUND_DIR/closure-report.yaml"
-        NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-        # If closure-report already exists, preserve its content; otherwise create template.
-        if [ ! -f "$CLOSURE" ]; then
-            cat > "$CLOSURE" << YAML
-schema_version: "1.0.0"
-round_id: $ACTIVE_RND
-closed_at: null
-
-summary: ""
-remaining_risks:
-  - risk_id: RISK-001
-    description: ""
-    next_action: ""
-
-phase_closure:
-  pre_close_phases_complete: true
-  close_round_completed: false
-
-validator_summary:
-  preclose_status: pass
-  postclose_status: pending
-
-artifact_summary:
-  phase_count: 37
-  completed_preclose_phases: 36
-YAML
-            echo "  Created closure-report.yaml template. Fill in summary and remaining_risks."
-            echo "  Then re-run: cr close-round $PROJECT"
-            exit 1
-        fi
-
-        # Validate closure-report has required fields.
-        CLOSURE_SUMMARY=$(yq -r '.summary // ""' "$CLOSURE" 2>/dev/null || echo "")
-        if [ -z "$CLOSURE_SUMMARY" ] || [ "$CLOSURE_SUMMARY" = "null" ]; then
-            fail "closure-report.yaml missing summary"
-            echo "  Fill in the summary field in $CLOSURE and retry."
-            exit 1
-        fi
-
-        CLOSURE_RISKS=$(yq -r '.remaining_risks | length // 0' "$CLOSURE" 2>/dev/null || echo 0)
-        NO_RISKS_REASON=$(yq -r '.no_remaining_risks_reason // ""' "$CLOSURE" 2>/dev/null || echo "")
-        if [ "$CLOSURE_RISKS" -eq 0 ] && [ -z "$NO_RISKS_REASON" ]; then
-            fail "closure-report.yaml missing remaining_risks (or no_remaining_risks_reason)"
-            echo "  Add at least one remaining risk or provide no_remaining_risks_reason."
-            exit 1
-        fi
-
-        echo "  closure-report.yaml valid."
-
-        # Phase 3: Start and complete s8_round_closure (8th stage).
-        echo ""
-        echo "── Phase 3: Completing s8_round_closure (8th stage) ──"
-
-        # Ensure s8_round_closure is the current stage and started.
-        CURRENT_STAGE=$(yq -r '.current_stage // ""' "$STATE_FILE" 2>/dev/null || echo "")
-        if [ "$CURRENT_STAGE" != "s8_round_closure" ]; then
-            echo "  Setting current_stage to s8_round_closure..."
-            yq -i '.current_stage = "s8_round_closure"' "$STATE_FILE" 2>/dev/null || true
-        fi
-
-        CLOSE_STATUS=$(yq -r '.stages.s8_round_closure.status // ""' "$STATE_FILE" 2>/dev/null || echo "")
-        if [ "$CLOSE_STATUS" = "open" ]; then
-            echo "  Starting s8_round_closure stage..."
-            "$SCRIPT_DIR/cr-step" "$PROJECT" start || {
-                echo "Failed to start s8_round_closure stage."
-                exit 1
-            }
-        elif [ "$CLOSE_STATUS" != "running" ] && [ "$CLOSE_STATUS" != "complete" ]; then
-            echo "Error: s8_round_closure has unexpected status: $CLOSE_STATUS" >&2
-            exit 1
-        fi
-
-        if [ "$CLOSE_STATUS" != "complete" ]; then
-            if ! "$SCRIPT_DIR/cr-complete-stage" "$PROJECT_DIR" "$ROUND_DIR" s8_round_closure; then
-                echo ""
-                echo "Failed to complete s8_round_closure stage. Fix required outputs and retry."
-                exit 1
-            fi
-        fi
-
-        # Phase 4: Post-close — validate all 8 stages.
-        echo ""
-        echo "── Phase 4: Post-close validation (8/8 stages) ──"
-        if ! "$SCRIPT_DIR/cr-validate-all-stages" "$PROJECT_DIR" "$ROUND_DIR" postclose; then
-            echo ""
-            echo "Post-close validation failed."
-            exit 1
-        fi
-
-        # Phase 5: Run full validator pipeline.
-        echo ""
-        echo "── Phase 5: Validator pipeline ──"
-        if ! "$PIPELINE" "$PROJECT_DIR" "$ROUND_DIR"; then
-            echo ""
-            echo "Round cannot close. Fix the failures listed above and re-run 'cr close-round $PROJECT'."
-            exit 1
-        fi
-
-        # Phase 6: Validate stage-run-log.
-        echo ""
-        echo "── Phase 6: Stage run log validation ──"
-        if [ -x "$SCRIPT_DIR/cr-validate-stage-run-log" ]; then
-            if ! "$SCRIPT_DIR/cr-validate-stage-run-log" "$PROJECT_DIR" "$ROUND_DIR"; then
-                echo ""
-                echo "Stage run log validation failed."
-                exit 1
-            fi
-        else
-            echo "  Warning: cr-validate-stage-run-log not found — skipping"
-        fi
-
-        # Update closure-report with final timestamps.
-        if [ -f "$CLOSURE" ]; then
-            yq -i ".closed_at = \"$NOW\"" "$CLOSURE" 2>/dev/null || true
-            yq -i ".stage_closure.s8_round_closure_completed = true" "$CLOSURE" 2>/dev/null || true
-            yq -i ".validator_summary.postclose_status = \"pass\"" "$CLOSURE" 2>/dev/null || true
-        fi
-
-        # Mark round as closed.
-        if [ -f "$STATE_FILE" ]; then
-            yq -i ".current_stage = \"s8_round_closure\" | .status = \"complete\"" "$STATE_FILE" 2>/dev/null || true
-        fi
-
-        # Mark round complete.
-        if [ -f "$ROUND_DIR/round.yaml" ]; then
-            sed -i '' "s/^status:.*/status: complete/" "$ROUND_DIR/round.yaml" 2>/dev/null || \
-                sed -i "s/^status:.*/status: complete/" "$ROUND_DIR/round.yaml"
-            echo "completed_at: $NOW" >> "$ROUND_DIR/round.yaml"
-        fi
-
-        # Update project state.
-        TMP_STATE="$PROJECT_DIR/state/project-state.json.tmp"
-        jq --arg now "$NOW" \
-            '.active_round = null | .last_updated = $now' \
-            "$PROJECT_DIR/state/project-state.json" > "$TMP_STATE" && \
-            mv "$TMP_STATE" "$PROJECT_DIR/state/project-state.json"
-
-        echo ""
-        echo "Round $ACTIVE_RND closed successfully."
-        ;;
-
-    validate)
-        PROJECT="${1:-}"
-        if [ -z "$PROJECT" ]; then
-            echo "Usage: cr validate <project>" >&2
-            exit 2
-        fi
-
-        PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
-        "$SCRIPT_DIR/cr-validate-project" "$PROJECT_DIR"
-        ACTIVE_RND=$(jq -r '.active_round // 0' "$PROJECT_DIR/state/project-state.json" 2>/dev/null || echo 0)
-
-        if [ "$ACTIVE_RND" != "null" ] && [ "$ACTIVE_RND" -gt 0 ]; then
-            ROUND_NUM=$(printf "%03d" "$ACTIVE_RND")
-            ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
-            if [ -d "$ROUND_DIR" ]; then
-                echo ""
-                PIPELINE="$SCRIPT_DIR/cr-run-validator-pipeline"
-                if [ -x "$PIPELINE" ]; then
-                    "$PIPELINE" "$PROJECT_DIR" "$ROUND_DIR"
-                else
-                    echo "Warning: cr-run-validator-pipeline not found" >&2
-                fi
-            fi
-        fi
-        ;;
-
     document)
-        DOC_SUB="${1:-}"
-        shift 2>/dev/null || true
-        case "$DOC_SUB" in
-            add)
-                PROJECT="${1:-}"
-                DOC_TYPE="${2:-}"
-                if [ -z "$PROJECT" ] || [ -z "$DOC_TYPE" ]; then
-                    echo "Usage: cr document add <project> <type>" >&2
-                    echo "  type: paper | proposal | survey | design-doc" >&2
-                    exit 2
-                fi
-                PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
-                if [ ! -d "$PROJECT_DIR" ]; then
-                    echo "Project not found: $PROJECT_DIR" >&2
-                    exit 1
-                fi
-                case "$DOC_TYPE" in
-                    paper|proposal|survey|design-doc)
-                        DOC_ID="$DOC_TYPE"
-                        DOC_PATH="documents/$DOC_ID.md"
-                        if [ -f "$PROJECT_DIR/$DOC_PATH" ]; then
-                            echo "Document already exists: $DOC_PATH" >&2
-                            exit 1
-                        fi
-                        echo "# ${PROJECT} — ${DOC_TYPE^} Document" > "$PROJECT_DIR/$DOC_PATH"
-                        # Register in project.yaml if yq available, else append roughly.
-                        if command -v yq &>/dev/null; then
-                            yq -i ".documents += [{\"id\": \"$DOC_ID\", \"type\": \"$DOC_TYPE\", \"path\": \"$DOC_PATH\", \"status\": \"active\"}]" "$PROJECT_DIR/project.yaml" 2>/dev/null || true
-                        else
-                            echo "  (Register $DOC_ID in project.yaml manually if yq unavailable)" >&2
-                        fi
-                        echo "Created $DOC_PATH and registered in project."
-                        ;;
-                    *)
-                        echo "Unknown document type: $DOC_TYPE" >&2
-                        exit 2
-                        ;;
-                esac
-                ;;
-            list)
-                PROJECT="${1:-}"
-                if [ -z "$PROJECT" ]; then
-                    echo "Usage: cr document list <project>" >&2
-                    exit 2
-                fi
-                PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
-                if [ -f "$PROJECT_DIR/project.yaml" ]; then
-                    echo "Documents in $PROJECT:"
-                    yq -r '.documents[]? | "  - \(.id) (\(.type)): \(.path) [\(.status)]"' "$PROJECT_DIR/project.yaml" 2>/dev/null || echo "  (no documents registered)"
-                else
-                    echo "Project not found: $PROJECT_DIR" >&2
-                    exit 1
-                fi
-                ;;
-            *)
-                echo "Usage: cr document <add|list> [args...]" >&2
-                echo "  add <project> <type>   Create and register a new document"
-                echo "  list <project>         List registered documents"
-                exit 2
-                ;;
-        esac
+        exec "$SCRIPT_DIR/cr-document" "$@"
         ;;
-
-    migrate-to-paper-mode)
-        PROJECT="${1:-}"
-        if [ -z "$PROJECT" ]; then
-            echo "Usage: cr migrate-to-paper-mode <project>" >&2
-            exit 2
-        fi
-        PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
-        exec "$SCRIPT_DIR/cr-migrate-to-paper-mode" "$PROJECT_DIR"
+    unit)
+        exec "$SCRIPT_DIR/cr-unit" "$@"
         ;;
-
-    promote-knowledge)
-        exec "$SCRIPT_DIR/cr-promote-knowledge" "$WORKSPACE_ROOT"
+    round)
+        exec "$SCRIPT_DIR/cr-round" "$@"
         ;;
-
-    step)
-        PROJECT="${1:-}"
-        SUB="${2:-}"
-        if [ -z "$PROJECT" ] || [ -z "$SUB" ]; then
-            echo "Usage: cr step <project> <status|current|advance|validate>" >&2
-            exit 2
-        fi
-        exec "$SCRIPT_DIR/cr-step" "$PROJECT" "$SUB" "${3:-}" "${4:-}"
+    stage)
+        exec "$SCRIPT_DIR/cr-stage" "$@"
         ;;
-
-    complete-stage|complete-phase)
-        PROJECT="${1:-}"
-        STAGE="${2:-}"
-        if [ -z "$PROJECT" ] || [ -z "$STAGE" ]; then
-            echo "Usage: cr complete-stage <project> <stage>" >&2
-            exit 2
-        fi
-        PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT"
-        ACTIVE_RND=$(jq -r '.active_round // 0' "$PROJECT_DIR/state/project-state.json" 2>/dev/null || echo "0")
-        ROUND_NUM=$(printf "%03d" "$ACTIVE_RND")
-        ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
-        exec "$SCRIPT_DIR/cr-complete-stage" "$PROJECT_DIR" "$ROUND_DIR" "$STAGE"
+    validate)
+        exec "$SCRIPT_DIR/cr-validate" "$@"
         ;;
-
-    run-round)
-        PROJECT="${1:-}"
-        if [ -z "$PROJECT" ]; then
-            echo "Usage: cr run-round <project>" >&2
-            exit 2
-        fi
-        exec "$SCRIPT_DIR/cr-run-round" "$PROJECT" "${2:-}" "${3:-}"
-        ;;
-
-    research)
-        PROJECT="${1:-}"
-        SUB="${2:-}"
-        if [ -z "$PROJECT" ] || [ -z "$SUB" ]; then
-            echo "Usage: cr research <project> <plan|run|ingest|normalize>" >&2
-            exit 2
-        fi
-        exec "$SCRIPT_DIR/cr-research" "$PROJECT" "$SUB"
-        ;;
-
-    apply-knowledge)
-        ROUND_DIR="${1:-}"
-        if [ -z "$ROUND_DIR" ]; then
-            echo "Usage: cr apply-knowledge <round_dir>" >&2
-            exit 2
-        fi
-        exec "$SCRIPT_DIR/cr-apply-knowledge-delta" "$ROUND_DIR"
-        ;;
-
     scope)
+        # Delegate to existing cr-scope script.
         exec "$SCRIPT_DIR/cr-scope" "$@"
         ;;
-
     workspace)
         SUB="${1:-}"
         case "$SUB" in
             init)
-                echo "Initializing Research workspace at $WORKSPACE_ROOT..."
-                mkdir -p "$WORKSPACE_ROOT/_cr/knowledge/thinking/cards"
-                mkdir -p "$WORKSPACE_ROOT/_cr/knowledge/literature"/{papers,systems,concepts,debates,comparisons}
-                mkdir -p "$WORKSPACE_ROOT/_cr/logs"
-
-                # Create workspace.yaml if absent.
+                mkdir -p "$WORKSPACE_ROOT/_cr"/{sessions,workspace}
                 if [ ! -f "$WORKSPACE_ROOT/_cr/workspace.yaml" ]; then
                     cat > "$WORKSPACE_ROOT/_cr/workspace.yaml" << YAML
-workspace_name: $(basename "$WORKSPACE_ROOT")
+schema_version: "2.0.0"
 created_at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-schema_version: "1.0.0"
+projects: []
 YAML
-                    echo "  Created _cr/workspace.yaml"
                 fi
-
-                # Create CLAUDE.md if absent.
-                if [ ! -f "$WORKSPACE_ROOT/CLAUDE.md" ]; then
-                    cat > "$WORKSPACE_ROOT/CLAUDE.md" << 'MD'
-# Research Workspace
-
-This is a CriticalResearch workspace. Research projects live in `research-*/` directories.
-Cross-project knowledge is stored in `_cr/knowledge/`.
-
-## Active Project
-
-Run `cr status` to see active project and round state.
-
-## Knowledge Banks
-
-- Literature: `_cr/knowledge/literature/` (papers, systems, concepts, debates)
-- Thinking: `_cr/knowledge/thinking/cards/` (research principles, writing rules, reviewer patterns)
-MD
-                    echo "  Created CLAUDE.md"
-                fi
-
-                # Create project-index.md if absent.
-                if [ ! -f "$WORKSPACE_ROOT/_cr/project-index.md" ]; then
-                    cat > "$WORKSPACE_ROOT/_cr/project-index.md" << 'MD'
-# Project Index
-
-| Project | Status | Rounds | Active Round | Last Updated |
-|---------|--------|--------|--------------|--------------|
-MD
-                    echo "  Created _cr/project-index.md"
-                fi
-
-                echo ""
                 echo "Workspace initialized at $WORKSPACE_ROOT"
-                echo "Run 'cr start <topic>' to create your first research project."
                 ;;
-
             scan)
-                echo "Workspace: $WORKSPACE_ROOT"
-                echo ""
-                INDEX_FILE="$WORKSPACE_ROOT/_cr/project-index.md"
-                # Rebuild index header.
-                cat > "$INDEX_FILE" << 'MD'
-# Project Index
-
-| Project | Status | Rounds | Active Round | Profile | Last Updated |
-|---------|--------|--------|--------------|---------|--------------|
-MD
-                HAS_PROJECTS=false
-                for proj_dir in "$WORKSPACE_ROOT"/*/; do
-                    [ ! -d "$proj_dir" ] && continue
-                    PROJ_NAME=$(basename "$proj_dir")
-                    case "$PROJ_NAME" in
-                        _cr|.*|_*) continue ;;
-                    esac
-                    HAS_PROJECTS=true
-                    if [ -f "$proj_dir/project.yaml" ]; then
-                        STATUS=$(jq -r '.status // "?"' "$proj_dir/state/project-state.json" 2>/dev/null || echo "?")
-                        ROUNDS=$(jq -r '.total_rounds // 0' "$proj_dir/state/project-state.json" 2>/dev/null || echo "0")
-                        ACTIVE=$(jq -r '.active_round // "none"' "$proj_dir/state/project-state.json" 2>/dev/null || echo "none")
-                        PROFILE=$(grep -E '^paper_profile:' "$proj_dir/project.yaml" 2>/dev/null | sed 's/^paper_profile:\s*//' | xargs || echo "generic")
-                        UPDATED=$(jq -r '.last_updated // "?"' "$proj_dir/state/project-state.json" 2>/dev/null || echo "?")
-                        echo "  $PROJ_NAME — status: $STATUS, rounds: $ROUNDS, profile: $PROFILE"
-                        echo "| $PROJ_NAME | $STATUS | $ROUNDS | $ACTIVE | $PROFILE | $UPDATED |" >> "$INDEX_FILE"
-                    else
-                        echo "  $PROJ_NAME — no project.yaml (not a research project?)"
+                echo "Projects in workspace:"
+                find "$WORKSPACE_ROOT" -maxdepth 1 -type d -not -name '_cr' -not -name '.' -not -path "$WORKSPACE_ROOT" | while read -r d; do
+                    if [ -f "$d/project.yaml" ]; then
+                        echo "  $(basename "$d")"
                     fi
                 done
-                [ "$HAS_PROJECTS" = false ] && echo "  No research projects found. Run 'cr start <topic>' to create one."
-                echo ""
-                echo "Index written to $INDEX_FILE"
                 ;;
-
             *)
                 echo "Usage: cr workspace <init|scan>" >&2
-                echo "  init   Initialize a Research workspace with _cr/ structure"
-                echo "  scan   List all research-* projects in the workspace"
                 exit 2
                 ;;
         esac
         ;;
-
     status)
         echo "Workspace: $WORKSPACE_ROOT"
-        echo ""
-
-        if [ -d "$WORKSPACE_ROOT/_cr" ]; then
-            if [ -f "$WORKSPACE_ROOT/_cr/active-project" ]; then
-                ACTIVE=$(cat "$WORKSPACE_ROOT/_cr/active-project")
-                echo "Active project: $ACTIVE"
-            fi
-        fi
-
-        echo ""
-
-        # List all projects.
-        HAS_PROJECTS=false
-        for proj_dir in "$WORKSPACE_ROOT"/*/; do
-            [ ! -d "$proj_dir" ] && continue
-            PROJ_NAME=$(basename "$proj_dir")
-            case "$PROJ_NAME" in
-                _cr|.*|_*) continue ;;
-            esac
-            HAS_PROJECTS=true
-
-            if [ -f "$proj_dir/project.yaml" ]; then
-                PROJ_STATUS="?"
-                if [ -f "$proj_dir/state/project-state.json" ]; then
-                    PROJ_STATUS=$(jq -r '.status // "?"' "$proj_dir/state/project-state.json")
-                    PROJ_ROUNDS=$(jq -r '.total_rounds // 0' "$proj_dir/state/project-state.json")
-                    PROJ_ACTIVE=$(jq -r '.active_round // "none"' "$proj_dir/state/project-state.json")
-                    echo "  $PROJ_NAME — status: $PROJ_STATUS, rounds: $PROJ_ROUNDS, active round: $PROJ_ACTIVE"
-                else
-                    echo "  $PROJ_NAME — status: $PROJ_STATUS (no state file)"
+        if [ -f "$WORKSPACE_ROOT/_cr/active-project" ]; then
+            ACTIVE=$(cat "$WORKSPACE_ROOT/_cr/active-project")
+            echo "Active project: $ACTIVE"
+            PROJECT_DIR="$WORKSPACE_ROOT/$ACTIVE"
+            if [ -d "$PROJECT_DIR" ] && [ -f "$PROJECT_DIR/project.yaml" ]; then
+                echo "  Status: $(grep -E '^status:' "$PROJECT_DIR/project.yaml" 2>/dev/null || echo 'active')"
+                echo "  Domain: $(grep -E '^domain:' "$PROJECT_DIR/project.yaml" 2>/dev/null | sed 's/domain: *//')"
+                # Show active round if any
+                if [ -f "$PROJECT_DIR/state/project-state.json" ]; then
+                    echo "  Active round: $(jq -r '.active_round // "none"' "$PROJECT_DIR/state/project-state.json")"
                 fi
             fi
-        done
-
-        if [ "$HAS_PROJECTS" = false ]; then
-            echo "  No research projects found."
-            echo "  Run 'cr start <topic>' to create one."
+        else
+            echo "No active project."
         fi
         ;;
-
+    # ── Legacy compatibility (redirect with deprecation warning) ──
+    start)
+        echo "[DEPRECATED] 'cr start' is removed. Use 'cr project init <id> --domain <domain>'." >&2
+        exit 2
+        ;;
+    continue)
+        echo "[DEPRECATED] 'cr continue' is removed. Use 'cr round status' to see active round." >&2
+        exit 2
+        ;;
+    close-round)
+        echo "[DEPRECATED] 'cr close-round' is removed. Use 'cr round close <project>'." >&2
+        exit 2
+        ;;
+    step)
+        echo "[DEPRECATED] 'cr step' is removed. Use 'cr stage <status|advance|validate>'." >&2
+        exit 2
+        ;;
+    migrate-to-paper-mode)
+        echo "[DEPRECATED] 'cr migrate-to-paper-mode' is removed. Workflows are now first-class." >&2
+        exit 2
+        ;;
+    run-round)
+        echo "[DEPRECATED] 'cr run-round' is removed. Use 'cr stage advance' in a loop." >&2
+        exit 2
+        ;;
+    research)
+        echo "[DEPRECATED] 'cr research' is removed. Research is handled by workflow stages." >&2
+        exit 2
+        ;;
+    apply-knowledge)
+        echo "[DEPRECATED] 'cr apply-knowledge' is removed. Knowledge deltas are applied during closure." >&2
+        exit 2
+        ;;
+    ask-next)
+        echo "[DEPRECATED] 'cr ask-next' is removed. Human decisions are surfaced during stage execution." >&2
+        exit 2
+        ;;
+    complete-phase)
+        echo "[DEPRECATED] 'cr complete-phase' is removed. Use 'cr stage advance'." >&2
+        exit 2
+        ;;
+    promote-knowledge)
+        echo "[DEPRECATED] 'cr promote-knowledge' is removed. Knowledge promotion is handled by workflow validators." >&2
+        exit 2
+        ;;
     *)
         usage
         ;;

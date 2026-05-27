@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# cr-validate-project — V2 project directory structure validator.
+# Checks project.yaml manifest, documents/ dir, and registry.
+#
+# Usage: cr-validate-project <project_dir>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../scripts/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+
+if [ -z "$PROJECT_DIR" ]; then
+    echo "Usage: cr-validate-project <project_dir>" >&2
+    exit 2
+fi
+
+if [ ! -d "$PROJECT_DIR" ]; then
+    fail "Project directory not found: $PROJECT_DIR"
+    cr_exit_summary
+fi
+
+PROJECT_NAME="$(basename "$PROJECT_DIR")"
+echo ""
+echo "══ Project Validation (v2): $PROJECT_NAME ══"
+
+# ── project.yaml exists ──
+PROJECT_YAML="$PROJECT_DIR/project.yaml"
+if [ -f "$PROJECT_YAML" ]; then
+    pass "project.yaml exists"
+else
+    fail "project.yaml not found"
+fi
+
+# ── Required top-level fields ──
+if [ -f "$PROJECT_YAML" ]; then
+    for field in project_id domain schema_version; do
+        if grep -q "^${field}:" "$PROJECT_YAML"; then
+            pass "project.yaml has required field: $field"
+        else
+            fail "project.yaml missing required field: $field"
+        fi
+    done
+fi
+
+# ── Schema validation ──
+if [ -f "$PROJECT_YAML" ]; then
+    ENGINE_SCHEMAS="$SCRIPT_DIR/../schemas"
+    SCHEMA="$ENGINE_SCHEMAS/project.schema.json"
+if [ -f "$SCHEMA" ]; then
+    cr_validate_schema "$PROJECT_YAML" "$SCHEMA" "yaml" || true
+fi
+fi
+
+# ── documents/ directory and registry ──
+if [ -d "$PROJECT_DIR/documents" ]; then
+    pass "documents/ directory exists"
+    if [ -f "$PROJECT_DIR/documents/registry.yaml" ]; then
+        pass "documents/registry.yaml exists"
+    else
+        fail "documents/registry.yaml not found"
+    fi
+else
+    fail "documents/ directory not found"
+    fail "documents/registry.yaml not found (directory missing)"
+fi
+
+cr_exit_summary

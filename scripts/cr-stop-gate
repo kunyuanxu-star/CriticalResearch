@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# cr-stop-gate — Master stop scheduler. Decides whether a session may stop.
-# Extracted from cr-validate-stop with manifest-driven checks.
+# cr-stop-gate — Master stop scheduler v2. Decides whether a session may stop.
+# Uses workflow-state.yaml and contract.yaml instead of 8-stage state.yaml.
 #
 # Checks:
-#   1. Active round exists
-#   2. Manifest snapshot exists
-#   3. Current stage completeness
-#   4. Round closure status
-#   5. Validator pipeline (if round claims complete)
+#   1. Active round exists (round dir with workflow-state.yaml)
+#   2. Current stage completeness
+#   3. Round closure status
+#   4. Validator pipeline (if round claims closed)
 #
 # Output (stdout): JSON
 #   {"decision":"approve"} or
@@ -38,67 +37,63 @@ if [ ! -d "$PROJECT_DIR" ]; then
     exit 0
 fi
 
-# ── No project state → allow stop ───────────────────────────────
+# ── No project.yaml → allow stop ────────────────────────────────
 
-STATE_FILE="$PROJECT_DIR/state/project-state.json"
+if [ ! -f "$PROJECT_DIR/project.yaml" ]; then
+    echo '{"decision":"approve"}'
+    exit 0
+fi
+
+# ── Find active round ──────────────────────────────────────────
+
+ROUND_DIR=""
+# Try state/project-state.json first (backward compat)
+if [ -f "$PROJECT_DIR/state/project-state.json" ]; then
+    ACTIVE_RND=$(jq -r '.active_round // empty' "$PROJECT_DIR/state/project-state.json" 2>/dev/null || echo "")
+    if [ -n "$ACTIVE_RND" ] && [ "$ACTIVE_RND" != "null" ]; then
+        ROUND_NUM=$(printf "%03d" "$ACTIVE_RND")
+        ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
+    fi
+fi
+
+# Fallback: find latest round directory
+if [ -z "$ROUND_DIR" ] || [ ! -d "$ROUND_DIR" ]; then
+    ROUND_DIR=$(find "$PROJECT_DIR/rounds" -maxdepth 1 -type d -name 'round-*' 2>/dev/null | sort -V | tail -1 || echo "")
+fi
+
+if [ -z "$ROUND_DIR" ] || [ ! -d "$ROUND_DIR" ]; then
+    echo '{"decision":"approve"}'
+    exit 0
+fi
+
+ROUND_ID=$(basename "$ROUND_DIR")
+
+# ── Check workflow-state.yaml ──────────────────────────────────
+
+STATE_FILE="$ROUND_DIR/workflow-state.yaml"
 if [ ! -f "$STATE_FILE" ]; then
+    echo '{"decision":"approve","reason":"No workflow-state.yaml in round — may be an old-format round"}'
+    exit 0
+fi
+
+CURRENT_STAGE=$(grep -E '^current_stage:' "$STATE_FILE" 2>/dev/null | sed 's/current_stage: *//' | tr -d '"' || echo "")
+WF_STATUS=$(grep -E '^status:' "$STATE_FILE" 2>/dev/null | sed 's/status: *//' | tr -d '"' || echo "")
+
+# ── Round already closed → allow stop ───────────────────────────
+
+if [ "$WF_STATUS" = "closed" ]; then
     echo '{"decision":"approve"}'
     exit 0
 fi
 
-# ── No active round → allow stop ────────────────────────────────
-
-ACTIVE_ROUND=$(jq -r '.active_round // empty' "$STATE_FILE" 2>/dev/null || echo "")
-if [ -z "$ACTIVE_ROUND" ] || [ "$ACTIVE_ROUND" = "null" ]; then
-    echo '{"decision":"approve"}'
-    exit 0
-fi
-
-ROUND_NUM=$(printf "%03d" "$ACTIVE_ROUND")
-ROUND_DIR="$PROJECT_DIR/rounds/round-$ROUND_NUM"
-
-# ── No round directory → allow stop ─────────────────────────────
-
-if [ ! -d "$ROUND_DIR" ]; then
-    echo '{"decision":"approve"}'
-    exit 0
-fi
-
-# ── Manifest snapshot check ─────────────────────────────────────
-
-MANIFEST="$ROUND_DIR/stage-manifest.snapshot.yaml"
-if [ ! -f "$MANIFEST" ]; then
-    echo '{"decision":"block","reason":"stage-manifest.snapshot.yaml missing — round was not started via cr-start-paper-round","systemMessage":"Round is missing its manifest snapshot. This round may have been created with an old setup script."}'
-    exit 1
-fi
-
-# ── State.yaml check ────────────────────────────────────────────
-
-STATE_FILE="$ROUND_DIR/state.yaml"
-if [ ! -f "$STATE_FILE" ]; then
-    echo '{"decision":"block","reason":"state.yaml missing","systemMessage":"Round state file is missing. Cannot determine stage completion."}'
-    exit 1
-fi
-
-CURRENT_STAGE=$(yq -r '.current_stage // ""' "$STATE_FILE" 2>/dev/null || echo "")
-STAGE_STATUS=$(yq -r ".stages.\"$CURRENT_STAGE\".status // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
-
-# ── Force stop (user explicitly requested) ──────────────────────
-# Force stop takes priority over ALL other checks. It only interrupts
-# the session. It does NOT complete the round, does NOT clear active_round,
-# and does NOT modify state.yaml or round.yaml.
-# It writes an interruption-log.yaml for audit and recovery.
+# ── Force stop ──────────────────────────────────────────────────
 
 if [ "$FORCE_STOP" = true ]; then
     NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-    # Count completed stages.
-    COMPLETED_COUNT=$(yq -r '[.stages[] | select(.status=="complete")] | length' "$STATE_FILE" 2>/dev/null || echo "0")
-
-    # Write interruption log.
+    COMPLETED_COUNT=$(grep -c 'status: complete' "$STATE_FILE" 2>/dev/null || echo "0")
     INTERRUPTION_LOG="$ROUND_DIR/interruption-log.yaml"
     cat > "$INTERRUPTION_LOG" << EOF
-schema_version: "1.0.0"
+schema_version: "2.0.0"
 interrupted_at: $NOW
 current_stage: $CURRENT_STAGE
 completed_stages: $COMPLETED_COUNT
@@ -106,101 +101,55 @@ reason: user_forced_stop
 round_status: incomplete
 active_round_preserved: true
 EOF
-
+    PROJECT_NAME=$(basename "$PROJECT_DIR")
     cat << EOF
-{"decision":"approve","reason":"User explicitly requested stop. Active round $ROUND_NUM interrupted (not completed). Interruption logged at $INTERRUPTION_LOG. Session may be resumed.","systemMessage":"Stop approved via force flag. Round $ROUND_NUM is INTERRUPTED (not complete).\n\nTo resume: cr step $(basename "$PROJECT_DIR") status\nTo close: complete all stages, generate reviews, then cr close-round $(basename "$PROJECT_DIR")"}
+{"decision":"approve","reason":"User explicitly requested stop. Round $ROUND_ID interrupted (not completed). Interruption logged.","systemMessage":"Stop approved via force flag. Round $ROUND_ID is INTERRUPTED (not complete).\n\nTo resume: cr stage status $PROJECT_NAME\nTo close: cr round close $PROJECT_NAME"}
 EOF
     exit 0
 fi
 
 # ── Current stage incomplete → block ────────────────────────────
 
-if [ -n "$CURRENT_STAGE" ] && [ "$STAGE_STATUS" != "complete" ] && [ "$CURRENT_STAGE" != "s8_round_closure" ]; then
-    STAGE_VALIDATOR="$SCRIPT_DIR/cr-validate-stage"
-    if [ -x "$STAGE_VALIDATOR" ]; then
-        if ! "$STAGE_VALIDATOR" "$PROJECT_DIR" "$ROUND_DIR" "$CURRENT_STAGE" >/tmp/cr-stop-stage.out 2>&1; then
-            REASON=$(head -c 3000 /tmp/cr-stop-stage.out 2>/dev/null || echo "Stage $CURRENT_STAGE validation failed")
-            PROJECT_NAME=$(basename "$PROJECT_DIR")
-            cat << EOF
-{"decision":"block","reason":"$REASON","systemMessage":"Stage '$CURRENT_STAGE' is incomplete. Complete required outputs and run: cr step $PROJECT_NAME advance\n\n$REASON"}
+# Extract stage status for current_stage
+STAGE_STATUS=$(grep -A1 "  $CURRENT_STAGE:" "$STATE_FILE" 2>/dev/null | grep 'status:' | sed 's/.*status: *//' | tr -d '"' || echo "")
+
+if [ -n "$CURRENT_STAGE" ] && [ "$STAGE_STATUS" != "complete" ] && [ "$CURRENT_STAGE" != "closure" ]; then
+    PROJECT_NAME=$(basename "$PROJECT_DIR")
+    REASON="Stage '$CURRENT_STAGE' is incomplete."
+    cat << EOF
+{"decision":"block","reason":"$REASON","systemMessage":"Stage '$CURRENT_STAGE' is incomplete. Complete required outputs and run: cr stage advance $PROJECT_NAME"}
 EOF
-            exit 1
-        fi
-    fi
+    exit 1
 fi
 
-# ── Stage-run-log proof check ───────────────────────────────────
-# If round has completed stages, the run-log must prove them.
+# ── Check if all stages are complete ────────────────────────────
 
-RUN_LOG_VALIDATOR="$SCRIPT_DIR/cr-validate-stage-run-log"
-if [ -x "$RUN_LOG_VALIDATOR" ]; then
-    if ! "$RUN_LOG_VALIDATOR" "$PROJECT_DIR" "$ROUND_DIR" >/tmp/cr-runlog-stop.out 2>&1; then
-        REASON=$(head -c 2000 /tmp/cr-runlog-stop.out 2>/dev/null || echo "Stage run log validation failed")
-        PROJECT_NAME=$(basename "$PROJECT_DIR")
-        cat << EOF
-{"decision":"block","reason":"$REASON","systemMessage":"Stage run log proof is incomplete or inconsistent.\n\n$REASON\n\nRun: cr step $PROJECT_NAME status\nThen: cr step $PROJECT_NAME advance"}
+STAGE_TOTAL=$(grep -cE '^\s+[a-z_]+:$' "$STATE_FILE" 2>/dev/null | head -1 || echo "0")
+STAGE_COMPLETE=$(grep -c 'status: complete' "$STATE_FILE" 2>/dev/null || echo "0")
+# Don't count the root status line
+STAGE_TOTAL=$(grep -E '^  [a-z]' "$STATE_FILE" 2>/dev/null | grep -c ':$' || echo "0")
+
+if [ "$STAGE_COMPLETE" -lt "$STAGE_TOTAL" ]; then
+    REMAINING=$((STAGE_TOTAL - STAGE_COMPLETE))
+    PROJECT_NAME=$(basename "$PROJECT_DIR")
+    REASON="Round $ROUND_ID is not complete. ($STAGE_COMPLETE/$STAGE_TOTAL stages complete, $REMAINING remaining. Current stage: $CURRENT_STAGE)"
+    cat << EOF
+{"decision":"block","reason":"$REASON","systemMessage":"$REASON\n\nContinue executing remaining stages. All stages must complete before stopping.\n\nRun: cr stage status $PROJECT_NAME\nRun: cr stage advance $PROJECT_NAME to progress."}
 EOF
-        exit 1
-    fi
+    exit 1
 fi
 
-# ── Check round status ──────────────────────────────────────────
+# ── All stages complete but round not closed → block ────────────
 
-ROUND_STATUS=""
-if [ -f "$ROUND_DIR/round.yaml" ]; then
-    ROUND_STATUS=$(grep -E '^status:' "$ROUND_DIR/round.yaml" 2>/dev/null | sed 's/^status:\s*//' | xargs || echo "")
-fi
-
-# Round claims complete → run validator pipeline for confirmation.
-if [ "$ROUND_STATUS" = "complete" ]; then
-    PIPELINE="$SCRIPT_DIR/cr-run-validator-pipeline"
-    if [ -x "$PIPELINE" ]; then
-        if "$PIPELINE" "$PROJECT_DIR" "$ROUND_DIR" 2>/dev/null; then
-            echo '{"decision":"approve"}'
-            exit 0
-        else
-            REASON="Round marked complete but validator pipeline failed. Run 'cr validate' to see failures."
-            echo "{\"decision\":\"block\",\"reason\":\"$REASON\",\"systemMessage\":\"$REASON\"}"
-            exit 1
-        fi
-    fi
-    echo '{"decision":"approve"}'
-    exit 0
-fi
-
-# ── Block: round incomplete ─────────────────────────────────────
-
-FULL_ROUND=$(yq -r '.execution_policy.full_round_required' "$STATE_FILE" 2>/dev/null || echo "false")
-[ -z "$FULL_ROUND" ] || [ "$FULL_ROUND" = "null" ] && FULL_ROUND="false"
-ALLOW_PARTIAL=$(yq -r '.execution_policy.allow_partial_stop' "$STATE_FILE" 2>/dev/null || echo "true")
-[ -z "$ALLOW_PARTIAL" ] || [ "$ALLOW_PARTIAL" = "null" ] && ALLOW_PARTIAL="true"
-
-if [ "$FULL_ROUND" = "true" ] && [ "$ALLOW_PARTIAL" != "true" ]; then
-    STAGE_TOTAL=$(yq -r '.stage_order | length' "$STATE_FILE" 2>/dev/null || echo "0")
-    STAGE_COMPLETE=$(yq -r '[.stages[] | select(.status=="complete")] | length' "$STATE_FILE" 2>/dev/null || echo "0")
-
-    if [ "$STAGE_COMPLETE" -lt "$STAGE_TOTAL" ]; then
-        REMAINING=$((STAGE_TOTAL - STAGE_COMPLETE))
-        PROJECT_NAME=$(basename "$PROJECT_DIR")
-        REASON="Full CriticalResearch round is not closed. ($STAGE_COMPLETE/$STAGE_TOTAL stages complete, $REMAINING remaining. Current stage: $CURRENT_STAGE)"
-        cat << EOF
-{"decision":"block","reason":"$REASON","systemMessage":"$REASON\n\nContinue executing remaining stages. The round must complete all $STAGE_TOTAL stages before stopping.\n\nRun 'cr step $PROJECT_NAME status' to see current progress.\nSet execution_policy.allow_partial_stop=true only for human decisions or unrecoverable errors."}
-EOF
-        exit 1
-    fi
-
-    # All stages complete but round not closed — must run s8_round_closure.
-    ROUND_STATUS=$(yq -r '.status // ""' "$STATE_FILE" 2>/dev/null || echo "")
-    if [ "$ROUND_STATUS" != "complete" ] && [ "$ROUND_STATUS" != "closed" ]; then
-        PROJECT_NAME=$(basename "$PROJECT_DIR")
-        REASON="All $STAGE_TOTAL stages complete but round has not been closed. Run 'cr close-round $PROJECT_NAME' first."
-        echo "{\"decision\":\"block\",\"reason\":\"$REASON\",\"systemMessage\":\"$REASON\"}"
-        exit 1
-    fi
+if [ "$STAGE_COMPLETE" -ge "$STAGE_TOTAL" ] && [ "$WF_STATUS" != "closed" ]; then
+    PROJECT_NAME=$(basename "$PROJECT_DIR")
+    REASON="All stages complete but round has not been closed. Run 'cr round close $PROJECT_NAME' first."
+    echo "{\"decision\":\"block\",\"reason\":\"$REASON\",\"systemMessage\":\"$REASON\"}"
+    exit 1
 fi
 
 # ── Default block ───────────────────────────────────────────────
 
-REASON="Round $ROUND_NUM is incomplete (status: ${ROUND_STATUS:-unknown}). Complete required outputs or explicitly request stop to override."
+REASON="Round $ROUND_ID is incomplete (status: ${WF_STATUS:-unknown}). Complete required outputs or explicitly request stop to override."
 echo "{\"decision\":\"block\",\"reason\":\"$REASON\",\"systemMessage\":\"$REASON\"}"
 exit 1

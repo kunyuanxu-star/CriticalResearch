@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# cr-validate-document-registry — V2 document registry consistency validator.
+# Checks registry.yaml aligns with project.yaml documents list.
+#
+# Usage: cr-validate-document-registry <project_dir>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/../../scripts/cr-common.sh"
+
+PROJECT_DIR="${1:-}"
+
+if [ -z "$PROJECT_DIR" ]; then
+    echo "Usage: cr-validate-document-registry <project_dir>" >&2
+    exit 2
+fi
+
+[ -d "$PROJECT_DIR" ] || { fail "Project directory not found: $PROJECT_DIR"; cr_exit_summary; }
+
+REGISTRY="$PROJECT_DIR/documents/registry.yaml"
+PROJECT_YAML="$PROJECT_DIR/project.yaml"
+
+echo ""
+echo "══ Document Registry Validation ══"
+
+[ -f "$REGISTRY" ] || { fail "documents/registry.yaml not found"; cr_exit_summary; }
+[ -f "$PROJECT_YAML" ] || { fail "project.yaml not found"; cr_exit_summary; }
+
+# Extract document IDs from both files
+PROJECT_DOC_IDS=$(grep '^  - id:' "$PROJECT_YAML" | sed 's/.*- id: *//' | sort)
+REGISTRY_DOC_IDS=$(grep '^  - id:' "$REGISTRY" | sed 's/.*- id: *//' | sort)
+
+[ -n "$PROJECT_DOC_IDS" ] || { fail "No documents defined in project.yaml"; cr_exit_summary; }
+[ -n "$REGISTRY_DOC_IDS" ] || { fail "No documents defined in registry.yaml"; cr_exit_summary; }
+
+# IDs must match exactly
+if [ "$PROJECT_DOC_IDS" = "$REGISTRY_DOC_IDS" ]; then
+    pass "Registry document IDs match project.yaml"
+else
+    # Use process substitution to avoid subshell issue with fail()
+    while IFS= read -r id; do
+        [ -z "$id" ] && continue
+        fail "Document '$id' in project.yaml but missing from registry"
+    done < <(comm -23 <(echo "$PROJECT_DOC_IDS") <(echo "$REGISTRY_DOC_IDS"))
+
+    while IFS= read -r id; do
+        [ -z "$id" ] && continue
+        fail "Document '$id' in registry but missing from project.yaml"
+    done < <(comm -13 <(echo "$PROJECT_DOC_IDS") <(echo "$REGISTRY_DOC_IDS"))
+fi
+
+# Each registry entry must have id/type/path/status
+while IFS= read -r doc_id; do
+    [ -z "$doc_id" ] && continue
+    BLOCK=$(grep -A5 "^  - id: *${doc_id}$" "$REGISTRY")
+    for field in type path status; do
+        echo "$BLOCK" | grep -q "^    ${field}:" \
+            && pass "Registry '$doc_id' has '$field'" \
+            || fail "Registry '$doc_id' missing '$field'"
+    done
+done <<< "$REGISTRY_DOC_IDS"
+
+cr_exit_summary

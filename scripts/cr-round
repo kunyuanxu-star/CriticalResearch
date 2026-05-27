@@ -1,0 +1,585 @@
+#!/usr/bin/env bash
+# cr-round — Round lifecycle management for CriticalResearch v2.
+# Subcommands: start, status, close.
+#
+# Usage:
+#   cr round start <project> --workflow <id> --doc <doc-id> [--unit <unit-id>] [--mode <mode>] --objective <text>
+#   cr round status <project>
+#   cr round close <project>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cr-common.sh"
+
+SUBCOMMAND="${1:-}"
+shift 2>/dev/null || true
+
+usage() {
+    echo "Usage: cr round <start|status|close> [args...]"
+    echo ""
+    echo "  cr round start <project> --workflow <id> --doc <doc-id> [--unit <unit-id>] [--mode <mode>] --objective <text>"
+    echo "  cr round status <project>"
+    echo "  cr round close <project>"
+    exit 2
+}
+
+if [ -z "$SUBCOMMAND" ]; then
+    usage
+fi
+
+WORKSPACE_ROOT="$(cr_workspace_root)"
+
+# ── Helpers ───────────────────────────────────────────────────────
+
+die() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+now_iso() {
+    date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+# Read a document from registry (map-style: documents.<id>.type, documents.<id>.path)
+# Sets global vars: DOC_TYPE, DOC_PATH, DOC_DEFAULT_WORKFLOW
+read_doc_registry() {
+    local project_dir="$1" doc_id="$2"
+    local reg="$project_dir/documents/registry.yaml"
+    if [ ! -f "$reg" ]; then
+        die "documents/registry.yaml not found in project"
+    fi
+    DOC_TYPE=$(yq -r ".documents.\"$doc_id\".type // \"\"" "$reg" 2>/dev/null || echo "")
+    DOC_PATH=$(yq -r ".documents.\"$doc_id\".path // \"\"" "$reg" 2>/dev/null || echo "")
+    DOC_DEFAULT_WORKFLOW=$(yq -r ".documents.\"$doc_id\".default_workflow // \"\"" "$reg" 2>/dev/null || echo "")
+    DOC_UNITS=$(yq -r ".documents.\"$doc_id\".units // \"\"" "$reg" 2>/dev/null || echo "")
+    if [ -z "$DOC_TYPE" ]; then
+        die "document '$doc_id' not found in documents/registry.yaml"
+    fi
+}
+
+# ── start ─────────────────────────────────────────────────────────
+
+cmd_start() {
+    PROJECT_ID="${1:-}"
+    shift 2>/dev/null || true
+
+    WORKFLOW_ID=""
+    DOC_ID=""
+    UNIT_ID=""
+    MODE="deep"
+    OBJECTIVE=""
+
+    # Parse flags.
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --workflow) WORKFLOW_ID="${2:-}"; shift 2 ;;
+            --doc)      DOC_ID="${2:-}";      shift 2 ;;
+            --unit)     UNIT_ID="${2:-}";     shift 2 ;;
+            --mode)     MODE="${2:-}";        shift 2 ;;
+            --objective)
+                OBJECTIVE="${2:-}"
+                shift 2
+                ;;
+            *)
+                echo "Unknown flag: $1" >&2
+                usage
+                ;;
+        esac
+    done
+
+    if [ -z "$PROJECT_ID" ] || [ -z "$WORKFLOW_ID" ] || [ -z "$DOC_ID" ] || [ -z "$OBJECTIVE" ]; then
+        echo "Usage: cr round start <project> --workflow <id> --doc <doc-id> [--unit <unit-id>] [--mode <mode>] --objective <text>" >&2
+        exit 2
+    fi
+
+    # Validate mode.
+    case "$MODE" in
+        deep|quick|standard) ;;
+        *) die "invalid mode '$MODE' (expected: deep, quick, standard)" ;;
+    esac
+
+    # ── 1. Validate workspace ────────────────────────────────────────
+    if [ ! -f "$WORKSPACE_ROOT/_cr/workspace.yaml" ]; then
+        die "workspace not initialized. Run 'cr workspace init' first."
+    fi
+
+    PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT_ID"
+
+    # ── 2. Validate project exists ───────────────────────────────────
+    if [ ! -d "$PROJECT_DIR" ] || [ ! -f "$PROJECT_DIR/project.yaml" ]; then
+        die "project '$PROJECT_ID' not found at $PROJECT_DIR"
+    fi
+
+    STATE_FILE="$PROJECT_DIR/state/project-state.json"
+    if [ ! -f "$STATE_FILE" ]; then
+        die "project state file missing: $STATE_FILE"
+    fi
+
+    # ── 3. Check no active round ─────────────────────────────────────
+    ACTIVE_ROUND=$(jq -r '.active_round // "null"' "$STATE_FILE" 2>/dev/null || echo "null")
+    if [ "$ACTIVE_ROUND" != "null" ] && [ -n "$ACTIVE_ROUND" ]; then
+        die "project '$PROJECT_ID' already has active round $ACTIVE_ROUND. Close it first: cr round close $PROJECT_ID"
+    fi
+
+    # ── 4. Validate workflow exists ──────────────────────────────────
+    SKILL_HOME="$(cr_skill_home)"
+    WORKFLOW_FILE="$SKILL_HOME/workflows/$WORKFLOW_ID/workflow.yaml"
+    if [ ! -f "$WORKFLOW_FILE" ]; then
+        die "workflow '$WORKFLOW_ID' not found: $WORKFLOW_FILE"
+    fi
+
+    WF_VERSION=$(yq -r '.schema_version // "1.0.0"' "$WORKFLOW_FILE" 2>/dev/null || echo "1.0.0")
+
+    # ── 5. Validate document exists in registry ──────────────────────
+    read_doc_registry "$PROJECT_DIR" "$DOC_ID"
+
+    # Verify document file actually exists.
+    if [ ! -f "$PROJECT_DIR/$DOC_PATH" ]; then
+        die "document file not found: $PROJECT_DIR/$DOC_PATH"
+    fi
+
+
+    # ── 5b. Validate workflow targets this document type ────────────
+    local wf_target_types
+    wf_target_types=$(yq -r '.target_document_types // [] | join(",")' "$WORKFLOW_FILE" 2>/dev/null || echo "")
+    if [ -n "$wf_target_types" ]; then
+        local type_match
+        type_match=$(echo "$wf_target_types" | tr ',' '\n' | grep -Fx "$DOC_TYPE" || echo "")
+        if [ -z "$type_match" ]; then
+            die "workflow '$WORKFLOW_ID' targets document types [$wf_target_types], but document '$DOC_ID' is type '$DOC_TYPE'"
+        fi
+    fi
+
+    # ── 6. Validate unit if provided ─────────────────────────────────
+    if [ -n "$UNIT_ID" ]; then
+        local units_file=""
+        if [ -n "$DOC_UNITS" ] && [ "$DOC_UNITS" != "null" ]; then
+            units_file="$PROJECT_DIR/$DOC_UNITS"
+        else
+            units_file="$PROJECT_DIR/units/${DOC_ID}.units.yaml"
+        fi
+        if [ ! -f "$units_file" ]; then
+            die "units file not found: $units_file"
+        fi
+        local unit_exists
+        unit_exists=$(yq -r ".units[] | select(.id == \"$UNIT_ID\") | .id" "$units_file" 2>/dev/null || echo "")
+        if [ -z "$unit_exists" ]; then
+            die "unit '$UNIT_ID' not found in $units_file"
+        fi
+    fi
+
+    # ── 7. Determine next round number ───────────────────────────────
+    ROUNDS_DIR="$PROJECT_DIR/rounds"
+    mkdir -p "$ROUNDS_DIR"
+
+    NEXT_ROUND=1
+    local existing_count
+    existing_count=$(find "$ROUNDS_DIR" -maxdepth 1 -type d -name 'round-*' 2>/dev/null | wc -l | tr -d ' ')
+    NEXT_ROUND=$((existing_count + 1))
+
+    ROUND_NUM=$(printf "%03d" "$NEXT_ROUND")
+    ROUND_ID="round-$ROUND_NUM"
+    ROUND_DIR="$ROUNDS_DIR/$ROUND_ID"
+
+    if [ -d "$ROUND_DIR" ]; then
+        die "round directory already exists: $ROUND_DIR"
+    fi
+
+    mkdir -p "$ROUND_DIR"
+
+    # ── 8. Load workflow to get stage_order ──────────────────────────
+    readarray -t STAGE_ORDER < <(yq -r '.stage_order[]' "$WORKFLOW_FILE" 2>/dev/null || echo "")
+
+    if [ "${#STAGE_ORDER[@]}" -eq 0 ]; then
+        die "workflow '$WORKFLOW_ID' has no stage_order defined"
+    fi
+
+    FIRST_STAGE="${STAGE_ORDER[0]}"
+
+    # ── 9. Read knowledge files for read_only_context ────────────────
+    local knowledge_files=()
+    local knowledge_dir="$PROJECT_DIR/knowledge"
+    if [ -d "$knowledge_dir" ]; then
+        while IFS= read -r -d '' kf; do
+            knowledge_files+=("${kf#$PROJECT_DIR/}")
+        done < <(find "$knowledge_dir" -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' -o -name '*.md' \) -print0 2>/dev/null || true)
+    fi
+
+    # Build read_only_context YAML.
+    local context_knowledge_yaml=""
+    if [ "${#knowledge_files[@]}" -gt 0 ]; then
+        for kf in "${knowledge_files[@]}"; do
+            context_knowledge_yaml+="    - $kf"$'\n'
+        done
+    fi
+
+    # Determine scope_policy unit allowance.
+    local allow_unit="false"
+    if [ -n "$UNIT_ID" ]; then
+        allow_unit="true"
+    fi
+
+    NOW="$(now_iso)"
+
+    # ── 10. Generate contract.yaml ───────────────────────────────────
+    cat > "$ROUND_DIR/contract.yaml" << CONT
+schema_version: "2.0.0"
+round_id: $ROUND_ID
+project_id: $PROJECT_ID
+
+workflow:
+  id: $WORKFLOW_ID
+  version: "$WF_VERSION"
+  workflow_file: workflows/$WORKFLOW_ID/workflow.yaml
+
+mutable_document:
+  id: $DOC_ID
+  type: $DOC_TYPE
+  path: $DOC_PATH
+
+target_units:
+  primary:
+CONT
+
+    if [ -n "$UNIT_ID" ]; then
+        echo "    - $UNIT_ID" >> "$ROUND_DIR/contract.yaml"
+    fi
+
+    cat >> "$ROUND_DIR/contract.yaml" << CONT
+  secondary: []
+
+read_only_context:
+  documents: []
+  project_knowledge:
+CONT
+
+    if [ -n "$context_knowledge_yaml" ]; then
+        printf '%s' "$context_knowledge_yaml" >> "$ROUND_DIR/contract.yaml"
+    fi
+
+    # required_outputs from the stage manifests.
+    local req_outputs_yaml=""
+    for stage_id in "${STAGE_ORDER[@]}"; do
+        [ -z "$stage_id" ] && continue
+        local outputs
+        readarray -t outputs < <(yq -r ".prompt_pack.\"$stage_id\" // empty" "$WORKFLOW_FILE" 2>/dev/null || echo "")
+    done
+
+    cat >> "$ROUND_DIR/contract.yaml" << CONT
+
+objective: "$OBJECTIVE"
+
+mode: $MODE
+
+scope_policy:
+  exactly_one_mutable_document: true
+  allow_cross_document_read: true
+  allow_cross_document_write: false
+  allow_project_knowledge_update: true
+  allow_unit_scope: $allow_unit
+
+required_outputs:
+  - $DOC_PATH (round-patched)
+
+success_criteria: []
+CONT
+
+    # ── 11. Generate workflow-state.yaml ─────────────────────────────
+    cat > "$ROUND_DIR/workflow-state.yaml" << STATE
+project_id: $PROJECT_ID
+round_id: $ROUND_ID
+workflow_id: $WORKFLOW_ID
+status: active
+current_stage: $FIRST_STAGE
+started_at: $NOW
+stage_order:
+STATE
+
+    for stage_id in "${STAGE_ORDER[@]}"; do
+        [ -z "$stage_id" ] && continue
+        echo "  - $stage_id" >> "$ROUND_DIR/workflow-state.yaml"
+    done
+
+    echo "" >> "$ROUND_DIR/workflow-state.yaml"
+    echo "stages:" >> "$ROUND_DIR/workflow-state.yaml"
+
+    local first=true
+    for stage_id in "${STAGE_ORDER[@]}"; do
+        [ -z "$stage_id" ] && continue
+        if [ "$first" = true ]; then
+            cat >> "$ROUND_DIR/workflow-state.yaml" << STAGE
+  $stage_id:
+    status: running
+    completed_at: null
+STAGE
+            first=false
+        else
+            cat >> "$ROUND_DIR/workflow-state.yaml" << STAGE
+  $stage_id:
+    status: pending
+    completed_at: null
+STAGE
+        fi
+    done
+
+    # ── 12. Update project state ────────────────────────────────────
+    local total_rounds
+    total_rounds=$(jq -r '.total_rounds // 0' "$STATE_FILE" 2>/dev/null || echo "0")
+    local new_total=$((total_rounds + 1))
+
+    jq \
+        --arg ar "$ROUND_ID" \
+        --argjson tr "$new_total" \
+        --arg lu "$NOW" \
+        '.active_round = $ar | .total_rounds = $tr | .last_updated = $lu' \
+        "$STATE_FILE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
+
+    # ── 13. Print summary ───────────────────────────────────────────
+    echo ""
+    echo "Round created: $ROUND_ID"
+    echo "  Project:      $PROJECT_ID"
+    echo "  Workflow:     $WORKFLOW_ID"
+    echo "  Document:     $DOC_ID ($DOC_TYPE)"
+    if [ -n "$UNIT_ID" ]; then
+        echo "  Unit:         $UNIT_ID"
+    fi
+    echo "  Mode:         $MODE"
+    echo "  Objective:    $OBJECTIVE"
+    echo "  Stages:       ${#STAGE_ORDER[@]} ($FIRST_STAGE → ...)"
+    echo "  Directory:    $ROUND_DIR"
+    echo ""
+    echo "Ready. Use 'cr stage advance $PROJECT_ID' to progress through stages."
+}
+
+# ── status ────────────────────────────────────────────────────────
+
+cmd_status() {
+    PROJECT_ID="${1:-}"
+
+    if [ -z "$PROJECT_ID" ]; then
+        echo "Usage: cr round status <project>" >&2
+        exit 2
+    fi
+
+    PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT_ID"
+    if [ ! -d "$PROJECT_DIR" ] || [ ! -f "$PROJECT_DIR/project.yaml" ]; then
+        die "project '$PROJECT_ID' not found at $PROJECT_DIR"
+    fi
+
+    STATE_FILE="$PROJECT_DIR/state/project-state.json"
+    if [ ! -f "$STATE_FILE" ]; then
+        die "project state file missing: $STATE_FILE"
+    fi
+
+    ACTIVE_ROUND=$(jq -r '.active_round // "null"' "$STATE_FILE" 2>/dev/null || echo "null")
+    if [ "$ACTIVE_ROUND" = "null" ] || [ -z "$ACTIVE_ROUND" ]; then
+        echo "No active round for project '$PROJECT_ID'."
+        echo "Start one: cr round start $PROJECT_ID --workflow <id> --doc <doc-id> --objective <text>"
+        exit 0
+    fi
+
+    ROUND_DIR="$PROJECT_DIR/rounds/$ACTIVE_ROUND"
+    if [ ! -d "$ROUND_DIR" ]; then
+        die "active round directory not found: $ROUND_DIR"
+    fi
+
+    WF_STATE="$ROUND_DIR/workflow-state.yaml"
+    if [ ! -f "$WF_STATE" ]; then
+        die "workflow-state.yaml not found in $ROUND_DIR"
+    fi
+
+    local wf_id wf_status current_stage started_at
+    wf_id=$(yq -r '.workflow_id // "?"' "$WF_STATE" 2>/dev/null || echo "?")
+    wf_status=$(yq -r '.status // "?"' "$WF_STATE" 2>/dev/null || echo "?")
+    current_stage=$(yq -r '.current_stage // "?"' "$WF_STATE" 2>/dev/null || echo "?")
+    started_at=$(yq -r '.started_at // "?"' "$WF_STATE" 2>/dev/null || echo "?")
+
+    echo ""
+    echo "Round:     $ACTIVE_ROUND"
+    echo "Workflow:  $wf_id"
+    echo "Status:    $wf_status"
+    echo "Started:   $started_at"
+    echo ""
+
+    readarray -t STAGE_ORDER < <(yq -r '.stage_order[]' "$WF_STATE" 2>/dev/null || echo "")
+
+    if [ "${#STAGE_ORDER[@]}" -eq 0 ]; then
+        echo "No stages defined in workflow-state.yaml"
+        exit 0
+    fi
+
+    for stage_id in "${STAGE_ORDER[@]}"; do
+        [ -z "$stage_id" ] && continue
+        local st=$(yq -r ".stages.\"$stage_id\".status // \"unknown\"" "$WF_STATE" 2>/dev/null || echo "unknown")
+        local completed_at=$(yq -r ".stages.\"$stage_id\".completed_at // \"null\"" "$WF_STATE" 2>/dev/null || echo "null")
+
+        local marker="  "
+        case "$st" in
+            complete)
+                marker="✓ "
+                ;;
+            running)
+                marker="▶ "
+                ;;
+            failed|blocked)
+                marker="✗ "
+                ;;
+        esac
+
+        local suffix=""
+        if [ "$stage_id" = "$current_stage" ] && [ "$st" != "complete" ]; then
+            suffix=" [IN PROGRESS]"
+        fi
+        if [ "$st" = "complete" ] && [ "$completed_at" != "null" ]; then
+            suffix=" (done $completed_at)"
+        fi
+
+        echo "  ${marker}${stage_id}  [${st}]${suffix}"
+    done
+
+    echo ""
+
+    # Count completion.
+    local done_count=0
+    local total=${#STAGE_ORDER[@]}
+    for stage_id in "${STAGE_ORDER[@]}"; do
+        [ -z "$stage_id" ] && continue
+        local st=$(yq -r ".stages.\"$stage_id\".status // \"\"" "$WF_STATE" 2>/dev/null || echo "")
+        [ "$st" = "complete" ] && done_count=$((done_count + 1))
+    done
+    echo "Progress: $done_count / $total stages complete"
+}
+
+# ── close ─────────────────────────────────────────────────────────
+
+cmd_close() {
+    PROJECT_ID="${1:-}"
+
+    if [ -z "$PROJECT_ID" ]; then
+        echo "Usage: cr round close <project>" >&2
+        exit 2
+    fi
+
+    PROJECT_DIR="$WORKSPACE_ROOT/$PROJECT_ID"
+    if [ ! -d "$PROJECT_DIR" ] || [ ! -f "$PROJECT_DIR/project.yaml" ]; then
+        die "project '$PROJECT_ID' not found at $PROJECT_DIR"
+    fi
+
+    STATE_FILE="$PROJECT_DIR/state/project-state.json"
+    if [ ! -f "$STATE_FILE" ]; then
+        die "project state file missing: $STATE_FILE"
+    fi
+
+    ACTIVE_ROUND=$(jq -r '.active_round // "null"' "$STATE_FILE" 2>/dev/null || echo "null")
+    if [ "$ACTIVE_ROUND" = "null" ] || [ -z "$ACTIVE_ROUND" ]; then
+        die "no active round for project '$PROJECT_ID'"
+    fi
+
+    ROUND_DIR="$PROJECT_DIR/rounds/$ACTIVE_ROUND"
+    if [ ! -d "$ROUND_DIR" ]; then
+        die "active round directory not found: $ROUND_DIR"
+    fi
+
+    WF_STATE="$ROUND_DIR/workflow-state.yaml"
+    if [ ! -f "$WF_STATE" ]; then
+        die "workflow-state.yaml not found in $ROUND_DIR"
+    fi
+
+    CONTRACT="$ROUND_DIR/contract.yaml"
+
+    echo ""
+    echo "══ Closing round: $ACTIVE_ROUND ══"
+    echo ""
+
+    # ── 1. Validate all stages complete ──────────────────────────────
+    readarray -t STAGE_ORDER < <(yq -r '.stage_order[]' "$WF_STATE" 2>/dev/null || echo "")
+
+    if [ "${#STAGE_ORDER[@]}" -eq 0 ]; then
+        die "no stage_order defined in workflow-state.yaml"
+    fi
+
+    local all_done=true
+    for stage_id in "${STAGE_ORDER[@]}"; do
+        [ -z "$stage_id" ] && continue
+        local st=$(yq -r ".stages.\"$stage_id\".status // \"\"" "$WF_STATE" 2>/dev/null || echo "")
+        if [ "$st" != "complete" ]; then
+            fail "Stage '$stage_id' is not complete (status: $st)"
+            all_done=false
+        else
+            pass "Stage '$stage_id' is complete"
+        fi
+    done
+
+    if [ "$all_done" != true ]; then
+        echo ""
+        fail "Cannot close round: not all stages are complete"
+        exit 1
+    fi
+
+    echo ""
+
+    # ── 2. Run workflow validators ───────────────────────────────────
+    local wf_id
+    wf_id=$(yq -r '.workflow_id // ""' "$WF_STATE" 2>/dev/null || echo "")
+
+    if [ -n "$wf_id" ]; then
+        SKILL_HOME="$(cr_skill_home)"
+        WORKFLOW_FILE="$SKILL_HOME/workflows/$wf_id/workflow.yaml"
+        if [ -f "$WORKFLOW_FILE" ]; then
+            readarray -t VALIDATORS < <(yq -r '.validators[]' "$WORKFLOW_FILE" 2>/dev/null || echo "")
+
+            if [ "${#VALIDATORS[@]}" -gt 0 ]; then
+                echo "── Running workflow validators ──"
+                local validator_ok=true
+                for validator in "${VALIDATORS[@]}"; do
+                    [ -z "$validator" ] && continue
+                    local validator_script="$SCRIPT_DIR/${validator}"
+                    if [ -x "$validator_script" ]; then
+                        echo "  Running: $validator"
+                        if ! "$validator_script" "$PROJECT_DIR" "$ROUND_DIR" 2>&1; then
+                            fail "Validator '$validator' failed"
+                            validator_ok=false
+                        else
+                            pass "Validator '$validator' passed"
+                        fi
+                    else
+                        warn "Validator script not found: $validator_script"
+                    fi
+                done
+
+                if [ "$validator_ok" != true ]; then
+                    echo ""
+                    fail "Round closure blocked: validators failed"
+                    exit 1
+                fi
+                echo ""
+            fi
+        fi
+    fi
+
+    # ── 3. Mark round closed ────────────────────────────────────────
+    NOW="$(now_iso)"
+
+    # Update workflow-state.yaml status to closed.
+    yq -i ".status = \"closed\"" "$WF_STATE" 2>/dev/null || true
+
+    # Update project state: clear active_round.
+    jq \
+        --arg lu "$NOW" \
+        '.active_round = null | .last_updated = $lu' \
+        "$STATE_FILE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
+
+    echo ""
+    pass "Round $ACTIVE_ROUND closed successfully"
+    echo ""
+}
+
+# ── Dispatch ──────────────────────────────────────────────────────
+
+case "$SUBCOMMAND" in
+    start)  cmd_start "$@" ;;
+    status) cmd_status "$@" ;;
+    close)  cmd_close "$@" ;;
+    *)      usage ;;
+esac
