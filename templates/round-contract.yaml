@@ -1,0 +1,47 @@
+# Round Contract — Control plane for a single CriticalResearch round.
+
+schema_version: "2.0.0"
+round_id: round-001
+project_id: <PROJECT_ID>
+
+workflow:
+  id: paper
+  version: "1.0.0"
+  workflow_file: workflows/paper/workflow.yaml
+
+mutable_document:
+  id: paper
+  type: paper
+  path: documents/paper.md
+
+target_units:
+  primary:
+    - paper.introduction
+
+read_only_context:
+  documents: []
+  project_knowledge:
+    - knowledge/claims.yaml
+    - knowledge/terminology.yaml
+    - knowledge/related-work.yaml
+
+user_objective: "<OBJECTIVE>"
+
+scope_policy:
+  exactly_one_mutable_document: true
+  allow_cross_document_read: true
+  allow_cross_document_write: false
+  allow_project_knowledge_update: true
+  allow_unit_scope: true
+
+required_outputs:
+  - workflow-state.yaml
+  - evidence-ledger.yaml
+  - critical-review.yaml
+  - revision-plan.yaml
+  - patches/
+  - document-diff.yaml
+  - knowledge-delta.yaml
+  - closure.md
+
+success_criteria: []

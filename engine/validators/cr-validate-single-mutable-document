@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""
+cr-validate-single-mutable-document — Verifies that all patches in a round
+only touch the declared mutable_document (Inv3, Inv5).
+"""
+import sys
+import yaml
+from pathlib import Path
+
+
+def load_yaml(path: str) -> dict:
+    with open(path) as f:
+        return yaml.safe_load(f)
+
+
+def validate_single_mutable(contract_path: str, round_dir: str) -> list[str]:
+    errs = []
+
+    contract = load_yaml(contract_path)
+    md = contract.get("mutable_document", {})
+    declared_doc = md.get("id")
+    declared_path = md.get("path")
+
+    if not declared_doc or not declared_path:
+        errs.append("FAIL: mutable_document missing id or path in contract")
+        return errs
+
+    # Check all patches
+    patches_dir = Path(round_dir) / "patches"
+    if not patches_dir.exists():
+        return errs
+
+    for patch_file in patches_dir.glob("*.yaml"):
+        try:
+            patch = load_yaml(str(patch_file))
+            target_doc = patch.get("target_document", {})
+            patch_doc_id = target_doc.get("id")
+            patch_doc_path = target_doc.get("path")
+
+            if patch_doc_id and patch_doc_id != declared_doc:
+                errs.append(f"Inv3 violation in {patch_file.name}: patch targets document '{patch_doc_id}' but contract declares '{declared_doc}'")
+            if patch_doc_path and patch_doc_path != declared_path:
+                errs.append(f"Inv3 violation in {patch_file.name}: patch targets path '{patch_doc_path}' but contract declares '{declared_path}'")
+        except Exception as e:
+            errs.append(f"FAIL: Cannot parse {patch_file.name}: {e}")
+
+    # Check document-diff
+    diff_file = Path(round_dir) / "document-diff.yaml"
+    if diff_file.exists():
+        try:
+            diff = load_yaml(str(diff_file))
+            diff_target = diff.get("document_id") or diff.get("target_document", {}).get("id")
+            if diff_target and diff_target != declared_doc:
+                errs.append(f"Inv3 violation: document-diff targets '{diff_target}' but contract declares '{declared_doc}'")
+        except Exception as e:
+            errs.append(f"FAIL: Cannot parse document-diff.yaml: {e}")
+
+    if not errs:
+        print(f"PASS: All patches target only '{declared_doc}'")
+    return errs
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: cr-validate-single-mutable-document <contract.yaml>")
+        sys.exit(1)
+
+    contract_path = sys.argv[1]
+    round_dir = str(Path(contract_path).parent)
+    errs = validate_single_mutable(contract_path, round_dir)
+
+    if errs:
+        for e in errs:
+            print(e)
+        sys.exit(1)
+    else:
+        sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

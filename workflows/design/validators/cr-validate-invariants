@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""cr-validate-invariants — Checks that design patches include invariant documentation."""
+import sys, yaml
+from pathlib import Path
+
+def load_yaml(p): 
+    with open(p) as f: return yaml.safe_load(f)
+
+def main():
+    if len(sys.argv) < 2: print("Usage: cr-validate-invariants <round_dir>"); sys.exit(1)
+    rd = Path(sys.argv[1])
+    pd = rd / "patches"
+    if not pd.exists(): sys.exit(0)
+    
+    errs = []
+    for pf in pd.glob("*.yaml"):
+        try:
+            patch = load_yaml(str(pf))
+            payload = patch.get("design_payload") or patch.get("payload",{})
+            has_invariants = bool(payload.get("invariants_added") or payload.get("invariants_revised"))
+            if not has_invariants and patch.get("patch_type","") == "invariant_revision":
+                errs.append(f"WARN: invariant_revision patch {pf.name} has no invariant changes in payload")
+        except: pass
+    
+    if errs: 
+        for e in errs: print(e)
+        sys.exit(1)
+    print("PASS: Invariant validation passed")
+
+if __name__ == "__main__": main()

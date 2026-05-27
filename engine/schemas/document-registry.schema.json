@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://critical-research/schemas/document-registry",
+  "title": "Document Registry",
+  "description": "Registry of all documents in a project, their types, and associated unit registries.",
+  "type": "object",
+  "required": ["schema_version", "project_id", "documents"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "project_id": {
+      "type": "string",
+      "description": "Project this registry belongs to"
+    },
+    "documents": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "path", "units", "default_workflow", "status"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Short document identifier (e.g., survey, design, paper)"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["survey", "design-doc", "paper", "proposal", "experiment-plan"]
+          },
+          "path": {
+            "type": "string",
+            "description": "Path to the document file relative to project root"
+          },
+          "units": {
+            "type": "string",
+            "description": "Path to the unit registry file for this document"
+          },
+          "default_workflow": {
+            "type": "string",
+            "enum": ["survey", "design", "paper", "proposal", "experiment"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "draft", "archived"]
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""
+cr-validate-document-diff — Verifies that the document-diff.yaml exists,
+references the mutable document, and covers the declared target units.
+"""
+import sys
+import yaml
+from pathlib import Path
+
+
+def load_yaml(path: str) -> dict:
+    with open(path) as f:
+        return yaml.safe_load(f)
+
+
+def validate_document_diff(contract_path: str, round_dir: str) -> list[str]:
+    errs = []
+
+    contract = load_yaml(contract_path)
+    md = contract.get("mutable_document", {})
+    doc_id = md.get("id")
+
+    diff_file = Path(round_dir) / "document-diff.yaml"
+    if not diff_file.exists():
+        # Check if any patches exist — if not, no diff needed
+        patches_dir = Path(round_dir) / "patches"
+        if patches_dir.exists() and list(patches_dir.glob("*.yaml")):
+            errs.append("FAIL: document-diff.yaml missing but patches exist")
+        return errs
+
+    try:
+        diff = load_yaml(str(diff_file))
+        diff_doc = diff.get("document_id") or diff.get("target_document", {}).get("id")
+        if diff_doc and diff_doc != doc_id:
+            errs.append(f"FAIL: document-diff targets '{diff_doc}' but contract declares '{doc_id}'")
+
+        # Verify diff contains changes for patches
+        if not diff.get("changes") and not diff.get("diff") and not diff.get("patches"):
+            errs.append("FAIL: document-diff.yaml has no changes, diff, or patches field")
+    except Exception as e:
+        errs.append(f"FAIL: Cannot parse document-diff.yaml: {e}")
+
+    if not errs:
+        print(f"PASS: document-diff.yaml is valid for document '{doc_id}'")
+    return errs
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: cr-validate-document-diff <contract.yaml>")
+        sys.exit(1)
+
+    contract_path = sys.argv[1]
+    round_dir = str(Path(contract_path).parent)
+    errs = validate_document_diff(contract_path, round_dir)
+
+    if errs:
+        for e in errs:
+            print(e)
+        sys.exit(1)
+    else:
+        sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

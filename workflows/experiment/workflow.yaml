@@ -1,0 +1,40 @@
+# Experiment Workflow — CriticalResearch v2
+# Purpose: Design, execute, and analyze experiments. Modify experiment plans
+# and record results.
+
+schema_version: "1.0.0"
+workflow_id: experiment
+target_document_types:
+  - experiment-plan
+
+stage_order:
+  - contract
+  - experiment_state
+  - hypothesis_design
+  - experiment_critical_review
+  - experiment_execution
+  - results_analysis
+  - apply_experiment_patch
+  - knowledge_delta
+  - closure
+
+patch_schema: workflows/experiment/schemas/experiment-patch.schema.json
+
+patch_types:
+  - hypothesis_update
+  - methodology_revision
+  - result_recording
+  - analysis_update
+  - obligation_fulfillment
+
+validators:
+  - cr-validate-single-mutable-document
+  - cr-validate-document-diff
+  - cr-validate-knowledge-delta
+
+review_rubric:
+  - "Is the hypothesis testable?"
+  - "Are baselines fair?"
+  - "Are measurements reproducible?"
+  - "Do results support or refute claims?"
+  - "Are confounding factors controlled?"

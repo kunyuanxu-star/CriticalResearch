@@ -1,0 +1,45 @@
+# Proposal Workflow — CriticalResearch v2
+# Purpose: Modify proposal — problem statement, research questions,
+# technical approach, risks, milestones.
+
+schema_version: "1.0.0"
+workflow_id: proposal
+target_document_types:
+  - proposal
+
+stage_order:
+  - contract
+  - problem_state
+  - feasibility_research
+  - proposal_critical_review
+  - scope_strategy
+  - apply_proposal_patch
+  - knowledge_delta
+  - closure
+
+patch_schema: workflows/proposal/schemas/proposal-patch.schema.json
+
+patch_types:
+  - problem_reframing
+  - research_question_revision
+  - scope_narrowing
+  - contribution_rewrite
+  - technical_route_update
+  - risk_register_update
+  - milestone_update
+
+validators:
+  - cr-validate-single-mutable-document
+  - cr-validate-proposal-problem
+  - cr-validate-proposal-scope
+  - cr-validate-proposal-risk
+  - cr-validate-document-diff
+
+review_rubric:
+  - "Is the problem real?"
+  - "Is scope controllable?"
+  - "Are research questions clear?"
+  - "Do contributions look like research contributions?"
+  - "Is the technical route credible?"
+  - "Are risks identified?"
+  - "Are milestones executable?"

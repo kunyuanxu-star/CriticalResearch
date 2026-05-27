@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+"""cr-validate-design-patch — Validates design patch types and payload structure."""
+import sys, yaml
+from pathlib import Path
+
+def load_yaml(p): 
+    with open(p) as f: return yaml.safe_load(f)
+
+VALID = {"architecture_revision","component_boundary_update","invariant_revision","interface_contract_update","lifecycle_model_update","failure_model_update","implementation_obligation"}
+
+def main():
+    if len(sys.argv) < 2: print("Usage: cr-validate-design-patch <round_dir>"); sys.exit(1)
+    rd = Path(sys.argv[1])
+    pd = rd / "patches"
+    if not pd.exists() or not list(pd.glob("*.yaml")): print("FAIL: No design patches found"); sys.exit(1)
+    
+    errs = []
+    for pf in pd.glob("*.yaml"):
+        try:
+            patch = load_yaml(str(pf))
+            pt = patch.get("patch_type","")
+            if pt not in VALID: errs.append(f"FAIL: unknown patch_type '{pt}'")
+            payload = patch.get("design_payload") or patch.get("payload",{})
+            if not payload.get("text_changes"): errs.append(f"FAIL: design_payload.text_changes required in {pf.name}")
+        except Exception as e: errs.append(f"FAIL: {pf.name}: {e}")
+    
+    if errs: 
+        for e in errs: print(e); sys.exit(1)
+    print("PASS: All design patches valid")
+
+if __name__ == "__main__": main()

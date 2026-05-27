@@ -5,3 +5,6 @@ _cr/logs/
 _cr/knowledge/
 _cr/active-project
 _cr/project-index.md
+__pycache__/
+*.pyc
+.DS_Store

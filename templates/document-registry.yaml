@@ -1,0 +1,13 @@
+# Document Registry
+# Lists all documents in the project with their types and associated unit registries.
+
+schema_version: "1.0.0"
+project_id: <PROJECT_ID>
+
+documents:
+  - id: paper
+    type: paper
+    path: documents/paper.md
+    units: units/paper.units.yaml
+    default_workflow: paper
+    status: active

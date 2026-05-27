@@ -1,0 +1,58 @@
+# Survey Workflow — CriticalResearch v2
+# Purpose: Modify survey documents — related work sections, taxonomies,
+# gap analyses, comparison matrices.
+
+schema_version: "1.0.0"
+workflow_id: survey
+target_document_types:
+  - survey
+
+stage_order:
+  - contract
+  - survey_state
+  - research_planning
+  - source_analysis
+  - taxonomy_synthesis
+  - critical_review
+  - revision_plan
+  - apply_survey_patch
+  - knowledge_delta
+  - closure
+
+prompt_pack:
+  contract: workflows/survey/prompts/01-contract.md
+  survey_state: workflows/survey/prompts/02-survey-state.md
+  research_planning: workflows/survey/prompts/03-research-planning.md
+  source_analysis: workflows/survey/prompts/04-source-analysis.md
+  taxonomy_synthesis: workflows/survey/prompts/05-taxonomy-synthesis.md
+  critical_review: workflows/survey/prompts/06-critical-review.md
+  revision_plan: workflows/survey/prompts/07-revision-plan.md
+  apply_survey_patch: workflows/survey/prompts/08-apply-survey-patch.md
+  knowledge_delta: workflows/survey/prompts/09-knowledge-delta.md
+  closure: workflows/survey/prompts/10-closure.md
+
+patch_schema: workflows/survey/schemas/survey-patch.schema.json
+
+patch_types:
+  - taxonomy_revision
+  - related_work_section_rewrite
+  - comparison_matrix_update
+  - gap_analysis_update
+  - missing_source_addition
+  - terminology_revision
+
+validators:
+  - cr-validate-single-mutable-document
+  - cr-validate-survey-units
+  - cr-validate-survey-evidence
+  - cr-validate-survey-patch
+  - cr-validate-document-diff
+  - cr-validate-knowledge-delta
+
+review_rubric:
+  - "Are classification criteria orthogonal?"
+  - "Does related work cover key systems?"
+  - "Are strong baselines missing?"
+  - "Do comparison dimensions lead to gaps?"
+  - "Is source-backed analysis sufficient?"
+  - "Does it form a taxonomy, not just a literature dump?"

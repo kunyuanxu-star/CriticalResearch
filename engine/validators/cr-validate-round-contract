@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+"""
+cr-validate-round-contract — Validates that a round contract has all required fields
+and satisfies Inv0, Inv1, Inv2, Inv3, Inv4, Inv5 structural constraints.
+"""
+import sys
+import json
+import yaml
+import os
+from pathlib import Path
+
+
+def load_yaml(path: str) -> dict:
+    with open(path) as f:
+        return yaml.safe_load(f)
+
+
+def error(msg: str):
+    print(f"FAIL: {msg}")
+    global errors
+    errors.append(msg)
+
+
+errors = []
+
+
+def validate_round_contract(contract: dict, project_root: str) -> list[str]:
+    """Validate a round contract against all structural invariants. Returns list of errors."""
+    errs = []
+
+    # Required fields
+    for field in ["schema_version", "round_id", "project_id", "workflow",
+                   "mutable_document", "target_units", "scope_policy",
+                   "user_objective", "required_outputs", "success_criteria"]:
+        if field not in contract:
+            errs.append(f"Missing required field: {field}")
+
+    if errs:
+        return errs
+
+    # schema_version must be 2.0.0
+    if contract["schema_version"] != "2.0.0":
+        errs.append(f"Expected schema_version 2.0.0, got {contract['schema_version']}")
+
+    # Inv0: project_id must be non-empty
+    if not contract.get("project_id"):
+        errs.append("Inv0 violation: project_id is empty — every round must belong to a project")
+
+    # Inv1: exactly one workflow
+    wf = contract.get("workflow", {})
+    if not wf.get("id"):
+        errs.append("Inv1 violation: workflow.id is missing — every round must have exactly one workflow")
+    valid_wf = {"survey", "design", "paper", "proposal", "experiment"}
+    if wf.get("id") not in valid_wf:
+        errs.append(f"Inv1 violation: unknown workflow '{wf.get('id')}' — must be one of {valid_wf}")
+
+    # Inv2: workflow targets one document type — checked by workflow definition
+    # Inv3: exactly one mutable document
+    md = contract.get("mutable_document", {})
+    if not md.get("id") or not md.get("type") or not md.get("path"):
+        errs.append("Inv3 violation: mutable_document must have id, type, and path — every round has exactly one mutable document")
+
+    # Inv4: at least one primary target unit, all units must belong to mutable document
+    target_units = contract.get("target_units", {})
+    primary = target_units.get("primary", [])
+    if not primary:
+        errs.append("Inv4 violation: target_units.primary must have at least one unit")
+    all_units = primary + target_units.get("secondary", [])
+    for unit in all_units:
+        doc_prefix = md["id"] + "."
+        if not unit.startswith(doc_prefix):
+            errs.append(f"Inv4 violation: unit '{unit}' does not belong to mutable document '{md['id']}' — all modified units must belong to the mutable document")
+
+    # Inv5: scope_policy must forbid cross-document writes
+    sp = contract.get("scope_policy", {})
+    if sp.get("allow_cross_document_write", False):
+        errs.append("Inv5 violation: allow_cross_document_write must be false — other documents must not be modified")
+    if sp.get("exactly_one_mutable_document") is not True:
+        errs.append("Inv5 violation: exactly_one_mutable_document must be true")
+
+    # Inv10: check for next_round_candidates (optional but must be well-formed)
+    nrc = contract.get("next_round_candidates", [])
+    if nrc:
+        for cand in nrc:
+            for field in ["workflow", "document", "unit", "objective"]:
+                if field not in cand:
+                    errs.append(f"Inv10 violation: next_round_candidate missing field '{field}'")
+
+    return errs
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: cr-validate-round-contract <contract.yaml> [project_root]")
+        sys.exit(1)
+
+    contract_path = sys.argv[1]
+    project_root = sys.argv[2] if len(sys.argv) > 2 else str(Path(contract_path).parent.parent.parent)
+
+    try:
+        contract = load_yaml(contract_path)
+    except Exception as e:
+        print(f"FAIL: Cannot parse contract: {e}")
+        sys.exit(1)
+
+    errs = validate_round_contract(contract, project_root)
+
+    if errs:
+        for e in errs:
+            print(f"FAIL: {e}")
+        sys.exit(1)
+    else:
+        print("PASS: Round contract is valid")
+        sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

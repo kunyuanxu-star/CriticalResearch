@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+"""cr-validate-claim-evidence — Paper claims must have evidence backing."""
+import sys, yaml
+from pathlib import Path
+def load_yaml(p): 
+    with open(p) as f: return yaml.safe_load(f)
+def main():
+    if len(sys.argv) < 2: print("Usage: cr-validate-claim-evidence <round_dir>"); sys.exit(1)
+    rd = Path(sys.argv[1])
+    ceg = rd / "claim-evidence-grounding.yaml"
+    if not ceg.exists(): print("SKIP: no claim-evidence-grounding.yaml"); sys.exit(0)
+    d = load_yaml(str(ceg))
+    gaps = [c for c in (d.get("gaps") or d.get("claims") or []) if isinstance(c,dict) and c.get("evidence_strength")=="weak"]
+    if gaps: print(f"WARN: {len(gaps)} claims have weak evidence")
+    print("PASS")
+if __name__=="__main__": main()

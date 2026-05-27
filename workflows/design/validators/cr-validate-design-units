@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+"""cr-validate-design-units — Validates design patch target units against registry."""
+import sys, yaml
+from pathlib import Path
+
+def load_yaml(p): 
+    with open(p) as f: return yaml.safe_load(f)
+
+def main():
+    if len(sys.argv) < 2: print("Usage: cr-validate-design-units <contract.yaml> [project_root]"); sys.exit(1)
+    contract_path = sys.argv[1]
+    project_root = sys.argv[2] if len(sys.argv) > 2 else str(Path(contract_path).parent.parent.parent)
+    contract = load_yaml(contract_path)
+    if contract.get("workflow",{}).get("id") != "design": print("SKIP: Not a design round"); sys.exit(0)
+    
+    doc_id = contract["mutable_document"]["id"]
+    reg_path = Path(project_root) / "units" / f"{doc_id}.units.yaml"
+    if not reg_path.exists(): print(f"FAIL: Unit registry not found: {reg_path}"); sys.exit(1)
+    
+    registry = load_yaml(str(reg_path))
+    reg_units = set()
+    for u in registry.get("units",[]):
+        key = u.get("unit_id") or u.get("id")
+        if key:
+            reg_units.add(key)
+    
+    rd = Path(contract_path).parent
+    pd = rd / "patches"
+    if not pd.exists(): sys.exit(0)
+    
+    errs = []
+    for pf in pd.glob("*.yaml"):
+        try:
+            patch = load_yaml(str(pf))
+            for u in patch.get("target_units",[]):
+                if u not in reg_units: errs.append(f"FAIL: unit '{u}' not in registry")
+        except: pass
+    
+    if errs: 
+        for e in errs: print(e)
+        sys.exit(1)
+    print("PASS: All design patch units exist in registry")
+
+if __name__ == "__main__": main()

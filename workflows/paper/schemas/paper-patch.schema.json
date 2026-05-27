@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://critical-research/schemas/paper-patch",
+  "title": "Paper Patch",
+  "description": "Patch payload schema for paper workflow modifications.",
+  "type": "object",
+  "required": ["paper_payload"],
+  "properties": {
+    "paper_payload": {
+      "type": "object",
+      "required": ["text_changes"],
+      "properties": {
+        "writing_change_type": {
+          "type": "string",
+          "enum": ["paragraph_rewrite","section_restructure","claim_weakening","claim_strengthening","related_work_repositioning","evaluation_obligation_addition","contribution_rewrite"]
+        },
+        "claim_changes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Claims strengthened, weakened, or modified"
+        },
+        "rhetorical_pattern": {
+          "type": "string",
+          "description": "Rhetorical pattern used (e.g., problem-root-cause-insight)"
+        },
+        "text_changes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["unit", "operation"],
+            "properties": {
+              "unit": { "type": "string" },
+              "operation": { "type": "string", "enum": ["insert", "replace", "delete"] },
+              "anchor_after": { "type": "string" },
+              "content": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

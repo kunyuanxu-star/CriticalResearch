@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""cr-validate-writing-diff — Paper writing diff must cover all patches."""
+import sys, yaml
+from pathlib import Path
+def load_yaml(p): 
+    with open(p) as f: return yaml.safe_load(f)
+def main():
+    if len(sys.argv)<2: print("Usage: cr-validate-writing-diff <round_dir>"); sys.exit(1)
+    rd = Path(sys.argv[1])
+    wd = rd / "writing-diff.yaml"
+    if not wd.exists(): print("SKIP: no writing-diff.yaml"); sys.exit(0)
+    d = load_yaml(str(wd))
+    if not d.get("changes") and not d.get("diff"): print("WARN: writing-diff has no changes"); sys.exit(1)
+    print("PASS")
+if __name__=="__main__": main()

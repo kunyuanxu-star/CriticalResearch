@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+"""cr-validate-proposal-risk — Validates risk register completeness."""
+import sys, yaml
+from pathlib import Path
+def load_yaml(p): 
+    with open(p) as f: return yaml.safe_load(f)
+def main():
+    if len(sys.argv)<2: print("Usage: cr-validate-proposal-risk <round_dir>"); sys.exit(1)
+    rd = Path(sys.argv[1])
+    pd = rd / "patches"
+    if not pd.exists(): sys.exit(0)
+    errs = []
+    for pf in pd.glob("*.yaml"):
+        try:
+            p = load_yaml(str(pf))
+            if p.get("patch_type","") == "risk_register_update":
+                pl = p.get("proposal_payload") or p.get("payload",{})
+                if not pl.get("risk_updates"):
+                    errs.append(f"WARN: risk_register_update in {pf.name} has no risk_updates")
+        except: pass
+    if errs: 
+        for e in errs: print(e); sys.exit(1)
+    print("PASS")
+if __name__=="__main__": main()

@@ -1,0 +1,59 @@
+# Design Workflow — CriticalResearch v2
+# Purpose: Modify design documents — architecture, components, invariants,
+# interfaces, lifecycle models, failure models.
+
+schema_version: "1.0.0"
+workflow_id: design
+target_document_types:
+  - design-doc
+
+stage_order:
+  - contract
+  - design_state
+  - evidence_grounding
+  - design_critical_review
+  - invariant_interface_strategy
+  - revision_plan
+  - apply_design_patch
+  - implementation_obligations
+  - knowledge_delta
+  - closure
+
+prompt_pack:
+  contract: workflows/design/prompts/01-contract.md
+  design_state: workflows/design/prompts/02-design-state.md
+  evidence_grounding: workflows/design/prompts/03-evidence-grounding.md
+  design_critical_review: workflows/design/prompts/04-design-critical-review.md
+  invariant_interface_strategy: workflows/design/prompts/05-invariant-interface-strategy.md
+  revision_plan: workflows/design/prompts/06-revision-plan.md
+  apply_design_patch: workflows/design/prompts/07-apply-design-patch.md
+  implementation_obligations: workflows/design/prompts/08-implementation-obligations.md
+  knowledge_delta: workflows/design/prompts/09-knowledge-delta.md
+  closure: workflows/design/prompts/10-closure.md
+
+patch_schema: workflows/design/schemas/design-patch.schema.json
+
+patch_types:
+  - architecture_revision
+  - component_boundary_update
+  - invariant_revision
+  - interface_contract_update
+  - lifecycle_model_update
+  - failure_model_update
+  - implementation_obligation
+
+validators:
+  - cr-validate-single-mutable-document
+  - cr-validate-design-units
+  - cr-validate-invariants
+  - cr-validate-interface-contracts
+  - cr-validate-design-patch
+  - cr-validate-document-diff
+
+review_rubric:
+  - "Are design goals explicit?"
+  - "Are interface semantics stable?"
+  - "Are invariants enforceable?"
+  - "Is authority/ownership/lifecycle clear?"
+  - "Are failure cases covered?"
+  - "Is there implementation infeasibility?"

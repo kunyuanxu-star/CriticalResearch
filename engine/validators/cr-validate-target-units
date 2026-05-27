@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""
+cr-validate-target-units — Verifies that all target_units in the contract
+exist in the unit registry for the mutable document (Inv4).
+"""
+import sys
+import yaml
+from pathlib import Path
+
+
+def load_yaml(path: str) -> dict:
+    with open(path) as f:
+        return yaml.safe_load(f)
+
+
+def validate_target_units(contract_path: str, project_root: str) -> list[str]:
+    errs = []
+
+    contract = load_yaml(contract_path)
+    md = contract.get("mutable_document", {})
+    doc_id = md.get("id")
+
+    # Find unit registry
+    unit_registry_path = Path(project_root) / "units" / f"{doc_id}.units.yaml"
+    if not unit_registry_path.exists():
+        errs.append(f"FAIL: Unit registry not found: {unit_registry_path}")
+        return errs
+
+    registry = load_yaml(str(unit_registry_path))
+    registry_units = set()
+    for u in registry.get("units", []):
+        key = u.get("unit_id") or u.get("id")
+        if key:
+            registry_units.add(key)
+
+    target_units = contract.get("target_units", {})
+    all_target_units = list(target_units.get("primary", [])) + list(target_units.get("secondary", []))
+
+    for unit in all_target_units:
+        if unit not in registry_units:
+            errs.append(f"Inv4 violation: target unit '{unit}' not found in unit registry '{unit_registry_path}'")
+
+    if not errs:
+        print(f"PASS: All {len(all_target_units)} target units exist in registry")
+    return errs
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: cr-validate-target-units <contract.yaml> [project_root]")
+        sys.exit(1)
+
+    contract_path = sys.argv[1]
+    project_root = sys.argv[2] if len(sys.argv) > 2 else str(Path(contract_path).parent.parent.parent)
+    errs = validate_target_units(contract_path, project_root)
+
+    if errs:
+        for e in errs:
+            print(e)
+        sys.exit(1)
+    else:
+        sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

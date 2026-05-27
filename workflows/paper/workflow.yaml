@@ -1,0 +1,47 @@
+# Paper Workflow — CriticalResearch v2
+# Purpose: Modify paper — sections, claims, argument flow, writing quality, positioning.
+# This workflow replaces the monolithic 37-phase v1 paper mode.
+
+schema_version: "1.0.0"
+workflow_id: paper
+target_document_types:
+  - paper
+
+stage_order:
+  - contract
+  - paper_state
+  - claim_evidence_grounding
+  - reviewer_critique
+  - writing_strategy
+  - revision_plan
+  - apply_paper_patch
+  - claim_alignment
+  - knowledge_delta
+  - closure
+
+patch_schema: workflows/paper/schemas/paper-patch.schema.json
+
+patch_types:
+  - paragraph_rewrite
+  - section_restructure
+  - claim_weakening
+  - claim_strengthening
+  - related_work_repositioning
+  - evaluation_obligation_addition
+  - contribution_rewrite
+
+validators:
+  - cr-validate-single-mutable-document
+  - cr-validate-paper-units
+  - cr-validate-claim-evidence
+  - cr-validate-paper-patch
+  - cr-validate-writing-diff
+
+review_rubric:
+  - "Is motivation strong?"
+  - "Is root cause clearly identified?"
+  - "Is insight non-trivial?"
+  - "Are claims defensible?"
+  - "Are baselines dangerous enough?"
+  - "Does the argument chain advance linearly?"
+  - "Does writing match top-venue style?"
