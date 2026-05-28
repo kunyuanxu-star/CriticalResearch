@@ -580,6 +580,13 @@ cmd_close() {
         fi
     fi
 
+    # ── 2b. Apply knowledge delta to global knowledge bank ────────
+    if [ -f "$ROUND_DIR/knowledge-delta.yaml" ]; then
+        echo ""
+        echo "── Applying knowledge delta ──"
+        "$SKILL_HOME/scripts/cr-apply-knowledge-delta" "$ROUND_DIR" ||             warn "Knowledge delta apply had issues — round knowledge preserved in round directory"
+    fi
+
     # ── 3. Mark round closed ────────────────────────────────────────
     NOW="$(now_iso)"
 
