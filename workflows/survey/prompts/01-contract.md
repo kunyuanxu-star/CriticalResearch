@@ -34,3 +34,6 @@ Produce `contract.yaml` for this survey round with:
 - All target units MUST belong to that document.
 - If the objective requires changes to a design doc or paper, record a `next_round_candidates` entry — do NOT add those documents to the mutable scope.
 - Keep target unit selection focused: 1-3 primary units, 0-2 secondary.
+
+## Outputs
+- `contract.yaml` — round contract with workflow id: survey, mutable document, target units

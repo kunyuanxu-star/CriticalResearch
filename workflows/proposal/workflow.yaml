@@ -13,6 +13,7 @@ stage_order:
   - feasibility_research
   - proposal_critical_review
   - scope_strategy
+  - revision_plan
   - apply_proposal_patch
   - knowledge_delta
   - closure
@@ -22,10 +23,120 @@ prompt_pack:
   feasibility_research: workflows/proposal/prompts/03-feasibility-research.md
   proposal_critical_review: workflows/proposal/prompts/04-proposal-critical-review.md
   scope_strategy: workflows/proposal/prompts/05-scope-strategy.md
+  revision_plan: workflows/proposal/prompts/06-revision-plan.md
   apply_proposal_patch: workflows/proposal/prompts/07-apply-proposal-patch.md
   knowledge_delta: workflows/proposal/prompts/09-knowledge-delta.md
   closure: workflows/proposal/prompts/10-closure.md
-
+stage_contracts:
+  contract:
+    prompt: workflows/proposal/prompts/01-contract.md
+    required_inputs:
+      - project.yaml
+      - documents/registry.yaml
+    required_outputs:
+      - contract.yaml
+    allowed_writes:
+      - contract.yaml
+    validators:
+      - cr-validate-round-contract
+  problem_state:
+    prompt: workflows/proposal/prompts/02-proposal-state.md
+    required_inputs:
+      - contract.yaml
+    required_outputs:
+      - proposal-state.yaml
+    allowed_writes:
+      - proposal-state.yaml
+    validators: []
+  feasibility_research:
+    prompt: workflows/proposal/prompts/03-feasibility-research.md
+    required_inputs:
+      - proposal-state.yaml
+      - contract.yaml
+    required_outputs:
+      - feasibility-research.yaml
+    allowed_writes:
+      - feasibility-research.yaml
+    validators: []
+  proposal_critical_review:
+    prompt: workflows/proposal/prompts/04-proposal-critical-review.md
+    required_inputs:
+      - proposal-state.yaml
+      - feasibility-research.yaml
+    required_outputs:
+      - critical-review.yaml
+    allowed_writes:
+      - critical-review.yaml
+    validators: []
+  scope_strategy:
+    prompt: workflows/proposal/prompts/05-scope-strategy.md
+    required_inputs:
+      - critical-review.yaml
+      - feasibility-research.yaml
+    required_outputs:
+      - scope-strategy.yaml
+    allowed_writes:
+      - scope-strategy.yaml
+    validators: []
+  revision_plan:
+    prompt: workflows/proposal/prompts/06-revision-plan.md
+    required_inputs:
+      - critical-review.yaml
+      - feasibility-research.yaml
+      - scope-strategy.yaml
+      - contract.yaml
+      - proposal-state.yaml
+    required_outputs:
+      - revision-plan.yaml
+      - patch-plan.yaml
+      - deferred-obligations.yaml
+      - no-patch-rationale.yaml
+    allowed_writes:
+      - revision-plan.yaml
+      - patch-plan.yaml
+      - deferred-obligations.yaml
+      - no-patch-rationale.yaml
+    validators: []
+  apply_proposal_patch:
+    prompt: workflows/proposal/prompts/07-apply-proposal-patch.md
+    required_inputs:
+      - revision-plan.yaml
+      - proposal-state.yaml
+    required_outputs:
+      - patch-trace.yaml
+      - writing-diff.yaml
+      - milestone-obligations.yaml
+    allowed_writes:
+      - patch-trace.yaml
+      - writing-diff.yaml
+      - milestone-obligations.yaml
+    validators: []
+  knowledge_delta:
+    prompt: workflows/proposal/prompts/09-knowledge-delta.md
+    required_inputs:
+      - critical-review.yaml
+      - patch-trace.yaml
+      - writing-diff.yaml
+    required_outputs:
+      - knowledge-delta.yaml
+      - knowledge-apply-log.yaml
+    allowed_writes:
+      - knowledge-delta.yaml
+    validators: []
+  closure:
+    prompt: workflows/proposal/prompts/10-closure.md
+    required_inputs:
+      - contract.yaml
+      - knowledge-delta.yaml
+      - patch-trace.yaml
+    required_outputs:
+      - next-round-targets.yaml
+      - round-summary.yaml
+    allowed_writes:
+      - next-round-targets.yaml
+      - round-summary.yaml
+    validators:
+      - cr-validate-single-mutable-document
 
 patch_schema: workflows/proposal/schemas/proposal-patch.schema.json
 

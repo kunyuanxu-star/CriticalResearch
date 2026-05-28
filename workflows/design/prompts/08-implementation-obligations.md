@@ -6,6 +6,10 @@
 - `critical-review.yaml`
 - `contract.yaml`
 
+
+## Outputs
+- `implementation-obligations.yaml` — per-decision implementation requirements, test cases, invariants, and cross-patch tracing
+
 ## Task
 Produce `implementation-obligations.yaml`:
 - For each design decision that has implementation implications:

@@ -7,6 +7,10 @@
 - Target design-doc
 
 ## Task
+
+## Outputs
+- `critical-review.yaml` — architecture, invariant, interface, lifecycle, failure-model, and feasibility critique
+
 Produce `critical-review.yaml`:
 
 1. **Architecture critique**:

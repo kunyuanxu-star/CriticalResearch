@@ -25,3 +25,5 @@ and target design units (design-principle, architecture-component, mechanism-des
 - Only one design-doc can be modified.
 - Design rounds frequently read paper and survey as context but must not modify them.
 - If design changes imply paper rewrites, record next_round_candidates.
+## Outputs
+- `contract.yaml` — round contract with workflow id: design, mutable document, target units

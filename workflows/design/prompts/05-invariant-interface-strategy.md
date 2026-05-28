@@ -6,6 +6,10 @@
 - `design-state.yaml`
 - `evidence-grounding.yaml`
 
+
+## Outputs
+- `invariant-interface-strategy.yaml` — invariant enforcement strategy, interface contract completion, lifecycle state machines
+
 ## Task
 Produce `invariant-interface-strategy.yaml`:
 

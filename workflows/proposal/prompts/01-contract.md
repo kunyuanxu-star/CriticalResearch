@@ -23,3 +23,5 @@ mutable document, and target proposal-section units.
 ## Constraints
 - Only the proposal document is mutable.
 - If proposal changes imply design or paper changes, record next_round_candidates.
+## Outputs
+- `contract.yaml` — round contract with workflow id: proposal, mutable document, target units

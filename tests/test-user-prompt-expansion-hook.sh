@@ -105,10 +105,10 @@ echo '{"active_round": null}' > "$TEST_DIR/test-workspace/test-proj3/state/proje
 OUT=$(cd "$TEST_DIR/test-workspace" && CR_SKILL_HOME="$SCRIPT_DIR/.." run_hook '{"commandText":"/critical-cs-research test-proj3 test objective"}')
 if echo "$OUT" | grep -q '"hookSpecificOutput"'; then
     if echo "$OUT" | grep '"hookEventName"' | grep -q '"UserPromptExpansion"'; then
-        if echo "$OUT" | grep -q "cr-start-paper-round"; then
+        if echo "$OUT" | grep -q "cr round start"; then
             pass "Allow with correct hookEventName and additionalContext"
         else
-            fail "Missing cr-start-paper-round in additionalContext"
+            fail "Missing cr round start in additionalContext"
         fi
     else
         fail "Missing hookEventName"

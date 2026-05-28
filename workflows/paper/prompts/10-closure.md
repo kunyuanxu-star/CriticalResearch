@@ -106,6 +106,9 @@ Run `cr round close`. If it fails, fix the failing validator and retry. Do not m
 
 ## Output Contract
 
+workflow-state.yaml:
+  description: Updated workflow state reflecting closure — all stages complete, round closed
+
 ```yaml
 next-round-targets.yaml:
   schema_version: "1.0.0"

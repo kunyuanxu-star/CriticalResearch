@@ -13,3 +13,6 @@ Produce `evidence-grounding.yaml`:
 - For each interface: what alternatives were considered and rejected?
 - Evidence gaps: design decisions made without evidence — flag these
 - Baselines: what does the design do differently from existing systems?
+
+## Outputs
+- `evidence-grounding.yaml` — design decisions grounded in evidence, alternatives considered, evidence gaps

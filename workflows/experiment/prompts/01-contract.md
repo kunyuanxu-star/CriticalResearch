@@ -9,15 +9,14 @@ Formalize the experiment's intent into a signed Experiment Contract. This stage 
 - `workspace:_cr/knowledge/` — global knowledge cards
 
 ## Outputs
-- `round-contract.yaml` — formalized contract with target, scope, intensity, required outputs, forbidden scope, success criteria
-- `experiment-state.yaml` — frozen experiment snapshot (embedded in round state)
+- `contract.yaml` — formalized contract with target, scope, intensity, required outputs, forbidden scope, success criteria
 
 ## Allowed Actions
 - Read experiment plan, claim ledger, and knowledge cards.
 - Extract and structure hypotheses, variables, controls, measures, baselines, validation criteria.
 - Identify fragile hypotheses and at-risk experimental components.
-- Write round-contract.yaml.
 - Record loaded knowledge summary in state.
+- Write contract.yaml.
 
 ## Forbidden Actions
 - Do not search for external sources.
@@ -100,8 +99,7 @@ contract:
 - [ ] Knowledge cards loaded and documented.
 - [ ] Experiment contract has target, scope, intensity, required_outputs, success_criteria.
 - [ ] Full-experiment coverage declared explicitly.
-- [ ] round-contract.yaml is valid YAML.
-
+- [ ] contract.yaml is valid YAML.
 ## Full-Experiment Coverage Requirement
 This stage must operate over the entire experiment plan. The objective is a weighting lens, not a scope limiter. Document:
 

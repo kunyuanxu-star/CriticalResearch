@@ -46,7 +46,13 @@ stage_contracts:
       - paper-state.yaml
       - contract.yaml
     required_outputs:
+      - evaluation-obligations.yaml
+      - exemplar-paper-analysis.yaml
+      - osdi-sosp-reviewer-risk.yaml
       - claim-evidence-grounding.yaml
+      - venue-norm-ledger.yaml
+
+
     allowed_writes:
       - claim-evidence-grounding.yaml
     validators:
@@ -68,7 +74,14 @@ stage_contracts:
       - paper-state.yaml
       - claim-evidence-grounding.yaml
     required_outputs:
+      - exemplar-paper-analysis.yaml
+      - paragraph-logic-audit.yaml
+      - sentence-level-audit.yaml
+      - venue-norm-ledger.yaml
       - writing-strategy.yaml
+      - word-choice-audit.yaml
+
+
     allowed_writes:
       - writing-strategy.yaml
     validators: []
@@ -80,7 +93,13 @@ stage_contracts:
       - contract.yaml
     required_outputs:
       - revision-plan.yaml
+      - deferred-obligations.yaml
+      - evaluation-obligations.yaml
+      - no-patch-rationale.yaml
       - patch-plan.yaml
+      - osdi-sosp-reviewer-risk.yaml
+
+
     allowed_writes:
       - revision-plan.yaml
       - patch-plan.yaml
@@ -92,7 +111,13 @@ stage_contracts:
       - contract.yaml
     required_outputs:
       - patch-trace.yaml
+      - deferred-obligations.yaml
+      - evaluation-obligations.yaml
+      - no-patch-rationale.yaml
       - document-diff.yaml
+      - residual-risks.yaml
+
+
     allowed_writes:
       - patch-trace.yaml
       - document-diff.yaml
@@ -107,6 +132,7 @@ stage_contracts:
       - document-diff.yaml
     required_outputs:
       - claim-alignment.yaml
+      - residual-risks.yaml
     allowed_writes:
       - claim-alignment.yaml
     validators:
@@ -120,6 +146,10 @@ stage_contracts:
       - document-diff.yaml
     required_outputs:
       - knowledge-delta.yaml
+      - residual-risks.yaml
+      - reviewer-rejection-paths.yaml
+      - workflow-state.yaml
+      - writing-risk-audit.yaml
     allowed_writes:
       - knowledge-delta.yaml
     validators: []
@@ -132,6 +162,7 @@ stage_contracts:
       - knowledge-delta.yaml
     required_outputs:
       - next-round-targets.yaml
+      - workflow-state.yaml
     allowed_writes:
       - next-round-targets.yaml
     validators:

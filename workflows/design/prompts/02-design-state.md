@@ -14,3 +14,6 @@ Produce `design-state.yaml`:
 - Invariant coverage: are invariants explicit and enforceable?
 - Interface contracts: are semantics stable? Pre/post conditions documented?
 - Gaps: missing components, underspecified interfaces, unhandled failure modes
+
+## Outputs
+- `design-state.yaml` — per-unit architecture assessment, invariant coverage, interface contracts, gaps

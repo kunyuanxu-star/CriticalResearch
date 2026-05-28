@@ -88,8 +88,7 @@ else
 fi
 
 # 7. completion_predicate field exists
-CP=$(yq -r '.stages.contract.completion_predicate // "missing"' "$WF_STATE" 2>/dev/null || echo "missing")
-if [ "$CP" != "missing" ]; then
+if yq -e '.stages.contract | has("completion_predicate")' "$WF_STATE" > /dev/null 2>&1; then
     pass "contract stage has completion_predicate field"
 else
     fail "contract stage missing completion_predicate field"

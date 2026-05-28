@@ -5,7 +5,7 @@ Design or refine the experimental methodology: experimental design type, variabl
 
 ## Inputs
 - `round:experiment-state.yaml` — frozen experiment snapshot
-- `round:round-contract.yaml` — experiment contract
+- `round:contract.yaml` — experiment contract
 - `workspace:_cr/knowledge/` — global knowledge cards, method cards
 
 ## Outputs
@@ -101,6 +101,17 @@ methodology-design.yaml:
     external: [{ threat: string, mitigation: string }]
     construct: [{ threat: string, mitigation: string }]
     statistical_conclusion: [{ threat: string, mitigation: string }]
+
+methodology-justification.yaml:
+  schema_version: "1.0.0"
+  round_id: integer
+  justifications:
+    - choice_id: string
+      choice: string
+      justification: string (>= 20 chars)
+      alternatives_considered:
+        - alternative: string
+          reason_rejected: string (>= 10 chars)
 ```
 
 ## Failure Conditions

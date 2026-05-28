@@ -9,6 +9,10 @@ value that survives past this round — patterns, invariants,
 failure modes, and design rules that compound over time.
 
 
+
+## Outputs
+- `knowledge-delta.yaml` — new/revised design decisions, invariants, interface contracts, evaluation obligations, open questions
+
 ## Task
 Produce `knowledge-delta.yaml`:
 - Design decisions: new decisions, revised decisions

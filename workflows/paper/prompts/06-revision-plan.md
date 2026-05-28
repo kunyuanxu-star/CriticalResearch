@@ -2,12 +2,15 @@
 
 ## Purpose
 
-Transform the writing strategy from stage 5 into a concrete, ordered revision plan. Each revision is a specific patch with a declared type, target unit, source critique, expected effect, and dependency ordering. The revision plan is the blueprint that stage 7 executes — every patch applied in stage 7 must have a corresponding entry here.
+Transform the critical review, claim-evidence analysis, and writing strategy into a concrete, ordered, evidence-constrained revision plan for the target paper.
 
-This stage must NOT:
-- Apply patches to the paper document (that's stage 7)
-- Introduce patches not traceable to a critique + strategy decision
-- Order patches arbitrarily — dependency ordering matters
+This stage is part of the **paper workflow**. Its role is not to edit the paper. Its role is to compile reviewer objections and writing decisions into an executable patch plan that Stage 7 can apply without free-form judgment.
+
+Every patch must answer a specific question:
+
+> Which OSDI/SOSP-level reviewer objection does this patch neutralize, and what must change in the paper for that objection to no longer apply?
+
+A revision plan is invalid if it only says “rewrite,” “clarify,” “strengthen motivation,” or “improve flow” without specifying the affected claim, paragraph, section, evidence constraint, and expected reviewer-visible effect.
 
 ## Stage Type
 
@@ -15,138 +18,441 @@ planning-only
 
 ## Required Inputs
 
-- `critical-review.yaml` — all critiques, severity, grounding
-- `writing-strategy.yaml` — narrative, section, claim, and positioning strategy
-- `claim-evidence-grounding.yaml` — evidence constraints for claim changes
-- `contract.yaml` — target units, round objective
-- `workflows/paper/workflow.yaml` — valid patch types, patch schema reference
-- `workflows/paper/profile.md` — paper workflow semantics
-- `workflows/_shared/stage-protocol.md` — stage execution discipline
-- `workflows/_shared/patch-discipline.md` — patch traceability and dependency rules
-- `workflows/_shared/evidence-discipline.md` — evidence adequacy for claim patches
+* `critical-review.yaml` — reviewer critiques, severity, grounding, and likely objections.
+* `writing-strategy.yaml` — narrative, section, paragraph, sentence, claim, and positioning strategy.
+* `claim-evidence-grounding.yaml` — evidence strength, overclaims, claim risks, and evaluation obligations.
+* `osdi-sosp-reviewer-risk.yaml` — fatal/high reviewer risks if available.
+* `evaluation-obligations.yaml` — required experiments, baselines, workloads, and metrics if available.
+* `contract.yaml` — target document, target units, round objective, and scope.
+* Target paper document — current text and unit anchors.
+* `workflows/paper/workflow.yaml` — valid patch types and patch schema.
+* `workflows/paper/profile.md` — paper workflow semantics.
+* `workflows/_shared/stage-protocol.md` — stage execution discipline.
+* `workflows/_shared/patch-discipline.md` — patch traceability and dependency rules.
+* `workflows/_shared/evidence-discipline.md` — evidence adequacy and claim-strength rules.
 
 ## Allowed Writes
 
-- `revision-plan.yaml` — and ONLY revision-plan.yaml
-- `patch-plan.yaml` — and ONLY patch-plan.yaml
+* `revision-plan.yaml`
+* `patch-plan.yaml`
+* `deferred-obligations.yaml`
+* `no-patch-rationale.yaml`
+
+No target paper edits are allowed in this stage.
+
+## Outputs
+
+* `revision-plan.yaml` — full revision plan with dispositions, patches, and traceability.
+* `patch-plan.yaml` — ordered, dependency-aware patch execution plan.
+* `deferred-obligations.yaml` — deferred critiques requiring future rounds or evidence.
+* `no-patch-rationale.yaml` — rejected critiques with rationale and evidence.
+* `evaluation-obligations.yaml` — updated evaluation obligations linked to patches.
+* `osdi-sosp-reviewer-risk.yaml` — updated reviewer risk assessment reflecting patch dispositions.
 
 ## Required Procedure
 
-### Step 1: Load Strategy and Critique
-Read `writing-strategy.yaml` to get every strategic decision. Read `critical-review.yaml` to confirm that every critique has a disposition. Read `workflows/paper/workflow.yaml` to confirm valid patch types.
+### Step 1: Load Critiques, Strategy, and Evidence Constraints
+
+Read all critique items, writing-strategy decisions, and claim-evidence records.
+
+For each critique, identify:
+
+* critique ID;
+* severity;
+* affected section, paragraph, sentence, claim, contribution, or evaluation obligation;
+* likely reviewer objection;
+* evidence basis;
+* required repair;
+* whether the critique blocks paper patching.
+
+For each writing strategy item, identify:
+
+* target unit;
+* target section;
+* affected claim or paragraph;
+* intended rhetorical repair;
+* source critique;
+* evidence constraint.
+
+For each claim in `claim-evidence-grounding.yaml`, identify:
+
+* current wording;
+* evidence strength;
+* overclaim status;
+* evidence-supported wording;
+* whether the claim may be strengthened, weakened, moved, deleted, or must remain unchanged.
 
 ### Step 2: Disposition Every Critique
-For every critique in `critical-review.yaml`, record a disposition:
-- **accepted**: the critique is valid and will be addressed with a patch
-- **rejected**: the critique is invalid or unjustified — must explain why
-- **deferred**: the critique is valid but out of scope for this round — record as `next_round_candidate`
-- **disputed**: the critique raises a point that needs human judgment — flag for decision
 
-Every accepted critique MUST map to at least one patch. A critique with no patch and no explicit rejection/deferral is unresolved.
+Every critique from `critical-review.yaml` must receive one disposition:
 
-### Step 3: Generate Patches
-For each strategic decision in `writing-strategy.yaml`, generate one or more patches:
+* `accepted`: valid and repaired in this round.
+* `partially_accepted`: valid but only partially repaired in this round.
+* `rejected`: invalid, out of scope, already handled, or contradicted by stronger evidence.
+* `deferred`: valid but requires another round, new evidence, new experiments, or a different target unit.
+* `human_decision_required`: requires user judgment about scope, positioning, risk tolerance, or contribution framing.
 
-For section strategy decisions:
-- **section_restructure** patches: reorder, split, or merge sections
-- **paragraph_rewrite** patches: rewrite specific paragraphs within a unit
+Disposition rules:
 
-For claim strategy decisions:
-- **claim_weakening** patches: narrow the scope or soften the language of a claim
-- **claim_strengthening** patches: make a claim more definitive (only when evidence supports it)
+* Fatal critiques must be repaired, blocked by human decision, or explicitly marked impossible within scope.
+* High critiques should normally become patches unless they require missing evidence or out-of-scope work.
+* A critique about overclaiming cannot be rejected unless evidence shows the claim is actually supported.
+* A critique about missing baseline cannot be rejected unless the baseline is out of scope or already handled.
+* A critique about writing clarity cannot be accepted without a concrete target paragraph, sentence, or section operation.
 
-For positioning strategy decisions:
-- **related_work_repositioning** patches: reframe how prior work is discussed
-- **contribution_rewrite** patches: rewrite the contribution statement
+### Step 3: Convert Reviewer Objections into Patch Goals
 
-For evaluation gaps:
-- **evaluation_obligation_addition** patches: add evaluation requirements to the paper (as future work or explicit limitations)
+For every accepted or partially accepted critique, define a patch goal.
 
-### Step 4: Assign Patch IDs and Traceability
-Every patch MUST trace to:
-- One or more critique IDs → one disposition (accepted) → the strategic decision → this patch
+A patch goal must state:
 
-Record the full trace in the patch entry.
+* the reviewer objection to neutralize;
+* the current paper weakness;
+* the required paper-level change;
+* the evidence or strategy supporting the change;
+* the expected reviewer-visible effect.
 
-### Step 5: Define Expected Effect
-For each patch, state the expected effect on the paper:
-- What will be different after this patch is applied?
-- How will this address the source critique?
-- What should a reviewer notice that's different?
+Invalid patch goal:
 
-### Step 6: Order by Dependencies
-Order patches so that:
-- Structural patches (section restructure, reorder) come before content patches within the affected sections
-- Claim weakening/strengthening patches come before paragraph rewrites that depend on the revised claims
-- Patches that modify the same paragraph are ordered and their interactions noted
+> Improve motivation.
 
-### Step 7: Write Revision Plan
-Produce `revision-plan.yaml` and `patch-plan.yaml`.
+Valid patch goal:
+
+> Replace the current generic motivation paragraph in `paper.introduction` with a problem-root-cause paragraph that explains why container-level isolation cannot safely support privileged workload customization without exposing shared-kernel attack surface. This addresses CR-003 by making the problem specific, systems-relevant, and tied to a concrete isolation boundary.
+
+### Step 4: Choose Valid Patch Types
+
+Use only patch types declared in `workflows/paper/workflow.yaml`:
+
+* `paragraph_rewrite`
+* `section_restructure`
+* `claim_weakening`
+* `claim_strengthening`
+* `related_work_repositioning`
+* `evaluation_obligation_addition`
+* `contribution_rewrite`
+
+Patch type rules:
+
+* Use `section_restructure` when the order or role of sections/paragraph groups must change.
+* Use `paragraph_rewrite` when the local argument must be rewritten without changing the paper structure.
+* Use `claim_weakening` when the current claim exceeds available evidence.
+* Use `claim_strengthening` only when direct evidence supports stronger wording.
+* Use `related_work_repositioning` when the paper mispositions or underestimates prior work.
+* Use `evaluation_obligation_addition` when a claim cannot be defended without adding an experiment, proof, baseline, workload, or metric.
+* Use `contribution_rewrite` when the contribution statement is vague, overstated, misplaced, or not aligned with evidence.
+
+Do not use prose rewrite to hide an unresolved evidence, novelty, or baseline problem.
+
+### Step 5: Enforce Claim-Evidence Constraints
+
+Before creating each patch, check whether it modifies any claim.
+
+Rules:
+
+* A claim with `evidence_strength: none` may not be strengthened.
+* A claim with `evidence_strength: weak` may not be strengthened unless the patch also adds a concrete evaluation obligation and weakens the immediate paper wording.
+* A performance, scalability, security, compatibility, or correctness claim may not be made stronger without direct evidence, formal argument, or explicit evaluation obligation.
+* A novelty claim must be checked against dangerous related work.
+* If the evidence supports only a narrower scope, the patch must weaken or scope the claim.
+* If a claim is unsupported and nonessential, deletion is preferred over vague qualification.
+
+### Step 6: Define Patch Granularity
+
+Each patch should have one primary purpose.
+
+Allowed patch granularity:
+
+* section-level;
+* paragraph-level;
+* sentence-level;
+* claim-level;
+* contribution-level;
+* related-work-positioning-level;
+* evaluation-obligation-level.
+
+Do not combine unrelated repairs into a single patch.
+
+A patch may include multiple local edits only if they are necessary to repair the same reviewer objection.
+
+### Step 7: Build Argument-Dependency Order
+
+Order patches by argument dependency, not merely by location.
+
+Typical order:
+
+1. `section_restructure` patches that change the argument skeleton.
+2. Problem/motivation patches.
+3. Root-cause and insight patches.
+4. Claim weakening or strengthening patches.
+5. Contribution rewrite patches.
+6. Design/mechanism paragraph rewrites.
+7. Related-work repositioning patches.
+8. Evaluation-obligation additions.
+9. Local transition and paragraph rewrites.
+
+Dependency rules:
+
+* A contribution rewrite must depend on the claim changes that define the contribution.
+* A paragraph rewrite must depend on section restructure if the paragraph is moved.
+* A related-work repositioning patch must depend on the revised novelty or baseline claim.
+* An evaluation-obligation patch must depend on the claim it supports.
+* Patches that modify the same paragraph must be ordered explicitly.
+
+### Step 8: Record Traceability
+
+Every patch must trace through the full chain:
+
+`critique → disposition → writing strategy → claim/evidence constraint → patch → expected reviewer-visible effect`
+
+Record:
+
+* critique IDs;
+* disposition ID;
+* strategy item ID;
+* claim IDs;
+* evidence IDs;
+* reviewer-risk IDs;
+* evaluation-obligation IDs;
+* target units;
+* patch type;
+* dependencies.
+
+A patch without this trace is invalid.
+
+### Step 9: Define Expected Effect and Validation Criteria
+
+For every patch, state:
+
+* what will change in the paper;
+* how it addresses the critique;
+* what reviewer objection should no longer apply;
+* what claim becomes weaker, stronger, clearer, moved, or deleted;
+* how Stage 7 should verify successful application.
+
+Validation criteria must be specific.
+
+Invalid:
+
+> The section becomes clearer.
+
+Valid:
+
+> The first paragraph of `paper.introduction` now states a concrete systems problem, identifies the shared-kernel/privileged-workload conflict, and avoids unsupported claims about general security improvement.
+
+### Step 10: Handle Deferred Obligations
+
+For every deferred or partially accepted critique, create an entry in `deferred-obligations.yaml`.
+
+Each deferred obligation must include:
+
+* critique ID;
+* reason for deferral;
+* required future workflow;
+* required target unit;
+* required evidence, experiment, baseline, or human decision;
+* risk if not addressed.
+
+Do not use deferral to avoid difficult but in-scope repairs.
+
+### Step 11: Handle Rejected Critiques
+
+For every rejected critique, create an entry in `no-patch-rationale.yaml`.
+
+A rejection is valid only if:
+
+* the critique is factually wrong;
+* the critique is contradicted by stronger evidence;
+* the critique is out of scope for the current round;
+* the issue is already handled in the current paper;
+* the critique depends on an invalid interpretation of the paper.
+
+Every rejection must cite evidence, document location, or scope rationale.
+
+### Step 12: Produce Revision Plan and Patch Plan
+
+Write `revision-plan.yaml` and `patch-plan.yaml`.
 
 ## Output Contract
 
 ```yaml
 revision-plan.yaml:
   schema_version: "1.0.0"
-  round_id: integer
-  dispositions:
-    - critique_id: string           # CR-001, CR-002, ...
-      disposition: accepted | rejected | deferred | disputed
-      rationale: string             # why this disposition
-      patch_ids: [string]           # patches addressing this critique (if accepted)
-  patch_order:
-    - patch_id: string              # PP-001, PP-002, ...
-      patch_type: paragraph_rewrite | section_restructure | claim_weakening | claim_strengthening | related_work_repositioning | evaluation_obligation_addition | contribution_rewrite
-      target_units: [string]        # unit IDs from contract
-      source_critiques: [string]    # critique IDs
-      source_strategy: string       # reference to writing-strategy decision
-      description: string           # what this patch does
-      expected_effect: string       # what changes in the paper
-      dependencies: [string]        # patch IDs this patch depends on
-      estimated_impact: high | medium | low
+  round_id: string
+  project_id: string
+  target_document: string
 
+  plan_summary:
+    total_critiques: integer
+    accepted: integer
+    partially_accepted: integer
+    rejected: integer
+    deferred: integer
+    human_decision_required: integer
+    total_patches: integer
+    highest_unresolved_risk: fatal | high | medium | low | none
+    planning_status: ready_for_patch | blocked_by_human_decision | blocked_by_missing_evidence | blocked_by_scope
+
+  dispositions:
+    - disposition_id: string
+      critique_id: string
+      severity: fatal | high | medium | low
+      disposition: accepted | partially_accepted | rejected | deferred | human_decision_required
+      rationale: string
+      patch_ids:
+        - string
+      residual_risk: string | null
+
+  patch_order:
+    - patch_id: string
+
+  patches:
+    - patch_id: string
+      patch_type: paragraph_rewrite | section_restructure | claim_weakening | claim_strengthening | related_work_repositioning | evaluation_obligation_addition | contribution_rewrite
+      priority: critical | high | medium | low
+
+      target_units:
+        - string
+      target_locations:
+        - section: string
+          paragraph_id: string | null
+          sentence_id: string | null
+          anchor_description: string
+
+      trace:
+        critique_ids:
+          - string
+        disposition_ids:
+          - string
+        writing_strategy_refs:
+          - string
+        claim_ids:
+          - string
+        evidence_ids:
+          - string
+        reviewer_risk_ids:
+          - string
+        evaluation_obligation_ids:
+          - string
+
+      reviewer_objection_addressed: string
+      current_problem: string
+      patch_goal: string
+      expected_effect: string
+
+      claim_constraints:
+        modifies_claim: boolean
+        claim_change_type: none | weaken | strengthen | move | delete | split | clarify
+        evidence_strength: strong | moderate | weak | none | not_applicable
+        evidence_permits_change: boolean
+        required_wording_constraint: string
+
+      dependency_order:
+        depends_on:
+          - string
+        blocks:
+          - string
+        ordering_rationale: string
+
+      expected_diff_scope:
+        operation: insert | replace | delete | move | split | merge
+        estimated_paragraphs_changed: integer | null
+        estimated_lines_changed: integer | null
+        content_guidance: string
+
+      validation_criteria:
+        - string
+
+      residual_risks:
+        - string
+```
+
+```yaml
 patch-plan.yaml:
   schema_version: "1.0.0"
-  round_id: integer
+  round_id: string
   patches:
-    - patch_id: string              # PP-001, matches revision-plan
-      patch_type: string            # matches workflow.yaml patch_types
-      target_units: [string]
-      operation: insert | replace | delete
-      anchor_description: string    # where in the unit the change goes
-      content_guidance: string      # what to write (not exact text — that's stage 7)
-      claim_changes: [string]       # claim IDs modified
-      expected_diff_summary: string # one-line summary of the expected diff
+    - patch_id: string
+      patch_type: string
+      target_units:
+        - string
+      operation: insert | replace | delete | move | split | merge
+      anchor_description: string
+      content_guidance: string
+      claim_changes:
+        - claim_id: string
+          action: weaken | strengthen | move | delete | split | clarify | none
+      expected_diff_summary: string
+      dependencies:
+        - string
+      validation:
+        - string
+```
+
+```yaml
+deferred-obligations.yaml:
+  schema_version: "1.0.0"
+  obligations:
+    - obligation_id: string
+      critique_id: string
+      reason_for_deferral: string
+      required_future_workflow: paper | survey | design | experiment | proposal
+      required_target_unit: string | null
+      required_evidence_or_decision: string
+      risk_if_not_addressed: fatal | high | medium | low
+```
+
+```yaml
+no-patch-rationale.yaml:
+  schema_version: "1.0.0"
+  decisions:
+    - critique_id: string
+      rationale: string
+      evidence_or_scope_basis: string
+      residual_risk: string | null
 ```
 
 ## Quality Gates
 
-- [ ] Every critique from `critical-review.yaml` has a disposition entry
-- [ ] Every `accepted` disposition maps to at least one patch
-- [ ] Every `rejected` disposition has a rationale that addresses the critique's grounding
-- [ ] Every `deferred` disposition identifies the round or condition for addressing it
-- [ ] Patch IDs are sequential (PP-001, PP-002, ...) and unique
-- [ ] Patch types are from `workflows/paper/workflow.yaml` `patch_types` — no invented types
-- [ ] Dependency ordering is valid — no patch depends on a later patch
-- [ ] Every patch targets at least one unit from `contract.yaml` `target_units`
-- [ ] `patch-plan.yaml` entries match `revision-plan.yaml` entries 1:1
+* Every critique from `critical-review.yaml` has exactly one disposition.
+* Every accepted critique maps to at least one patch.
+* Every partially accepted critique maps to at least one patch and one residual risk or deferred obligation.
+* Every rejected critique has evidence-backed or scope-backed rationale.
+* Every deferred critique identifies a future workflow, target unit, or required evidence.
+* Every patch uses a patch type declared in `workflows/paper/workflow.yaml`.
+* Every patch targets only units allowed by `contract.yaml`.
+* Every patch has critique trace, strategy trace, claim/evidence trace, expected effect, dependency order, and validation criteria.
+* No claim is strengthened unless `claim-evidence-grounding.yaml` permits it.
+* Every patch dependency points to an earlier patch in `patch_order`.
+* `patch-plan.yaml` entries match `revision-plan.yaml` patches one-to-one.
+* The plan is executable by Stage 7 without unstated judgment.
 
 ## Failure Conditions
 
-- A critique with no disposition — STOP; every critique must be resolved
-- A patch with `patch_type` not in workflow.yaml `patch_types` — STOP; invalid patch type
-- A dependency cycle — STOP; reorder patches
-- A patch that targets a unit not in `target_units` — STOP; out of scope
-- A claim_strengthening patch for a claim with `evidence_strength: weak` or `none` — STOP; cannot strengthen without evidence
+Stop and report a blocker if:
+
+* any critique lacks a disposition;
+* any accepted critique lacks a patch;
+* any patch uses an invalid patch type;
+* any patch targets a unit outside the contract;
+* any patch dependency is cyclic or points forward incorrectly;
+* any claim-strengthening patch targets a weak or unsupported claim;
+* a fatal critique cannot be repaired, deferred with scope rationale, or assigned to human decision;
+* the patch plan is too vague for Stage 7 to apply without free editing.
 
 ## Forbidden Behavior
 
-- Do not apply patches to the paper document — planning-only stage
-- Do not generate patches without a traceable critique → disposition → strategy chain
-- Do not skip disposition for any critique — even minor critiques get a disposition
-- Do not invent patch types — use only types from `workflow.yaml`
-- Do not create patches for units outside `target_units`
+* Do not apply patches to the paper document.
+* Do not generate patches without critique → disposition → strategy trace.
+* Do not use generic patch descriptions such as “improve clarity.”
+* Do not invent patch types.
+* Do not plan edits outside target units.
+* Do not strengthen unsupported claims.
+* Do not defer hard in-scope critiques merely to avoid revision.
+* Do not reject critiques without evidence or scope rationale.
+* Do not reorder patches arbitrarily.
+* Do not hide evidence gaps through rhetorical rewriting.
 
 ## Advance Rule
 
-After all quality gates pass and both artifacts are written, run `cr stage advance`.
+After `revision-plan.yaml`, `patch-plan.yaml`, `deferred-obligations.yaml`, and `no-patch-rationale.yaml` are produced and all quality gates pass, run `cr stage advance`.

@@ -1,17 +1,138 @@
 # Stage 4: Reviewer Critique
 
-## Purpose
+## Critical Thinking Protocol
 
-Simulate a top-venue reviewer reading the paper for the first time. The reviewer is adversarial, evidence-demanding, and precise — they are trying to find reasons to reject, not reasons to accept. This stage produces a structured critique that drives the entire revision pipeline: strategy (stage 5), revision plan (stage 6), and patches (stage 7).
+This stage must apply structured critical thinking, not checklist-style validation. The reviewer must actively search for reasons why the paper's argument may be false, incomplete, overstated, or insufficient for OSDI/SOSP acceptance.
 
-This stage must NOT:
-- Propose specific text changes (that's stage 6)
-- Weaken claims to avoid critique (that's stage 5)
-- Be gentle — the point is to find every vulnerability before a real reviewer does
+For every major claim, contribution, design decision, and evaluation result, apply the following protocol.
 
-## Stage Type
+### 1. Decompose the Claim
 
-analysis-only
+Break each claim into its hidden components:
+
+* What is the explicit claim?
+* What assumptions must be true for the claim to hold?
+* What property is being claimed: performance, security, correctness, compatibility, generality, simplicity, deployability, or novelty?
+* What scope is implied but not stated?
+* What comparison baseline is assumed?
+* What evidence would actually falsify the claim?
+
+A claim is not valid merely because it sounds plausible. It is valid only if its assumptions, scope, baseline, and required evidence are explicit.
+
+### 2. Search for Alternative Explanations
+
+For each claimed improvement or observation, ask:
+
+* Could the result be explained by implementation effort rather than a new idea?
+* Could the improvement come from a weaker baseline?
+* Could the result be caused by workload choice, hardware choice, parameter tuning, caching effects, benchmark artifacts, or omitted overhead?
+* Could the paper be solving a narrower problem than it claims?
+* Could prior systems already achieve the same effect under a different name or abstraction?
+
+If a plausible alternative explanation exists, record it as a reviewer risk. The paper must either rule it out or weaken the claim.
+
+### 3. Attack the Root Cause
+
+For every root-cause claim, ask:
+
+* Is this really the root cause, or only a symptom?
+* Does the paper show that existing approaches fail for this reason?
+* Could a simpler modification to prior systems address the same problem?
+* Is the root cause specific enough to justify the proposed design?
+* Would an expert reviewer consider this root cause already known?
+
+A weak root-cause claim is a high-risk issue because it undermines the necessity of the whole paper.
+
+### 4. Attack the Insight
+
+For every claimed insight, ask:
+
+* Is the insight non-obvious?
+* Is it more than an engineering choice?
+* Does it explain why the design works?
+* Does it distinguish the paper from prior work?
+* Could a reviewer summarize the insight in one sentence?
+* Would the paper still make sense if the insight were removed?
+
+If the insight is merely “we use X to improve Y,” classify it as weak. A top-tier systems paper usually needs a deeper observation about why previous abstractions, boundaries, policies, or mechanisms are misplaced.
+
+### 5. Attack the Baselines
+
+For every evaluation or comparison claim, ask:
+
+* Is the strongest competing system included?
+* Is the baseline configured fairly?
+* Would a tuned baseline close the gap?
+* Is the baseline missing a known optimization?
+* Is the paper comparing against an outdated or artificially weak system?
+* Is there a dangerous adjacent baseline that the authors did not discuss?
+
+If a stronger baseline could invalidate the contribution, mark the claim as high or fatal risk.
+
+### 6. Attack the Evaluation Contract
+
+For every empirical claim, ask:
+
+* Does the experiment test the exact claim?
+* Are the metrics sufficient?
+* Are the workloads representative?
+* Are variance, failure cases, and tail behavior reported?
+* Are ablations sufficient to isolate the paper's mechanism?
+* Are negative results or limitations hidden?
+* Does the evaluation distinguish mechanism benefit from implementation artifact?
+
+Evidence is insufficient if it supports only a weaker or different claim.
+
+### 7. Attack the Generalization
+
+For every broad claim, ask:
+
+* Does the evidence support this generality?
+* Does the claim hold only for one workload, platform, implementation, or threat model?
+* Are there obvious cases where the design would fail?
+* Does the paper state the boundary of applicability?
+* Would a reviewer accuse the paper of overgeneralizing?
+
+If the claim generalizes beyond the tested setting, require either stronger evidence or narrower wording.
+
+### 8. Apply the Rejection Test
+
+For each major section and core claim, write the strongest possible rejection argument:
+
+* What would Reviewer A say if they are skeptical of novelty?
+* What would Reviewer B say if they care about systems practicality?
+* What would Reviewer C say if they care about evaluation rigor?
+* What would Reviewer D say if they know the closest related work very well?
+
+The critique must not stop at identifying weaknesses. It must explain how those weaknesses would appear in an actual OSDI/SOSP review.
+
+### 9. Apply the Minimum Acceptance Bar
+
+For every core contribution, determine the minimum bar for acceptance:
+
+* What must be true for this contribution to be publishable at OSDI/SOSP?
+* What evidence is mandatory rather than optional?
+* What baseline must be beaten or explained?
+* What limitation must be acknowledged?
+* What claim must be weakened if evidence cannot be added?
+* What would make the paper clearly rejectable?
+
+A paper is not top-tier-ready because it has a coherent story. It is top-tier-ready only if the strongest foreseeable objections are either answered, neutralized, or explicitly scoped out.
+
+### 10. Record Counterevidence and Unresolved Doubt
+
+The output must include not only supporting evidence but also:
+
+* counterevidence
+* missing evidence
+* dangerous prior work
+* alternative explanations
+* unresolved assumptions
+* reviewer objections
+* falsification tests
+* minimum repair actions
+
+If the paper survives only because the analysis is charitable, the stage has failed.
 
 ## Required Inputs
 

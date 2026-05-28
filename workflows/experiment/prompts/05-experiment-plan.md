@@ -93,8 +93,18 @@ experiment-execution-plan.yaml:
     pre_experiment: [string]
     during_experiment: [string]
     post_experiment: [string]
-```
 
+experiment-materials-checklist.yaml:
+  schema_version: "1.0.0"
+  round_id: integer
+  hardware: [{ item: string, quantity: integer, spec: string, calibration_required: boolean }]
+  software: [{ name: string, version: string, license: string, configuration: string }]
+  instruments: [{ name: string, model: string, calibration_due: string }]
+  environment: [{ parameter: string, required_value: string, tolerance: string }]
+  stimuli: [{ name: string, format: string, validation_status: string }]
+  questionnaires: [{ name: string, source: string, language: string, scoring_available: boolean }]
+  documentation: [{ document: string, status: ready | needs_update | missing }]
+```
 ## Failure Conditions
 - Participant flow missing any phase (recruitment, consent, assignment, session, debriefing).
 - Materials section missing any category.

@@ -36,5 +36,6 @@
 
 ## Output
 - `document-diff.yaml`
+- `next-round-targets.yaml`
 - `closure.md`
 - Validation report (pass/fail with details)

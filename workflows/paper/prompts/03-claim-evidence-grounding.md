@@ -1,131 +1,362 @@
-# Stage 3: Claim-Evidence Grounding
+# Stage 3: OSDI/SOSP Reviewer-Grounded Claim-Evidence Analysis
 
 ## Purpose
 
-Map every claim in the paper to its supporting evidence, assess evidence strength, and identify gaps. This stage transforms the claim inventory from stage 2 into a risk-ranked evidence assessment that drives the reviewer critique in stage 4. A claim without adequate evidence is a vulnerability — this stage finds every vulnerability.
+This stage evaluates the target paper through the lens of an OSDI/SOSP-level systems reviewer. It does not merely check whether each claim has some evidence. It determines whether the paper's problem, insight, design, implementation, evaluation, and positioning would be considered defensible by a top-tier systems program committee.
 
-This stage must NOT:
-- Critique the paper's arguments (that's stage 4)
-- Propose claim wording changes (that's stage 5)
-- Judge whether a claim is "good" — only whether it is supported
+This stage must simultaneously perform two tasks:
+
+1. **Venue-grounded research**: study how OSDI/SOSP-level papers in the same area structure their motivation, technical insight, system design, evaluation, baselines, and claims.
+2. **Reviewer-grounded audit**: use the extracted venue norms and exemplar-paper patterns to assess whether the target paper's claims, evidence, argument flow, and evaluation obligations are strong enough for OSDI/SOSP review.
+
+A claim without evidence is a vulnerability. A claim with evidence but without top-tier relevance, novelty, baseline strength, or evaluation alignment is also a vulnerability. This stage must expose both kinds of weakness.
 
 ## Stage Type
 
-analysis-only
+research-and-analysis-only
+
+This stage may write structured analysis artifacts but must not modify the target paper. Concrete rewriting belongs to later stages.
 
 ## Required Inputs
 
-- `paper-state.yaml` — claim inventory with claim text and locations
-- `contract.yaml` — round scope, read-only context, loaded knowledge cards
-- `workflows/paper/profile.md` — paper workflow semantics
-- `workflows/_shared/stage-protocol.md` — stage execution discipline
-- `workflows/_shared/evidence-discipline.md` — evidence types, strength, and adequacy rules
-- The target paper document — to verify evidence claims in context
+* `paper-state.yaml` — claim inventory, contribution inventory, section structure, and known weak spots.
+* `contract.yaml` — round scope, mutable document, target units, and read-only context.
+* Target paper document — the paper under review.
+* `references/evidence-standards.md` — evidence quality rules.
+* `references/evaluation-contracts.md` — claim-type to evaluation-type mapping.
+* `references/domain-profiles.md` — area-specific systems-review expectations.
+* `workflows/paper/profile.md` — paper workflow semantics.
+* External sources:
+
+  * OSDI/SOSP official call-for-papers and author instructions.
+  * Recent OSDI/SOSP accepted papers in the same or adjacent area.
+  * Canonical OSDI/SOSP papers that define the relevant research style, baseline standard, or evaluation norm.
 
 ## Allowed Writes
 
-- `claim-evidence-grounding.yaml` — and ONLY claim-evidence-grounding.yaml
+* `venue-norm-ledger.yaml`
+* `exemplar-paper-analysis.yaml`
+* `claim-evidence-grounding.yaml`
+* `osdi-sosp-reviewer-risk.yaml`
+* `evaluation-obligations.yaml`
+
+No target document edits are allowed in this stage.
+
+## Outputs
+
+* `claim-evidence-grounding.yaml` — complete claim→evidence map with reviewer risk assessment
+* `venue-norm-ledger.yaml` — extracted OSDI/SOSP acceptance criteria
+* `exemplar-paper-analysis.yaml` — corpus analysis of top-tier papers
+* `osdi-sosp-reviewer-risk.yaml` — per-claim reviewer risk assessment
+* `evaluation-obligations.yaml` — mandatory evaluation obligations per weak claim
 
 ## Required Procedure
 
-### Step 1: Load Paper State and Evidence Discipline
-Read `paper-state.yaml` to get the complete claim inventory. Read `workflows/_shared/evidence-discipline.md` to internalize the evidence adequacy rules. Read `contract.yaml` for read-only context documents that may contain evidence.
+### Step 1: Extract OSDI/SOSP Review Criteria
 
-### Step 2: Map Each Claim to Evidence
-For every claim in the claim inventory:
-- What evidence does the paper cite for this claim? (experiment, proof, prior work citation, logical argument, none)
-- Is the cited evidence present in the paper? (yes, in section X / no, only referenced / no, missing entirely)
-- What type of evidence is it? (direct measurement, formal proof, cited prior work, ablation, logical argument, anecdote)
+Read the current OSDI and SOSP call-for-papers and author instructions. Extract the explicit acceptance criteria, including:
 
-### Step 3: Assess Evidence Strength
-For each claim:
-- **Strong**: direct measurement or formal proof that directly tests the claim
-- **Moderate**: cited prior work that addresses the claim but not directly, or ablation that partially supports
-- **Weak**: logical argument only, with no empirical or formal backing
-- **None**: no evidence whatsoever
+* novelty
+* significance
+* interest to the systems community
+* clarity
+* relevance
+* correctness
+* problem importance
+* compelling solution
+* demonstrated practicality and benefit
+* appropriate conclusions
+* clear contributions
+* advances beyond previous work
+* accessibility to the broader systems community
+* whether the paper must stand alone without supplementary material
+* any track-specific criteria, such as operational systems, deployed systems, measurement papers, or experience papers
 
-### Step 4: Identify Overclaims
-For each claim, compare the claim's wording to what the evidence actually supports:
-- Does the claim assert stronger conclusions than the evidence warrants?
-- Does the claim generalize beyond the tested conditions?
-- Does the claim omit scope limitations present in the evidence?
+Write these criteria into `venue-norm-ledger.yaml`.
 
-### Step 5: Generate Evaluation Obligations
-For each claim with weak or missing evidence:
-- What specific evidence would close the gap? (an experiment, a proof, a citation)
-- What would the evidence need to demonstrate?
-- How critical is closing this gap to the paper's contribution?
+### Step 2: Build an Exemplar Corpus
 
-### Step 6: Flag High-Risk Claims
-Claims that are:
-- Core claims with weak or no evidence
-- Claims that contradict loaded knowledge cards
-- Claims that are worded as absolutes but backed only by logical argument
-- Claims that the evidence directly contradicts
+Identify a small but high-quality corpus of OSDI/SOSP papers that are closest to the target paper. The corpus must include:
 
-### Step 7: Write Claim-Evidence Grounding
-Produce `claim-evidence-grounding.yaml` with the complete mapping.
+* 3–5 recent OSDI/SOSP papers in the same topic area.
+* 2–3 canonical OSDI/SOSP papers that shaped the relevant research style.
+* 1–2 dangerous adjacent baselines that a reviewer may use to reject or weaken the paper.
 
-## Output Contract
+For each paper, record:
+
+* venue and year
+* research object
+* problem setting
+* core root cause
+* central insight
+* system mechanism
+* implementation scale
+* evaluation contract
+* strongest baselines
+* primary claims
+* claim wording style
+* limitations
+* how the paper positions itself against prior work
+
+Write this into `exemplar-paper-analysis.yaml`.
+
+### Step 3: Infer Venue-Level Argument Patterns
+
+From the exemplar corpus, extract reusable top-tier systems-paper patterns:
+
+* How do accepted papers motivate the problem?
+* Where do they place the root cause?
+* How do they turn the root cause into a technical insight?
+* How much implementation detail is needed before the design becomes credible?
+* What kinds of baselines are treated as dangerous?
+* What evaluation dimensions are considered mandatory?
+* How do they avoid overclaiming?
+* How do they state limitations without weakening the contribution?
+* What claims are acceptable in the introduction, design, implementation, and evaluation sections?
+* What claims require experiments, formal arguments, artifact evidence, or production evidence?
+
+Do not summarize papers as a literature survey. Extract review-relevant norms.
+
+### Step 4: Map Target Claims to OSDI/SOSP Evaluation Contracts
+
+For every claim in `paper-state.yaml`, classify:
+
+* claim type:
+
+  * motivation claim
+  * root-cause claim
+  * novelty claim
+  * design claim
+  * mechanism claim
+  * security claim
+  * performance claim
+  * compatibility claim
+  * scalability claim
+  * usability/deployability claim
+  * comparison claim
+  * limitation claim
+* required evidence type:
+
+  * direct experiment
+  * ablation
+  * benchmark comparison
+  * formal invariant/proof
+  * code/artifact evidence
+  * deployment/experience evidence
+  * related-work comparison
+  * threat model argument
+  * workload analysis
+  * failure-case analysis
+* current evidence in the paper
+* evidence strength
+* missing evidence
+* whether the evidence would satisfy an OSDI/SOSP reviewer
+
+### Step 5: Perform Reviewer-Style Risk Assessment
+
+For each major claim and each major section, assess the following reviewer risks:
+
+* **Problem Risk**: Is the problem important enough for OSDI/SOSP?
+* **Novelty Risk**: Would reviewers say the idea is incremental over prior systems?
+* **Insight Risk**: Is the insight non-obvious, or is it merely an implementation choice?
+* **Design Risk**: Are mechanisms specified clearly enough to be evaluated?
+* **Correctness Risk**: Are invariants, assumptions, and failure cases explicit?
+* **Evaluation Risk**: Do experiments actually test the claims made in the paper?
+* **Baseline Risk**: Are the strongest competing systems missing or under-discussed?
+* **Scope Risk**: Does the paper overgeneralize beyond tested settings?
+* **Writing Risk**: Does the argument chain progress linearly from problem to root cause to insight to design to evidence?
+* **Community-Interest Risk**: Would a substantial fraction of OSDI/SOSP attendees care?
+
+Each risk must be rated:
+
+* fatal
+* high
+* medium
+* low
+
+For every fatal or high risk, provide:
+
+* the exact paper claim or section that triggers the risk
+* the reviewer objection likely to be written
+* the missing evidence or missing argument
+* the closest OSDI/SOSP exemplar pattern that the paper fails to match
+* the minimum repair required in later stages
+
+Write this into `osdi-sosp-reviewer-risk.yaml`.
+
+### Step 6: Identify Overclaims and Underclaims
+
+For every claim, determine whether it is:
+
+* properly supported
+* overclaimed
+* underclaimed
+* misplaced
+* too vague
+* too implementation-specific
+* too broad for the evaluation
+* too weak to communicate the contribution
+
+Overclaiming must be judged against both the paper's own evidence and the exemplar-paper norms.
+
+For each overclaim, record:
+
+* current wording
+* evidence-supported wording
+* required additional evidence if the stronger wording is retained
+* likely reviewer criticism
+
+For each underclaim, record:
+
+* missed contribution
+* evidence that could support a stronger claim
+* where the stronger claim should appear
+
+### Step 7: Generate Evaluation Obligations
+
+For every weak, unsupported, or reviewer-risky claim, generate an evaluation obligation:
+
+* obligation ID
+* linked claim ID
+* claim type
+* required experiment or argument
+* required baseline
+* required workload
+* required metric
+* expected reviewer question
+* whether the obligation is mandatory for OSDI/SOSP submission
+* whether the paper can instead weaken or delete the claim
+
+Write this into `evaluation-obligations.yaml`.
+
+### Step 8: Write Claim-Evidence Grounding
+
+Produce `claim-evidence-grounding.yaml` with the complete claim map.
+
+The output must include:
 
 ```yaml
-claim-evidence-grounding.yaml:
-  schema_version: "1.0.0"
-  round_id: integer
-  claim_evidence_map:
-    - claim_id: string               # C-001, matches paper-state.yaml
-      claim_text: string             # verbatim from paper-state.yaml
-      evidence_cited:
-        type: direct_measurement | formal_proof | cited_prior_work | ablation | logical_argument | none
-        location: string | null      # where in the paper, if present
-        description: string          # what the evidence is
-      evidence_strength: strong | moderate | weak | none
-      overclaim_assessment:
-        is_overclaimed: boolean
-        explanation: string          # if overclaimed: what the evidence actually supports
-        suggested_scope: string      # the scope the evidence actually justifies
-      evaluation_obligation:
-        needed: boolean
-        description: string | null   # what evidence would close the gap
-        criticality: critical | important | nice_to_have
-      risk_level: high | medium | low
-      risk_rationale: string         # why this risk level
-  summary:
-    total_claims: integer
-    strong_evidence: integer
-    moderate_evidence: integer
-    weak_evidence: integer
-    no_evidence: integer
-    overclaimed: integer
-    high_risk: integer
-  critical_gaps: [string]            # claim IDs that are both core and high-risk
+schema_version: "2.0.0"
+round_id: string
+
+venue_criteria:
+  target_venues:
+    - OSDI
+    - SOSP
+  criteria_summary:
+    novelty: string
+    significance: string
+    interest: string
+    clarity: string
+    relevance: string
+    correctness: string
+    practicality: string
+    contribution_vs_prior_work: string
+
+exemplar_corpus:
+  - source_id: string
+    venue: string
+    year: integer
+    title: string
+    relevance_to_target: high | medium | low
+    extracted_pattern:
+      problem_framing: string
+      root_cause: string
+      insight: string
+      design_structure: string
+      evaluation_contract: string
+      baseline_strategy: string
+      claim_style: string
+
+claim_evidence_map:
+  - claim_id: string
+    location: string
+    claim_text: string
+    claim_type: string
+    role_in_paper:
+      core_contribution: boolean
+      section_role: motivation | background | design | implementation | evaluation | related_work | conclusion
+    required_evidence:
+      evidence_type: string
+      rationale: string
+    current_evidence:
+      type: direct_measurement | formal_proof | cited_prior_work | ablation | artifact | logical_argument | none
+      location: string | null
+      description: string
+      source_refs: [string]
+    evidence_strength: strong | moderate | weak | none
+    osdi_sosp_sufficiency:
+      sufficient_for_submission: boolean
+      explanation: string
+    overclaim_assessment:
+      status: supported | overclaimed | underclaimed | vague | misplaced
+      explanation: string
+      evidence_supported_wording: string
+    reviewer_risk:
+      level: fatal | high | medium | low
+      likely_reviewer_objection: string
+      repair_required: string
+    evaluation_obligation:
+      needed: boolean
+      obligation_id: string | null
+      description: string | null
+      mandatory_for_top_tier_submission: boolean
+
+summary:
+  total_claims: integer
+  core_claims: integer
+  strong_evidence: integer
+  moderate_evidence: integer
+  weak_evidence: integer
+  no_evidence: integer
+  overclaimed: integer
+  fatal_risks: integer
+  high_risks: integer
+  mandatory_evaluation_obligations: integer
+
+critical_gaps:
+  - claim_id: string
+    reason: string
+    minimum_repair: string
 ```
 
 ## Quality Gates
 
-- [ ] Every claim from `paper-state.yaml` has a corresponding entry in `claim_evidence_map`
-- [ ] No claims are missing — the count in `summary.total_claims` matches the claim inventory
-- [ ] Evidence strength is justified — each "strong" or "weak" rating has a specific reason
-- [ ] Overclaim assessments cite specific wording differences between claim and evidence
-- [ ] Every claim with `evidence_strength: none` has an evaluation obligation
-- [ ] `critical_gaps` lists only core claims that are also high-risk
-- [ ] Summary counts add up correctly: strong + moderate + weak + none == total_claims
+* Every claim from `paper-state.yaml` must appear in `claim_evidence_map`.
+* Every core claim must have an explicit OSDI/SOSP sufficiency judgment.
+* Every fatal or high risk must include a likely reviewer objection.
+* Every claim marked strong must identify direct evidence that tests the claim.
+* Logical argument alone is not sufficient for performance, scalability, security, or compatibility claims.
+* Every novelty claim must be checked against dangerous prior work.
+* Every evaluation claim must identify the baseline, workload, metric, and tested condition.
+* Every major contribution must be compared against at least one OSDI/SOSP exemplar or canonical related system.
+* The analysis must distinguish between missing evidence, weak writing, weak novelty, weak evaluation, and weak problem significance.
+* The paper must be judged as a self-contained submission; supplementary material cannot be required for understanding the core contribution.
 
 ## Failure Conditions
 
-- A claim in `paper-state.yaml` has no entry in the evidence map — STOP, incomplete analysis
-- Evidence is asserted to exist but cannot be found in the paper — STOP, do not fabricate evidence
-- A core claim has `evidence_strength: none` — this is a critical finding, not a failure; record it and proceed
+Stop and report a blocker if:
+
+* The paper-state claim inventory is incomplete.
+* The stage cannot identify any relevant OSDI/SOSP exemplar papers.
+* A core claim has no evidence and no possible evaluation obligation.
+* A novelty claim cannot be assessed because related work is missing.
+* A performance or scalability claim lacks baseline, workload, or metric.
+* A security claim lacks attacker model, trust boundary, or failure condition.
+* The paper depends on supplementary material for a core contribution.
 
 ## Forbidden Behavior
 
-- Do not fabricate evidence — if evidence is missing, say so
-- Do not inflate evidence strength — logical argument is not "moderate"
-- Do not dismiss missing evidence as "acceptable for this venue" without citing venue standards
-- Do not modify the paper document — analysis-only stage
-- Do not propose claim wording changes — that belongs in stage 5
-- Do not skip claims because they seem "obviously supported" — every claim gets assessed
+* Do not defend the paper by default.
+* Do not polish unsupported claims.
+* Do not treat a weak but plausible idea as top-tier ready.
+* Do not fabricate exemplar-paper patterns.
+* Do not cite a paper as an exemplar without extracting its actual argument pattern.
+* Do not call evidence strong unless it directly supports the exact claim wording.
+* Do not ignore dangerous related work because it weakens the paper.
+* Do not collapse all weaknesses into “needs more evaluation”; distinguish motivation, novelty, design, correctness, baseline, and writing failures.
+* Do not modify the paper in this stage.
 
 ## Advance Rule
 
-After all quality gates pass and `claim-evidence-grounding.yaml` is written, run `cr stage advance`.
+After all required YAML files are produced and all quality gates pass, run `cr stage advance`.
