@@ -18,6 +18,128 @@ prompt_pack:
   claim_alignment: workflows/paper/prompts/08-claim-alignment.md
   knowledge_delta: workflows/paper/prompts/09-knowledge-delta.md
   closure: workflows/paper/prompts/10-closure.md
+stage_contracts:
+  contract:
+    prompt: workflows/paper/prompts/01-contract.md
+    required_inputs:
+      - project.yaml
+      - documents/registry.yaml
+    required_outputs:
+      - contract.yaml
+    allowed_writes:
+      - contract.yaml
+    validators:
+      - cr-validate-round-contract
+  paper_state:
+    prompt: workflows/paper/prompts/02-paper-state.md
+    required_inputs:
+      - contract.yaml
+    required_outputs:
+      - paper-state.yaml
+    allowed_writes:
+      - paper-state.yaml
+    validators:
+      - cr-validate-paper-units
+  claim_evidence_grounding:
+    prompt: workflows/paper/prompts/03-claim-evidence-grounding.md
+    required_inputs:
+      - paper-state.yaml
+      - contract.yaml
+    required_outputs:
+      - claim-evidence-grounding.yaml
+    allowed_writes:
+      - claim-evidence-grounding.yaml
+    validators:
+      - cr-validate-claim-evidence
+  reviewer_critique:
+    prompt: workflows/paper/prompts/04-reviewer-critique.md
+    required_inputs:
+      - paper-state.yaml
+      - claim-evidence-grounding.yaml
+    required_outputs:
+      - critical-review.yaml
+    allowed_writes:
+      - critical-review.yaml
+    validators: []
+  writing_strategy:
+    prompt: workflows/paper/prompts/05-writing-strategy.md
+    required_inputs:
+      - critical-review.yaml
+      - paper-state.yaml
+      - claim-evidence-grounding.yaml
+    required_outputs:
+      - writing-strategy.yaml
+    allowed_writes:
+      - writing-strategy.yaml
+    validators: []
+  revision_plan:
+    prompt: workflows/paper/prompts/06-revision-plan.md
+    required_inputs:
+      - critical-review.yaml
+      - writing-strategy.yaml
+      - contract.yaml
+    required_outputs:
+      - revision-plan.yaml
+      - patch-plan.yaml
+    allowed_writes:
+      - revision-plan.yaml
+      - patch-plan.yaml
+    validators: []
+  apply_paper_patch:
+    prompt: workflows/paper/prompts/07-apply-paper-patch.md
+    required_inputs:
+      - revision-plan.yaml
+      - contract.yaml
+    required_outputs:
+      - patch-trace.yaml
+      - document-diff.yaml
+    allowed_writes:
+      - patch-trace.yaml
+      - document-diff.yaml
+    validators:
+      - cr-validate-paper-patch
+      - cr-validate-writing-diff
+  claim_alignment:
+    prompt: workflows/paper/prompts/08-claim-alignment.md
+    required_inputs:
+      - claim-evidence-grounding.yaml
+      - patch-trace.yaml
+      - document-diff.yaml
+    required_outputs:
+      - claim-alignment.yaml
+    allowed_writes:
+      - claim-alignment.yaml
+    validators:
+      - cr-validate-paper-claims
+      - cr-validate-paper-evidence-alignment
+  knowledge_delta:
+    prompt: workflows/paper/prompts/09-knowledge-delta.md
+    required_inputs:
+      - critical-review.yaml
+      - patch-trace.yaml
+      - document-diff.yaml
+    required_outputs:
+      - knowledge-delta.yaml
+    allowed_writes:
+      - knowledge-delta.yaml
+    validators: []
+  closure:
+    prompt: workflows/paper/prompts/10-closure.md
+    required_inputs:
+      - contract.yaml
+      - patch-trace.yaml
+      - document-diff.yaml
+      - knowledge-delta.yaml
+    required_outputs:
+      - next-round-targets.yaml
+    allowed_writes:
+      - next-round-targets.yaml
+    validators:
+      - cr-validate-single-mutable-document
+      - cr-validate-paper-patch
+      - cr-validate-writing-diff
+      - cr-validate-paper-claims
+      - cr-validate-paper-evidence-alignment
 stage_order:
   - contract
   - paper_state

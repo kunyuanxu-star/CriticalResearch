@@ -96,6 +96,10 @@ Round execution follows: contract → state snapshot → evidence/research → c
 - **Inv8**: Every applied patch must be reflected in the target document and documented in `document-diff.yaml`.
 - **Inv9**: Every round must produce a `knowledge-delta.yaml` or an explicit no-delta justification.
 - **Inv10**: Round closure requires all stages complete, all validators passing, and no pending human decisions.
+- **Inv-PromptPack**: Every workflow MUST define a complete `prompt_pack` in its `workflow.yaml`. The `prompt_pack` MUST contain exactly one entry per stage in `stage_order` — no missing prompts, no extra prompts. Every prompt path MUST resolve to an existing file. Discrepancy is a structural error.
+- **Inv-StageContract**: For every stage in `stage_order`, there MUST be exactly one entry in `stage_contracts`. The `stage_contracts` entry MUST declare `prompt`, `required_inputs`, `required_outputs`, `allowed_writes`, and `validators`. `prompt_pack` prompt paths MUST match `stage_contracts` prompt paths exactly. Discrepancy is a structural error.
+- **Inv-WorkflowSpecificity**: Stage prompts MUST be workflow-specific. Each prompt MUST reference the workflow's `profile.md` for domain semantics, `workflow.yaml` for valid patch types and rubric, and workflow-specific schemas. A prompt that could be dropped into a different workflow unchanged is insufficiently specific.
+- **Inv-NoGenericStage**: No stage may use a prompt from another workflow or a shared prompt as its primary stage prompt. Shared discipline documents (`workflows/_shared/`) are reference material only — they supplement workflow-specific prompts but never replace them. Every stage's primary prompt MUST live in `workflows/<workflow_id>/prompts/`.
 
 ## Research Posture
 
