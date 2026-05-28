@@ -46,8 +46,7 @@ fi
 echo "=== CriticalResearch v2 Validator Pipeline ==="
 echo "Project: $PROJECT_ID"
 echo ""
-
-# ── Engine-level validators (always run) ──
+VALIDATION_FAILED=0
 
 run_validator() {
     local label="$1"
@@ -55,10 +54,13 @@ run_validator() {
     shift 2
     if [ -x "$script" ]; then
         echo "── $label ──"
-        "$script" "$@" || true
+        if ! "$script" "$@"; then
+            VALIDATION_FAILED=1
+        fi
         echo ""
     else
         echo "── $label (SKIP: not found) ──"
+        VALIDATION_FAILED=1
         echo ""
     fi
 }
@@ -138,11 +140,16 @@ if [ -n "$ROUND_DIR" ] && [ -d "$ROUND_DIR" ]; then
 
     # Round closure check (only if all stages claim complete)
     if [ -f "$STATE_FILE" ]; then
-        PENDING=$(grep -c 'status: pending' "$STATE_FILE" 2>/dev/null || echo "0")
+        PENDING=$(grep -c 'status: blocked\|status: open\|status: running' "$STATE_FILE" 2>/dev/null || echo "0")
         if [ "$PENDING" = "0" ]; then
             run_validator "Round Closure" "$ENGINE_VALIDATORS/cr-validate-round-closure" "$ROUND_DIR"
         fi
     fi
 fi
 
+if [ "$VALIDATION_FAILED" -ne 0 ]; then
+    echo "=== Validation failed ==="
+    exit 1
+fi
 echo "=== Validation complete ==="
+exit 0

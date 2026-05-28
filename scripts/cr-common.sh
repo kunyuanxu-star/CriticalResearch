@@ -421,8 +421,12 @@ cr_schema_path() {
     local skill_home
     skill_home="$(cr_skill_home)"
 
-    if [ -f "$skill_home/schemas/$schema_name" ]; then
+    if [ -f "$skill_home/engine/schemas/$schema_name" ]; then
+        echo "$skill_home/engine/schemas/$schema_name"
+    elif [ -f "$skill_home/schemas/$schema_name" ]; then
         echo "$skill_home/schemas/$schema_name"
+    elif [ -f "$(dirname "$0")/../engine/schemas/$schema_name" ]; then
+        echo "$(dirname "$0")/../engine/schemas/$schema_name"
     elif [ -f "$(dirname "$0")/../schemas/$schema_name" ]; then
         echo "$(dirname "$0")/../schemas/$schema_name"
     else

@@ -60,30 +60,27 @@ else
 fi
 echo ""
 
-# ── Test 5: must declare cr close-round before completion ──
-echo "── Test 5: must declare cr close-round before completion ──"
-if grep -q 'cr close-round' "$CMD_FILE"; then
-    pass "References cr close-round"
-else
-    fail "Missing cr close-round reference"
-fi
+    echo "── Test 5: must declare cr round close before completion ──"
+    if grep -q 'cr round close' "$CMD_FILE"; then
+        pass "Found cr round close reference"
+    else
+        fail "Missing cr round close reference"
+    fi
 
-if grep -q 'must not stop until.*cr close-round' "$CMD_FILE" || \
-   grep -q 'Do not summarize completion until.*cr close-round' "$CMD_FILE"; then
-    pass "Explicitly forbids completion before cr close-round"
-else
-    fail "Missing 'must not complete before cr close-round' declaration"
-fi
+    if grep -q 'must not stop until.*cr round close' "$CMD_FILE" || \
+       grep -q 'You must not stop until.*cr round close' "$CMD_FILE"; then
+        pass "Found completion-contract: must not stop before cr round close"
+    else
+        fail "Missing completion-contract statement"
+    fi
 echo ""
 
-# ── Test 6: must reference 8-stage workflow ──
-echo "── Test 6: must reference 8-stage workflow ──"
-if grep -q '8-stage' "$CMD_FILE"; then
-    pass "References 8-stage workflow"
+echo "── Test 6: must reference workflow-specific stages ──"
+if grep -q 'Stage [0-9]:' "$CMD_FILE" && grep -q 'cr round close' "$CMD_FILE"; then
+    pass "Found workflow-specific stage flow with close"
 else
-    fail "Missing 8-stage workflow reference"
+    fail "Missing workflow-specific stage flow"
 fi
-echo ""
 
 # ── Test 7: must have description in frontmatter ──
 echo "── Test 7: must have description in frontmatter ──"

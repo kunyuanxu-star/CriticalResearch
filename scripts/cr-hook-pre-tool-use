@@ -98,11 +98,12 @@ case "$TOOL_NAME" in
             esac
 
             # v2: Mutable-document boundary — block writes to non-mutable documents.
-            if [ -n "$MUTABLE_DOC_PATH" ]; then
+            # v2: Mutable-document boundary — block writes to non-mutable documents.
+            if [ -n "$MUTABLE_DOC_PATH" ] && [ -n "${active_proj:-}" ]; then
+                local_project_root="$WORKSPACE_ROOT/$active_proj"
                 case "$file_path" in
-                    */projects/*/documents/*)
-                        local doc_part
-                        doc_part=$(echo "$file_path" | grep -oE 'documents/[^/]+\.md' 2>/dev/null || echo "")
+                    "$local_project_root"/documents/*.md)
+                        doc_part="${file_path#"$local_project_root/"}"
                         if [ -n "$doc_part" ] && [ "$doc_part" != "$MUTABLE_DOC_PATH" ]; then
                             deny "Cross-document write blocked: target is '$doc_part' but active round mutable document is '$MUTABLE_DOC_PATH'. Only writes to the mutable document, round artifacts, and project knowledge are allowed."
                         fi

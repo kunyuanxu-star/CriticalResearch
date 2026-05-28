@@ -61,10 +61,11 @@ def validate_round_contract(contract: dict, project_root: str) -> list[str]:
         errs.append("Inv3 violation: mutable_document must have id, type, and path — every round has exactly one mutable document")
 
     # Inv4: at least one primary target unit, all units must belong to mutable document
-    target_units = contract.get("target_units", {})
+    # Inv4: primary can be empty (document-level round); if non-empty, all units must belong to mutable document
     primary = target_units.get("primary", [])
-    if not primary:
-        errs.append("Inv4 violation: target_units.primary must have at least one unit")
+    if primary:
+        pass
+    # else: document-level round — valid
     all_units = primary + target_units.get("secondary", [])
     for unit in all_units:
         doc_prefix = md["id"] + "."

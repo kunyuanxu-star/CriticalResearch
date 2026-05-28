@@ -324,7 +324,9 @@ scope_policy:
 required_outputs:
   - $DOC_PATH (round-patched)
 
-success_criteria: []
+success_criteria:
+  - "All workflow stages complete successfully."
+  - "All required validators pass before round closure."
 CONT
 
     # ── 11. Generate workflow-state.yaml ─────────────────────────────
@@ -360,7 +362,7 @@ STAGE
         else
             cat >> "$ROUND_DIR/workflow-state.yaml" << STAGE
   $stage_id:
-    status: pending
+    status: blocked
     completed_at: null
 STAGE
         fi
@@ -573,9 +575,11 @@ cmd_close() {
         WORKFLOW_FILE="$SKILL_HOME/workflows/$wf_id/workflow.yaml"
         if [ -f "$WORKFLOW_FILE" ]; then
             readarray -t VALIDATORS < <(yq -r '.validators[]' "$WORKFLOW_FILE" 2>/dev/null || echo "")
-
             if [ "${#VALIDATORS[@]}" -gt 0 ]; then
                 if [ "$FORCE_CLOSE" = true ]; then
+                    if [ "${CR_TEST_MODE:-0}" != "1" ]; then
+                        die "--force is only allowed when CR_TEST_MODE=1"
+                    fi
                     warn "--force: skipping workflow validators"
                 else
                     echo "── Running workflow validators ──"
