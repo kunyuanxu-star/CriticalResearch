@@ -5,18 +5,23 @@ from pathlib import Path
 def load_yaml(p): 
     with open(p) as f: return yaml.safe_load(f)
 def main():
-    if len(sys.argv) < 2: print("Usage: cr-validate-paper-units <contract.yaml> [project_root]"); sys.exit(1)
-    cp = sys.argv[1]; pr = sys.argv[2] if len(sys.argv)>2 else str(Path(cp).parent.parent.parent)
-    c = load_yaml(cp)
+    if len(sys.argv) < 2: print("Usage: cr-validate-paper-units <round_dir|contract.yaml> [project_root]"); sys.exit(1)
+    arg = sys.argv[1]; arg_path = Path(arg)
+    if arg_path.is_dir():
+        round_dir = arg_path; contract_path = str(arg_path / "contract.yaml")
+    else:
+        contract_path = arg; round_dir = Path(contract_path).parent
+    project_root = sys.argv[2] if len(sys.argv)>2 else str(round_dir.parent.parent)
+    c = load_yaml(contract_path)
     if c.get("workflow",{}).get("id")!="paper": print("SKIP"); sys.exit(0)
-    did = c["mutable_document"]["id"]; rp = Path(pr)/"units"/f"{did}.units.yaml"
+    did = c["mutable_document"]["id"]; rp = Path(project_root)/"units"/f"{did}.units.yaml"
     if not rp.exists(): print(f"FAIL: {rp}"); sys.exit(1)
     ru = set()
     for u in load_yaml(str(rp)).get("units",[]):
         key = u.get("unit_id") or u.get("id")
         if key:
             ru.add(key)
-    rd = Path(cp).parent; pd = rd/"patches"
+    pd = round_dir/"patches"
     if not pd.exists(): sys.exit(0)
     errs = []
     for pf in pd.glob("*.yaml"):

@@ -62,11 +62,17 @@ def validate_single_mutable(contract_path: str, round_dir: str) -> list[str]:
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: cr-validate-single-mutable-document <contract.yaml>")
+        print("Usage: cr-validate-single-mutable-document <round_dir|contract.yaml>")
         sys.exit(1)
 
-    contract_path = sys.argv[1]
-    round_dir = str(Path(contract_path).parent)
+    arg = sys.argv[1]
+    arg_path = Path(arg)
+    if arg_path.is_dir():
+        round_dir = str(arg_path)
+        contract_path = str(arg_path / "contract.yaml")
+    else:
+        contract_path = arg
+        round_dir = str(Path(contract_path).parent)
     errs = validate_single_mutable(contract_path, round_dir)
 
     if errs:

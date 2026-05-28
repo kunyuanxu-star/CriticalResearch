@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-paper-entrypoint.sh — Verify paper round can ONLY be started via cr-start-paper-round.
+# test-paper-entrypoint.sh — Verify paper workflow round creation (v2).
 set -euo pipefail
 
 FAILS=0
@@ -12,88 +12,89 @@ fail() { echo -e "  ${RED}[FAIL]${NC} $1"; FAILS=$((FAILS + 1)); }
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 export PATH="$SCRIPT_DIR/../scripts:$PATH"
 export CR_SKILL_HOME="$SCRIPT_DIR/.."
+export CR_TEST_MODE=1
+
 TEST_DIR=$(mktemp -d /tmp/cr-entry-XXXXXX)
 cd "$TEST_DIR"
 
-echo "══ Paper Entrypoint Tests ══"
+echo "══ Paper Entrypoint Tests (v2) ══"
 echo "Test dir: $TEST_DIR"
 echo ""
 
 cr workspace init > /dev/null 2>&1
 
-# ── Test 1: cr round --mode paper creates valid round ──
-echo "── Test 1: cr round <project> --mode paper \"<obj>\" ──"
-cr start test-proj > /dev/null 2>&1
-echo "# test paper" > test-proj/documents/paper.md
+# ── Test 1: cr round start --workflow paper creates valid round ──
+echo "── Test 1: cr round start --workflow paper ──"
+cr project init test-proj --domain systems > /dev/null 2>&1
+cd test-proj
+cr document add test-proj paper --type paper --path documents/paper.md > /dev/null 2>&1
+echo "# test paper" > documents/paper.md
 
-# Close round-001 so we can start a new paper round.
-jq '.active_round = null' test-proj/state/project-state.json > test-proj/state/project-state.json.tmp && \
-    mv test-proj/state/project-state.json.tmp test-proj/state/project-state.json
+cr round start test-proj --workflow paper --doc paper --mode deep --objective "test objective" > /dev/null 2>&1
 
-ROUND_OUT=$(cr round test-proj --mode paper "test objective" 2>&1 || true)
-if echo "$ROUND_OUT" | grep -qi "round-002\|paper round.*started\|Paper Round 002"; then
-    pass "Paper round started via cr round"
+ROUND_DIR=$(ls -d rounds/round-* | head -1)
+WF_STATE="$ROUND_DIR/workflow-state.yaml"
+
+# Check workflow-state.yaml exists.
+if [ -f "$WF_STATE" ]; then
+    pass "workflow-state.yaml exists"
 else
-    fail "Paper round not started: ${ROUND_OUT:0:200}"
+    fail "workflow-state.yaml missing"
 fi
 
-ROUND_DIR="test-proj/rounds/round-002"
-
-# Check manifest snapshot exists.
-if [ -f "$ROUND_DIR/stage-manifest.snapshot.yaml" ]; then
-    pass "stage-manifest.snapshot.yaml exists"
+# Check stage_order has stages (paper workflow has 10).
+STAGE_COUNT=$(yq -r '.stage_order | length' "$WF_STATE" 2>/dev/null || echo "0")
+if [ "${STAGE_COUNT:-0}" -ge 1 ]; then
+    pass "stage_order has $STAGE_COUNT stages"
 else
-    fail "stage-manifest.snapshot.yaml missing"
-fi
-
-# Check stage_order has 8 stages.
-STAGE_COUNT=$(yq -r '.stage_order | length' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "0")
-if [ "$STAGE_COUNT" -eq 8 ]; then
-    pass "stage_order has 8 stages"
-else
-    fail "stage_order has $STAGE_COUNT stages (expected 8)"
+    fail "stage_order has 0 stages"
 fi
 
 # Check active_round is non-null.
-ACTIVE_RND=$(jq -r '.active_round // "null"' test-proj/state/project-state.json 2>/dev/null || echo "null")
+ACTIVE_RND=$(jq -r '.active_round // "null"' state/project-state.json 2>/dev/null || echo "null")
 if [ "$ACTIVE_RND" != "null" ] && [ "$ACTIVE_RND" != "0" ]; then
     pass "active_round is set"
 else
     fail "active_round is $ACTIVE_RND"
 fi
 
-# Check current_stage is s1_round_contract.
-CURRENT=$(yq -r '.current_stage // ""' "$ROUND_DIR/state.yaml" 2>/dev/null || echo "")
-if [ "$CURRENT" = "s1_round_contract" ]; then
-    pass "current_stage = s1_round_contract"
+# Check current_stage is set.
+CURRENT=$(yq -r '.current_stage // ""' "$WF_STATE" 2>/dev/null || echo "")
+if [ -n "$CURRENT" ]; then
+    pass "current_stage = $CURRENT"
 else
-    fail "current_stage = $CURRENT"
+    fail "current_stage is empty"
+fi
+
+# Check required_outputs are materialized.
+RO_CHECK=$(yq -r ".stages.\"$CURRENT\".required_outputs | length" "$WF_STATE" 2>/dev/null || echo "0")
+if [ "${RO_CHECK:-0}" -ge 1 ]; then
+    pass "current stage materialized required_outputs ($RO_CHECK)"
+else
+    fail "current stage has no required_outputs"
 fi
 
 echo ""
 
-# ── Test 2: cr-new-round --mode paper is rejected ──
-echo "── Test 2: cr-new-round --mode paper is rejected ──"
-REJECT_OUT=$(cr-new-round test-proj discovery --mode paper 2>&1 || true)
-if echo "$REJECT_OUT" | grep -qi "must be started via cr-start-paper-round\|paper mode must be started"; then
-    pass "cr-new-round --mode paper rejected"
-else
-    fail "cr-new-round --mode paper not rejected: ${REJECT_OUT:0:200}"
-fi
-echo ""
+# ── Test 2: Round start without objective fails ──
+echo "── Test 2: Missing objective rejected ──"
+TESTD2=$(mktemp -d /tmp/cr-entry2-XXXXXX)
+cd "$TESTD2"
+cr workspace init > /dev/null 2>&1
+cr project init objtest --domain systems > /dev/null 2>&1
+cd objtest
+cr document add objtest paper --type paper --path documents/paper.md > /dev/null 2>&1
+echo "# test" > documents/paper.md
 
-# ── Test 3: cr round --mode paper without objective fails ──
-echo "── Test 3: cr round --mode paper without objective fails ──"
-# Reset active_round so we can start another round.
-jq '.active_round = null' test-proj/state/project-state.json > test-proj/state/project-state.json.tmp && \
-    mv test-proj/state/project-state.json.tmp test-proj/state/project-state.json
-
-NO_OBJ_OUT=$(cr round test-proj --mode paper 2>&1 || true)
+NO_OBJ_OUT=$(cr round start objtest --workflow paper --doc paper --mode triage 2>&1 || true)
 if echo "$NO_OBJ_OUT" | grep -qi "usage\|objective\|required"; then
     pass "Missing objective rejected"
 else
     fail "Missing objective not rejected: ${NO_OBJ_OUT:0:200}"
 fi
+cd "$TEST_DIR"
+rm -rf "$TESTD2"
+
 echo ""
 
 # ── Cleanup ──

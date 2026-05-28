@@ -21,12 +21,14 @@ SCOPE_CLI="$SCRIPT_DIR/cr-scope"
 
 # Resolve the single mutable document from the active round's contract.yaml.
 # Returns the relative path (e.g., "documents/survey.md") or empty string.
+# Also sets global MUTABLE_DOC_ACTIVE_PROJ for use by the boundary check.
 resolve_mutable_document_path() {
     local active_proj=""
     if [ -f "$WORKSPACE_ROOT/_cr/active-project" ]; then
         active_proj=$(cat "$WORKSPACE_ROOT/_cr/active-project")
     fi
     [ -z "$active_proj" ] && return
+    MUTABLE_DOC_ACTIVE_PROJ="$active_proj"
     local proj_dir="$WORKSPACE_ROOT/$active_proj"
     [ -d "$proj_dir" ] || return
     local round_dir=""
@@ -98,9 +100,8 @@ case "$TOOL_NAME" in
             esac
 
             # v2: Mutable-document boundary — block writes to non-mutable documents.
-            # v2: Mutable-document boundary — block writes to non-mutable documents.
-            if [ -n "$MUTABLE_DOC_PATH" ] && [ -n "${active_proj:-}" ]; then
-                local_project_root="$WORKSPACE_ROOT/$active_proj"
+            if [ -n "$MUTABLE_DOC_PATH" ] && [ -n "${MUTABLE_DOC_ACTIVE_PROJ:-}" ]; then
+                local_project_root="$WORKSPACE_ROOT/$MUTABLE_DOC_ACTIVE_PROJ"
                 case "$file_path" in
                     "$local_project_root"/documents/*.md)
                         doc_part="${file_path#"$local_project_root/"}"
@@ -111,11 +112,11 @@ case "$TOOL_NAME" in
                 esac
             fi
 
-            # Per-phase write boundary check.
-            PHASE_RESULT=$("$SCOPE_CLI" phase-check "$file_path" 2>/dev/null || echo "DENY:phase check failed")
-            case "$PHASE_RESULT" in
+            # Per-stage write boundary check.
+            STAGE_RESULT=$("$SCOPE_CLI" stage-check "$file_path" 2>/dev/null || echo "DENY:stage check failed")
+            case "$STAGE_RESULT" in
                 ALLOW*) ;;
-                *) deny "$PHASE_RESULT" ;;
+                *) deny "$STAGE_RESULT" ;;
             esac
         done <<< "$PATHS"
         allow

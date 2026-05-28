@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # cr-complete-stage — The ONLY way to mark a stage complete.
-# Validates the stage via cr-validate-stage, then updates state.yaml.
-# Manual edits to stage status in state.yaml are blocked by cr-guard-path.
+#
+# Validates the stage via cr-validate-stage, then updates workflow-state.yaml.
+# Manual edits to stage status in workflow-state.yaml are blocked by cr-guard-path.
 #
 # Usage: cr-complete-stage <project_dir> <round_dir> <stage>
 
@@ -29,7 +30,7 @@ fi
 # Check stage exists.
 STAGE_STATUS=$(yq -r ".stages.$STAGE.status // \"unknown\"" "$STATE_FILE" 2>/dev/null || echo "unknown")
 if [ "$STAGE_STATUS" = "unknown" ]; then
-    echo "Error: stage '$STAGE' not found in state.yaml" >&2
+    echo "Error: stage '$STAGE' not found in workflow-state.yaml" >&2
     exit 2
 fi
 
@@ -171,7 +172,7 @@ fi
 NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 yq -i ".stages.$STAGE.status = \"complete\" | .stages.$STAGE.completed_at = \"$NOW\"" "$STATE_FILE" 2>/dev/null || {
-    echo "Error: failed to update state.yaml" >&2
+    echo "Error: failed to update workflow-state.yaml" >&2
     exit 2
 }
 
@@ -183,7 +184,7 @@ STAGE_ORDER=$(yq -r ".stage_order | to_entries | .[] | select(.value == \"$STAGE
 STAGE_ORDER=$((STAGE_ORDER + 1))
 RUN_LOG="$ROUND_DIR/stage-run-log.yaml"
 
-# Get started_at from state.yaml for the stage_started event.
+    # Get started_at from workflow-state.yaml for the stage_started event.
 STARTED_AT=$(yq -r ".stages.\"$STAGE\".started_at // \"$NOW\"" "$STATE_FILE" 2>/dev/null || echo "$NOW")
 
 # Compute validator script hash.

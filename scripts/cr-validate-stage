@@ -23,10 +23,10 @@ if [ ! -f "$STATE_FILE" ]; then
     cr_exit_summary
 fi
 
-# Check stage exists in state.yaml.
+    # Check stage exists in workflow-state.yaml.
 STAGE_STATUS=$(yq -r ".stages.$STAGE.status // \"unknown\"" "$STATE_FILE" 2>/dev/null || echo "unknown")
 if [ "$STAGE_STATUS" = "unknown" ]; then
-    fail "Stage '$STAGE' not found in state.yaml"
+    fail "Stage '$STAGE' not found in workflow-state.yaml"
     cr_exit_summary
 fi
 
@@ -46,7 +46,7 @@ done
 ALL_PRESENT=true
 
 # Check required inputs exist.
-PM=$(yq -r '.workflow_mode // ""' "$STATE_FILE" 2>/dev/null || echo "")
+PM=$(yq -r '.mode // "deep"' "$ROUND_DIR/contract.yaml" 2>/dev/null || echo "deep")
 INPUTS=$(yq -r ".stages.$STAGE.required_inputs // [] | .[]" "$STATE_FILE" 2>/dev/null || echo "")
 for input in $INPUTS; do
     [ -z "$input" ] && continue
@@ -54,8 +54,8 @@ for input in $INPUTS; do
         writing/*|state/*|documents/*)
             if [ -f "$PROJECT_DIR/$input" ]; then
                 pass "Input '$input' exists"
-            elif [ "$PM" = "paper" ]; then
-                fail "Input '$input' not found (required for paper mode)"
+            elif [ "$PM" != "triage" ]; then
+                fail "Input '$input' not found"
                 ALL_PRESENT=false
             else
                 warn "Input '$input' not found"
@@ -66,8 +66,8 @@ for input in $INPUTS; do
                 pass "Input '$input' exists"
             elif [ -d "$ROUND_DIR/$input" ]; then
                 pass "Input '$input/' exists"
-            elif [ "$PM" = "paper" ]; then
-                fail "Input '$input' not found (required for paper mode)"
+            elif [ "$PM" != "triage" ]; then
+                fail "Input '$input' not found"
                 ALL_PRESENT=false
             else
                 warn "Input '$input' not found"
@@ -170,6 +170,76 @@ if [ -f "$EVIDENCE" ]; then
     fi
 fi
 
+# ── Evidence proof enforcement (standard/deep modes) ────────────
+
+# 1. Search-log.yaml — verify at least one query executed.
+SEARCH_LOG="$ROUND_DIR/search-log.yaml"
+if [ -f "$SEARCH_LOG" ]; then
+    QUERY_COUNT=$(yq -r '.queries | length // 0' "$SEARCH_LOG" 2>/dev/null || echo "0")
+    if [ "${QUERY_COUNT:-0}" -ge 1 ]; then
+        pass "Search log: $QUERY_COUNT queries executed"
+    else
+        fail "Search log has no executed queries"
+        ALL_PRESENT=false
+    fi
+fi
+
+# 2. Raw-sources/ — verify non-empty and each source has metadata.
+RAW_SOURCES="$ROUND_DIR/raw-sources"
+if [ -d "$RAW_SOURCES" ] && [ -n "$(ls -A "$RAW_SOURCES" 2>/dev/null)" ]; then
+    SOURCE_COUNT=0
+    SOURCE_ISSUES=0
+    for src_file in "$RAW_SOURCES"/*; do
+        [ -f "$src_file" ] || continue
+        SOURCE_COUNT=$((SOURCE_COUNT + 1))
+        src_url=$(yq -r '.url // ""' "$src_file" 2>/dev/null || echo "")
+        src_retrieved=$(yq -r '.retrieved_at // ""' "$src_file" 2>/dev/null || echo "")
+        src_type=$(yq -r '.source_type // ""' "$src_file" 2>/dev/null || echo "")
+        src_id=$(yq -r '.source_id // ""' "$src_file" 2>/dev/null || echo "")
+        if [ -z "$src_url" ]; then
+            fail "Source '$(basename "$src_file")' missing url"
+            SOURCE_ISSUES=$((SOURCE_ISSUES + 1))
+        fi
+        if [ -z "$src_retrieved" ]; then
+            fail "Source '$(basename "$src_file")' missing retrieved_at"
+            SOURCE_ISSUES=$((SOURCE_ISSUES + 1))
+        fi
+        if [ -z "$src_type" ]; then
+            fail "Source '$(basename "$src_file")' missing source_type"
+            SOURCE_ISSUES=$((SOURCE_ISSUES + 1))
+        fi
+    done
+    if [ "$SOURCE_ISSUES" -gt 0 ]; then
+        ALL_PRESENT=false
+    else
+        pass "Raw sources: $SOURCE_COUNT files, all valid"
+    fi
+fi
+
+# 3. Evidence ledger items must reference source IDs present in raw-sources/.
+if [ -f "$EVIDENCE" ] && [ -d "$RAW_SOURCES" ]; then
+    # Collect all source_ids from raw-sources.
+    KNOWN_IDS=""
+    for src_file in "$RAW_SOURCES"/*; do
+        [ -f "$src_file" ] || continue
+        sid=$(yq -r '.source_id // ""' "$src_file" 2>/dev/null || echo "")
+        [ -n "$sid" ] && KNOWN_IDS="${KNOWN_IDS} ${sid}"
+    done
+    # Check evidence items reference known sources.
+    EVID_COUNT=$(yq -r '.evidence | length // 0' "$EVIDENCE" 2>/dev/null || echo "0")
+    if [ "${EVID_COUNT:-0}" -gt 0 ] && [ -n "$KNOWN_IDS" ]; then
+        for i in $(seq 0 $((EVID_COUNT - 1))); do
+            refs=$(yq -r ".evidence[$i].source_refs // [] | .[]" "$EVIDENCE" 2>/dev/null || echo "")
+            for ref in $refs; do
+                [ -z "$ref" ] && continue
+                if ! echo " $KNOWN_IDS " | grep -q " $ref "; then
+                    fail "Evidence item $i references unknown source '$ref'"
+                    ALL_PRESENT=false
+                fi
+            done
+        done
+    fi
+fi
 CRITIQUE="$ROUND_DIR/critique-ledger.yaml"
 if [ -f "$CRITIQUE" ]; then
     check_array_content "$CRITIQUE" '.critiques' 1 "Critiques"
@@ -221,6 +291,31 @@ DIFF="$ROUND_DIR/document-diff.yaml"
 if [ -f "$DIFF" ]; then
     check_array_content "$DIFF" '.diffs' 1 "Document diffs"
 fi
+
+    # ── Stage-specific workflow validators ─────────────────────────
+    SKILL_HOME="${CR_SKILL_HOME:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+    CONTRACT="$ROUND_DIR/contract.yaml"
+    if [ -f "$CONTRACT" ]; then
+        WF_ID=$(grep -E '^\s+id:' "$CONTRACT" 2>/dev/null | head -1 | sed 's/.*id: *//' | tr -d '"' || echo "")
+        if [ -n "$WF_ID" ] && [ -f "$SKILL_HOME/workflows/$WF_ID/workflow.yaml" ]; then
+            STAGE_VALIDATORS=$(yq -r ".stage_contracts.\"$STAGE\".validators[] // \"\"" "$SKILL_HOME/workflows/$WF_ID/workflow.yaml" 2>/dev/null || echo "")
+            for v in $STAGE_VALIDATORS; do
+                [ -z "$v" ] && continue
+                WF_VAL="$SKILL_HOME/workflows/$WF_ID/validators/$v"
+                echo "── Running stage validator: $v ──"
+                if [ -x "$WF_VAL" ]; then
+                    if ! "$WF_VAL" "$ROUND_DIR"; then
+                        fail "Stage validator '$v' failed"
+                        ALL_PRESENT=false
+                    else
+                        pass "Stage validator '$v' passed"
+                    fi
+                else
+                    warn "Stage validator '$v' not found at $WF_VAL"
+                fi
+            done
+        fi
+    fi
 
 if [ "$ALL_PRESENT" = true ]; then
     pass "Stage '$STAGE' validation passed"

@@ -102,7 +102,7 @@ if [ -f "$STATE_FILE" ]; then
         cat << EOF
 {
   "decision": "block",
-  "reason": "Project '$PROJECT' already has an active round (round-$ACTIVE_ROUND). Resume with 'cr step $PROJECT status', or close it with 'cr close-round $PROJECT' before starting a new one."
+  "reason": "Project '$PROJECT' already has an active round (round-$ACTIVE_ROUND). Resume with 'cr stage status $PROJECT', or close it with 'cr round close $PROJECT' before starting a new one."
 }
 EOF
         exit 0
@@ -114,7 +114,7 @@ cat << EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "UserPromptExpansion",
-    "additionalContext": "CriticalResearch paper transaction requested for project '$PROJECT'. The ONLY valid launcher is cr-start-paper-round. After launch, execute phases via cr step $PROJECT advance. Do not bypass, skip, or manually edit state files."
+    "additionalContext": "CriticalResearch transaction requested for project '$PROJECT'. Launch rounds via cr round start --workflow <id>. Execute stages via cr stage advance $PROJECT. Do not bypass, skip, or manually edit state files."
   }
 }
 EOF

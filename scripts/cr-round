@@ -299,15 +299,6 @@ CONT
         echo "    []" >> "$ROUND_DIR/contract.yaml"
     fi
 
-
-    # required_outputs from the stage manifests.
-    local req_outputs_yaml=""
-    for stage_id in "${STAGE_ORDER[@]}"; do
-        [ -z "$stage_id" ] && continue
-        local outputs
-        readarray -t outputs < <(yq -r ".prompt_pack.\"$stage_id\" // empty" "$WORKFLOW_FILE" 2>/dev/null || echo "")
-    done
-
     cat >> "$ROUND_DIR/contract.yaml" << CONT
 
 objective: "$OBJECTIVE"
@@ -349,23 +340,66 @@ STATE
     echo "" >> "$ROUND_DIR/workflow-state.yaml"
     echo "stages:" >> "$ROUND_DIR/workflow-state.yaml"
 
+    # Materialize stage contracts from workflow.yaml into workflow-state.yaml.
     local first=true
     for stage_id in "${STAGE_ORDER[@]}"; do
         [ -z "$stage_id" ] && continue
+        local stage_status="blocked"
         if [ "$first" = true ]; then
-            cat >> "$ROUND_DIR/workflow-state.yaml" << STAGE
-  $stage_id:
-    status: running
-    completed_at: null
-STAGE
+            stage_status="running"
             first=false
-        else
-            cat >> "$ROUND_DIR/workflow-state.yaml" << STAGE
-  $stage_id:
-    status: blocked
-    completed_at: null
-STAGE
         fi
+
+        # Compute depends_on: previous stage in order (first stage has none).
+        local prev=""
+        for s in "${STAGE_ORDER[@]}"; do
+            if [ "$s" = "$stage_id" ]; then break; fi
+            prev="$s"
+        done
+
+        {
+            echo "  $stage_id:"
+            echo "    status: $stage_status"
+            echo "    completed_at: null"
+
+            # depends_on
+            if [ -n "$prev" ]; then
+                echo "    depends_on:"
+                echo "      - $prev"
+            else
+                echo "    depends_on: []"
+            fi
+
+            # required_inputs
+            echo "    required_inputs:"
+            yq -o=yaml ".stage_contracts.\"$stage_id\".required_inputs // []" "$WORKFLOW_FILE" 2>/dev/null | sed 's/^/      /'
+
+            # required_outputs
+            echo "    required_outputs:"
+            local ro_yaml
+            ro_yaml=$(yq -o=yaml ".stage_contracts.\"$stage_id\".required_outputs // []" "$WORKFLOW_FILE" 2>/dev/null)
+            echo "$ro_yaml" | sed 's/^/      /'
+            if echo "$ro_yaml" | grep -qx '\[\]'; then
+                echo "Warning: stage '$stage_id' has no required_outputs declared in workflow.yaml" >&2
+            fi
+
+            # allowed_write_scopes (from allowed_writes in workflow)
+            echo "    allowed_write_scopes:"
+            yq -o=yaml ".stage_contracts.\"$stage_id\".allowed_writes // []" "$WORKFLOW_FILE" 2>/dev/null | sed 's/^/      /'
+
+            # forbidden_actions
+            echo "    forbidden_actions:"
+            yq -o=yaml ".stage_contracts.\"$stage_id\".forbidden_actions // []" "$WORKFLOW_FILE" 2>/dev/null | sed 's/^/      /'
+
+            # completion_predicate
+            local cp_val
+            cp_val=$(yq ".stage_contracts.\"$stage_id\".completion_predicate // \"\"" "$WORKFLOW_FILE" 2>/dev/null)
+            if [ -n "$cp_val" ] && [ "$cp_val" != "null" ] && [ "$cp_val" != "\"\"" ]; then
+                echo "    completion_predicate: \"$cp_val\""
+            else
+                echo "    completion_predicate: null"
+            fi
+        } >> "$ROUND_DIR/workflow-state.yaml"
     done
 
     # ── 12. Update project state ────────────────────────────────────
@@ -540,6 +574,28 @@ cmd_close() {
     echo ""
 
     # ── 1. Validate all stages complete ──────────────────────────────
+    # ── 0. Auto-complete the last stage if still running ──────────────
+    # cr-stage-advance blocks at the last stage, so it may never be
+    # marked complete. cr-round-close is the canonical way to finalize.
+    local cur_stage
+    cur_stage=$(yq -r '.current_stage // ""' "$WF_STATE" 2>/dev/null || echo "")
+    if [ -n "$cur_stage" ]; then
+        local cur_status
+        cur_status=$(yq -r ".stages.\"$cur_stage\".status // \"\"" "$WF_STATE" 2>/dev/null || echo "")
+        if [ "$cur_status" = "running" ]; then
+            echo "Completing final stage '$cur_stage' before round closure..."
+            local complete_script; complete_script="$(cr_skill_home)/scripts/cr-complete-stage"
+            if [ -x "$complete_script" ]; then
+                if ! "$complete_script" "$PROJECT_DIR" "$ROUND_DIR" "$cur_stage"; then
+                    fail "Could not complete final stage '$cur_stage'. Fix issues before closing."
+                    exit 1
+                fi
+                echo ""
+            else
+                warn "cr-complete-stage not found — cannot auto-complete last stage"
+            fi
+        fi
+    fi
     readarray -t STAGE_ORDER < <(yq -r '.stage_order[]' "$WF_STATE" 2>/dev/null || echo "")
 
     if [ "${#STAGE_ORDER[@]}" -eq 0 ]; then
@@ -594,7 +650,7 @@ cmd_close() {
                         fi
                         if [ -x "$validator_script" ]; then
                             echo "  Running: $validator"
-                            if ! "$validator_script" "$CONTRACT" "$PROJECT_DIR" "$ROUND_DIR" 2>&1; then
+                            if ! "$validator_script" "$ROUND_DIR" 2>&1; then
                                 fail "Validator '$validator' failed"
                                 validator_ok=false
                             else

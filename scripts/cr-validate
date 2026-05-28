@@ -128,9 +128,9 @@ if [ -n "$ROUND_DIR" ] && [ -d "$ROUND_DIR" ]; then
                 # Check workflow validators dir first, then engine validators
                 WF_VAL="$SKILL_HOME/workflows/$WORKFLOW_ID/validators/$v"
                 if [ -x "$WF_VAL" ]; then
-                    run_validator "$v" "$WF_VAL" "$CONTRACT_FILE"
+                    run_validator "$v" "$WF_VAL" "$ROUND_DIR"
                 elif [ -x "$ENGINE_VALIDATORS/$v" ]; then
-                    run_validator "$v" "$ENGINE_VALIDATORS/$v" "$CONTRACT_FILE"
+                    run_validator "$v" "$ENGINE_VALIDATORS/$v" "$ROUND_DIR"
                 else
                     echo "  [SKIP] Validator not found: $v"
                 fi

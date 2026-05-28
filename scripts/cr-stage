@@ -58,7 +58,7 @@ fi
 
 # ── Shared helpers ──────────────────────────────────────────────
 
-# Get the current stage name from state.yaml.
+    # Get the current stage name from workflow-state.yaml.
 current_stage() {
     yq -r '.current_stage // ""' "$STATE_FILE" 2>/dev/null || echo ""
 }
@@ -161,7 +161,7 @@ cmd_validate() {
 
     echo ""
     echo "═══ Validating Stage: $cur ═══"
-    echo "  Status in state.yaml: $cur_status"
+    echo "  Status in workflow-state.yaml: $cur_status"
     echo ""
 
     # Delegate to cr-validate-stage for actual validation.

@@ -43,7 +43,6 @@ fi
 
 # ── Resolve project directory ────────────────────────────────────
 
-# ── Resolve project directory ────────────────────────────────────
 # Priority: session scope > direct project dir > active-project fallback.
 
 PROJECT_DIR=""

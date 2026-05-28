@@ -298,32 +298,10 @@ cr_validate_schema() {
         return 1
     fi
 
-    # Detect paper mode: if the round.yaml has workflow_mode=paper, enforce hard gates.
-    local paper_mode=false
-    if [ -f "$(dirname "$data_file")/round.yaml" ] 2>/dev/null; then
-        grep -q 'workflow_mode:\s*paper' "$(dirname "$data_file")/round.yaml" 2>/dev/null && paper_mode=true
-    fi
-
-    if ! command -v jq >/dev/null 2>&1; then
-        if [ "$paper_mode" = true ]; then
-            fail "jq required for paper mode schema validation — install jq (brew install jq)"
-            return 1
-        fi
-        warn "jq not available — skipping schema validation for $data_file"
-        return 0
-    fi
 
     local data_json schema_json
     case "$format" in
         yaml|yml)
-            if ! command -v yq >/dev/null 2>&1; then
-                if [ "$paper_mode" = true ]; then
-                    fail "yq required for paper mode YAML validation — install yq (brew install yq)"
-                    return 1
-                fi
-                warn "yq not available — cannot validate YAML schema for $data_file"
-                return 0
-            fi
             data_json="$(yq -o json '.' "$data_file" 2>/dev/null)" || {
                 fail "Failed to parse YAML: $data_file"
                 return 1
@@ -351,24 +329,6 @@ cr_validate_schema() {
     return 0
 }
 
-# Get required output keys for a given round type and workflow mode.
-# Usage: cr_required_outputs <round_yaml> -> space-separated list of output keys
-cr_required_outputs() {
-    local round_yaml="${1:-}"
-    [ -z "$round_yaml" ] && { echo "report evidence_ledger critique_ledger writing_diff_yaml knowledge_delta knowledge_apply_log"; return; }
-    [ ! -f "$round_yaml" ] && { echo "report evidence_ledger critique_ledger writing_diff_yaml knowledge_delta knowledge_apply_log"; return; }
-
-    # Extract required_outputs from round.yaml.
-    if command -v yq >/dev/null 2>&1; then
-        yq -r '.required_outputs // [] | join(" ")' "$round_yaml" 2>/dev/null || \
-            echo "report evidence_ledger critique_ledger writing_diff_yaml knowledge_delta knowledge_apply_log"
-    else
-        # Fallback: parse YAML manually.
-        grep -E '^\s*-\s+' "$round_yaml" 2>/dev/null | \
-            sed 's/^\s*-\s*//' | tr '\n' ' ' || \
-            echo "report evidence_ledger critique_ledger writing_diff_yaml knowledge_delta knowledge_apply_log"
-    fi
-}
 
 # ── Exit summary ─────────────────────────────────────────────────
 

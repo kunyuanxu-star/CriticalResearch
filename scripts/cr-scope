@@ -35,7 +35,7 @@ is_protected_state_file() {
     case "$path" in
         */project.yaml|*/state/project-state.json|*/state/satisfaction.json)
             return 0 ;;
-        */rounds/*/round.yaml|*/rounds/*/state.yaml|*/rounds/*/closure-report.yaml)
+        */rounds/*/workflow-state.yaml|*/rounds/*/round.yaml|*/rounds/*/state.yaml|*/rounds/*/closure-report.yaml)
             return 0 ;;
         */rounds/*/patches/PP-*.yaml)
             return 0 ;;
@@ -389,11 +389,12 @@ YAML
                 active_rnd=$(jq -r '.active_round // 0' "$WORKSPACE_ROOT/$scoped_project/state/project-state.json" 2>/dev/null || echo "0")
                 if [ "$active_rnd" != "null" ] && [ "$active_rnd" -gt 0 ] 2>/dev/null; then
                     rnd_num=$(printf "%03d" "$active_rnd")
-                    state_file="$WORKSPACE_ROOT/$scoped_project/rounds/round-$rnd_num/state.yaml"
+                    state_file="$WORKSPACE_ROOT/$scoped_project/rounds/round-$rnd_num/workflow-state.yaml"
                     if [ -f "$state_file" ]; then
-                        if [ "$full_round" = "true" ]; then
-                            echo "DENY: Cannot close scope while a full-round paper round is active."
-                            echo "  Complete all 8 stages and close the round first."
+                        incomplete=$(yq -r '[.stages | to_entries[] | select(.value.status != "complete")] | length' "$state_file" 2>/dev/null || echo "0")
+                        if [ "${incomplete:-0}" -gt 0 ]; then
+                            echo "DENY: Cannot close scope while an active round has incomplete stages."
+                            echo "  Complete all stages and close the round first."
                             echo "  Round: $active_rnd, project: $scoped_project"
                             exit 1
                         fi
@@ -430,7 +431,7 @@ YAML
 
             if [ "$active_rnd" != "none" ] && [ "$active_rnd" != "null" ]; then
                 rnd_num=$(printf "%03d" "$active_rnd")
-                state_file="$WORKSPACE_ROOT/$project_id/rounds/round-$rnd_num/state.yaml"
+                state_file="$WORKSPACE_ROOT/$project_id/rounds/round-$rnd_num/workflow-state.yaml"
                 if [ -f "$state_file" ]; then
                     stage=$(yq -r '.current_stage // "unknown"' "$state_file" 2>/dev/null || echo "unknown")
                     echo "Stage:   $stage"
@@ -557,7 +558,7 @@ YAML
 
             if [ "$active_rnd" != "none" ] && [ "$active_rnd" != "null" ]; then
                 rnd_num=$(printf "%03d" "$active_rnd")
-                state_file="$WORKSPACE_ROOT/$project_id/rounds/round-$rnd_num/state.yaml"
+                state_file="$WORKSPACE_ROOT/$project_id/rounds/round-$rnd_num/workflow-state.yaml"
                 if [ -f "$state_file" ]; then
                     stage=$(yq -r '.current_stage // "unknown"' "$state_file" 2>/dev/null || echo "unknown")
                     echo "- Current stage: $stage"
@@ -587,8 +588,8 @@ YAML
         [ "$ACTIVE_RND" = "null" ] || [ "$ACTIVE_RND" -eq 0 ] 2>/dev/null && { echo "ALLOW:no active round"; exit 0; }
 
         RND_NUM=$(printf "%03d" "$ACTIVE_RND")
-        STATE_FILE="$PROJECT_DIR/rounds/round-$RND_NUM/state.yaml"
-        [ ! -f "$STATE_FILE" ] && { echo "ALLOW:no state.yaml for round $RND_NUM"; exit 0; }
+        STATE_FILE="$PROJECT_DIR/rounds/round-$RND_NUM/workflow-state.yaml"
+        [ ! -f "$STATE_FILE" ] && { echo "ALLOW:no workflow-state.yaml for round $RND_NUM"; exit 0; }
 
         CURRENT_STAGE=$(yq -r '.current_stage // ""' "$STATE_FILE" 2>/dev/null || echo "")
         [ -z "$CURRENT_STAGE" ] && { echo "ALLOW:no current stage"; exit 0; }
@@ -604,14 +605,14 @@ YAML
 
         # ── Protected files: always deny direct write ──────────────────
         case "$REL_PATH" in
-            */rounds/*/state.yaml|*/rounds/*/stage-run-log.yaml|*/rounds/*/round.yaml|*/state/project-state.json|*/rounds/*/stage-manifest.snapshot.yaml)
-                echo "DENY:protected runtime file — use cr step advance or cr close-round to modify state"
+            */rounds/*/workflow-state.yaml|*/rounds/*/state.yaml|*/rounds/*/stage-run-log.yaml|*/rounds/*/round.yaml|*/state/project-state.json|*/rounds/*/stage-manifest.snapshot.yaml)
+                echo "DENY:protected runtime file — use cr stage advance or cr round close to modify state"
                 exit 1
                 ;;
         esac
 
         # ── Manifest-driven allowed_write_scopes check ─────────────────
-        # Read allowed_write_scopes from state.yaml (generated from manifest snapshot).
+        # Read allowed_write_scopes from workflow-state.yaml (materialized from stage contracts).
         ROUND_DIR="$PROJECT_DIR/rounds/round-$RND_NUM"
         AWSCOPES=$(yq -r ".stages.\"$CURRENT_STAGE\".allowed_write_scopes[]? // \"\"" "$STATE_FILE" 2>/dev/null || echo "")
         if [ -n "$AWSCOPES" ]; then

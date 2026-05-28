@@ -108,8 +108,11 @@ YAML
                     fi
                 done
                 ;;
+            doctor)
+                exec "$SCRIPT_DIR/cr-workspace-doctor"
+                ;;
             *)
-                echo "Usage: cr workspace <init|scan>" >&2
+                echo "Usage: cr workspace <init|scan|doctor>" >&2
                 exit 2
                 ;;
         esac

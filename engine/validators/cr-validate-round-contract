@@ -92,11 +92,17 @@ def validate_round_contract(contract: dict, project_root: str) -> list[str]:
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: cr-validate-round-contract <contract.yaml> [project_root]")
+        print("Usage: cr-validate-round-contract <round_dir|contract.yaml> [project_root]")
         sys.exit(1)
 
-    contract_path = sys.argv[1]
-    project_root = sys.argv[2] if len(sys.argv) > 2 else str(Path(contract_path).parent.parent.parent)
+    arg = sys.argv[1]; arg_path = Path(arg)
+    if arg_path.is_dir():
+        contract_path = str(arg_path / "contract.yaml")
+        project_root_default = str(arg_path.parent.parent)
+    else:
+        contract_path = arg
+        project_root_default = str(Path(contract_path).parent.parent.parent)
+    project_root = sys.argv[2] if len(sys.argv) > 2 else project_root_default
 
     try:
         contract = load_yaml(contract_path)

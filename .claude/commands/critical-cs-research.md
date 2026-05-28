@@ -1,12 +1,11 @@
 ---
-description: "Start enforced 8-stage CriticalResearch document transaction"
-argument-hint: "<project> [<objective>] [--doc <doc-id>]"
+description: "Start enforced workflow-specific CriticalResearch round"
+argument-hint: "<project> --workflow <id> --doc <id> [--unit <id>] [--mode <mode>] <objective>"
 allowed-tools:
-  - "Bash(cr-start-round:*)"
-  - "Bash(cr step:*)"
-  - "Bash(cr close-round:*)"
+  - "Bash(cr-round:*)"
+  - "Bash(cr stage:*)"
+  - "Bash(cr round close:*)"
   - "Bash(cr-validate-stage:*)"
-  - "Bash(cr-validate-stage-run-log:*)"
   - "Read"
   - "Write"
   - "Edit"
@@ -19,19 +18,22 @@ allowed-tools:
 
 # /critical-cs-research
 
-Start a new 8-stage paper research round for a CriticalResearch project.
+Start a new workflow-specific research round for a CriticalResearch project.
 
 ## Usage
 
 ```
-/critical-cs-research <project> <objective> [--doc <doc-id>]
+/critical-cs-research <project> --workflow <id> --doc <doc-id> [--unit <unit-id>] [--mode <mode>] <objective>
 ```
 
 ## Arguments
 
 - `project`: Existing project ID in the workspace. Must have at least one document in `documents/`.
+- `--workflow`: Workflow to use (survey, design, paper, proposal, experiment). Required.
+- `--doc`: Document ID to target (survey, design-doc, paper, proposal, experiment-plan). Required.
+- `--unit`: Unit ID within the target document to focus on (e.g., `survey.sandboxed-containers`). Optional.
+- `--mode`: Execution mode (triage, standard, deep). Defaults to `deep`.
 - `objective`: A concise description of what this round should focus on.
-- `--doc`: Document ID to target (paper, proposal, survey, design-doc). Defaults to `paper`.
 
 ## Execution Contract
 
@@ -39,43 +41,48 @@ Parse arguments as:
 
 ```
 PROJECT=<first token>
-OBJECTIVE=<remaining text before --doc>
-DOC_FLAG=<value after --doc> (default: paper)
+--workflow <workflow-id>
+--doc <doc-id>
+--unit <unit-id> (optional)
+--mode <mode> (optional, default: deep)
+<objective> (remaining text)
 ```
 
 Run exactly:
 
 ```bash
-cr-start-round "$PROJECT" "$OBJECTIVE" --doc "$DOC_FLAG"
-cr step "$PROJECT" status
+cr round start "$PROJECT" --workflow "$WORKFLOW" --doc "$DOC" ${UNIT:+--unit "$UNIT"} --mode "${MODE:-deep}" --objective "$OBJECTIVE"
+cr stage status "$PROJECT"
 ```
 
-Then execute the current stage. Do not summarize completion until `cr close-round "$PROJECT"` succeeds.
+Then execute the current stage. Do not summarize completion until `cr round close "$PROJECT"` succeeds.
 
 ## Invariants (must not be violated)
 
-- **This command must never bypass `cr-start-round`.** No direct state.yaml edits. No manual round directory creation.
-- **You must not stop until `cr close-round <project>` succeeds.** The Stop hook will block incomplete rounds.
-- **You must execute all 8 stages in order.** No skipping. No jumping forward.
-- **Each stage must be validated by `cr-complete-stage` before advancing.** Do not mark stages complete manually.
+- **This command must never bypass `cr round start`.** No direct state.yaml edits. No manual round directory creation.
+- **You must not stop until `cr round close <project>` succeeds.** The Stop hook will block incomplete rounds.
+- **You must execute the workflow-specific stage order.** No skipping. No jumping forward.
+- **Each stage must be validated before advancing.** Do not mark stages complete manually.
 
 ## Typical session flow
 
 ```
-/critical-cs-research my-paper "检查 introduction 和 evaluation"
-# Stage 1: s1_round_contract — 生成 round-contract.yaml
-# Stage 2: s2_evidence_grounding — 执行检索并生成 evidence-ledger.yaml
-# Stage 3: s3_critical_review — 生成 critique-ledger.yaml 和 review-disposition.yaml
-# Stage 4: s4_revision_strategy — 生成 revision-plan.yaml
-# Stage 5: s5_writing_strategy — 生成 writing-plan.yaml 和 patch-plan.yaml
-# Stage 6: s6_paper_patch — 应用补丁并生成 patch-trace.yaml
-# Stage 7: s7_knowledge_consolidation — 生成 knowledge-delta.yaml
-# Stage 8: s8_round_closure — 生成 next-round-targets.yaml
-cr close-round my-paper
+/critical-cs-research my-project --workflow survey --doc survey --unit survey.sandboxed-containers --mode deep "Research sandboxed containers"
+# Stage 1: contract — generate round-contract.yaml
+# Stage 2: survey_state — capture current survey snapshot
+# Stage 3: research_planning — plan evidence search
+# Stage 4: source_analysis — execute search, collect evidence
+# Stage 5: taxonomy_synthesis — build/refine taxonomy
+# Stage 6: critical_review — generate critique-ledger.yaml and review-disposition.yaml
+# Stage 7: revision_plan — generate revision-plan.yaml
+# Stage 8: apply_survey_patch — apply patches, generate patch-trace.yaml and document-diff.yaml
+# Stage 9: knowledge_delta — generate knowledge-delta.yaml
+# Stage 10: closure — generate next-round-targets.yaml, close round
+cr round close my-project
 ```
 
 ## See also
 
-- `cr step <project> status` — Show current stage progress
-- `cr step <project> advance` — Validate current stage and move to next
-- `cr close-round <project>` — Close the round (8 stages must be complete)
+- `cr stage status <project>` — Show current stage progress
+- `cr stage advance <project>` — Validate current stage and move to next
+- `cr round close <project>` — Close the round (all workflow stages must be complete)
