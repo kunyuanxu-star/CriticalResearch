@@ -5,7 +5,7 @@
 # Usage:
 #   cr round start <project> --workflow <id> --doc <doc-id> [--unit <unit-id>] [--mode <mode>] --objective <text>
 #   cr round status <project>
-#   cr round close <project>
+#   cr round close <project> [--force]
 
 set -euo pipefail
 
@@ -15,12 +15,22 @@ source "$SCRIPT_DIR/cr-common.sh"
 SUBCOMMAND="${1:-}"
 shift 2>/dev/null || true
 
+# Parse --force flag for close subcommand
+FORCE_CLOSE=false
+if [ "$SUBCOMMAND" = "close" ]; then
+    for arg in "$@"; do
+        if [ "$arg" = "--force" ]; then
+            FORCE_CLOSE=true; break
+        fi
+    done
+fi
+
 usage() {
     echo "Usage: cr round <start|status|close> [args...]"
     echo ""
     echo "  cr round start <project> --workflow <id> --doc <doc-id> [--unit <unit-id>] [--mode <mode>] --objective <text>"
     echo "  cr round status <project>"
-    echo "  cr round close <project>"
+    echo "  cr round close <project> [--force]"
     exit 2
 }
 
@@ -533,35 +543,39 @@ cmd_close() {
             readarray -t VALIDATORS < <(yq -r '.validators[]' "$WORKFLOW_FILE" 2>/dev/null || echo "")
 
             if [ "${#VALIDATORS[@]}" -gt 0 ]; then
-                echo "── Running workflow validators ──"
-                local validator_ok=true
-                for validator in "${VALIDATORS[@]}"; do
-                    [ -z "$validator" ] && continue
-                    local validator_script=""
-                    if [ -x "$SKILL_HOME/workflows/$wf_id/validators/$validator" ]; then
-                        validator_script="$SKILL_HOME/workflows/$wf_id/validators/$validator"
-                    elif [ -x "$SKILL_HOME/engine/validators/$validator" ]; then
-                        validator_script="$SKILL_HOME/engine/validators/$validator"
-                    fi
-                    if [ -x "$validator_script" ]; then
-                        echo "  Running: $validator"
-                        if ! "$validator_script" "$CONTRACT" "$PROJECT_DIR" "$ROUND_DIR" 2>&1; then
-                            fail "Validator '$validator' failed"
-                            validator_ok=false
-                        else
-                            pass "Validator '$validator' passed"
+                if [ "$FORCE_CLOSE" = true ]; then
+                    warn "--force: skipping workflow validators"
+                else
+                    echo "── Running workflow validators ──"
+                    local validator_ok=true
+                    for validator in "${VALIDATORS[@]}"; do
+                        [ -z "$validator" ] && continue
+                        local validator_script=""
+                        if [ -x "$SKILL_HOME/workflows/$wf_id/validators/$validator" ]; then
+                            validator_script="$SKILL_HOME/workflows/$wf_id/validators/$validator"
+                        elif [ -x "$SKILL_HOME/engine/validators/$validator" ]; then
+                            validator_script="$SKILL_HOME/engine/validators/$validator"
                         fi
-                    else
-                        warn "Validator script not found: $validator_script"
-                    fi
-                done
+                        if [ -x "$validator_script" ]; then
+                            echo "  Running: $validator"
+                            if ! "$validator_script" "$CONTRACT" "$PROJECT_DIR" "$ROUND_DIR" 2>&1; then
+                                fail "Validator '$validator' failed"
+                                validator_ok=false
+                            else
+                                pass "Validator '$validator' passed"
+                            fi
+                        else
+                            warn "Validator script not found: $validator_script"
+                        fi
+                    done
 
-                if [ "$validator_ok" != true ]; then
+                    if [ "$validator_ok" != true ]; then
+                        echo ""
+                        fail "Round closure blocked: validators failed"
+                        exit 1
+                    fi
                     echo ""
-                    fail "Round closure blocked: validators failed"
-                    exit 1
                 fi
-                echo ""
             fi
         fi
     fi
