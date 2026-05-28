@@ -1,4 +1,0 @@
-interface:
-  display_name: "Critical CS Research"
-  short_description: "Audit CS research claims with evidence"
-  default_prompt: "Use $critical-cs-research to audit this computer science research idea and produce claim, evidence, critique, and decision ledgers."

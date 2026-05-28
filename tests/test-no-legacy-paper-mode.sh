@@ -86,7 +86,7 @@ for wf in survey design paper proposal experiment; do
 done
 
 # Check engine/ structure exists
-for d in engine/scripts engine/validators engine/schemas; do
+for d in engine/validators engine/core; do
     if [ -d "$SKILL_HOME/$d" ]; then
         echo "  PASS: $d exists"
         PASS=$((PASS + 1))

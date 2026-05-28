@@ -351,19 +351,6 @@ cr_validate_schema() {
     return 0
 }
 
-# ── Artifact registry helpers ─────────────────────────────────
-
-# Load the artifact registry JSON. Returns path or empty.
-cr_artifact_registry_path() {
-    local skill_home
-    skill_home="$(cr_skill_home)"
-    if [ -f "$skill_home/schemas/artifact-registry.json" ]; then
-        echo "$skill_home/schemas/artifact-registry.json"
-    else
-        echo ""
-    fi
-}
-
 # Get required output keys for a given round type and workflow mode.
 # Usage: cr_required_outputs <round_yaml> -> space-separated list of output keys
 cr_required_outputs() {

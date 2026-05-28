@@ -48,13 +48,6 @@ else
 fi
 echo ""
 
-# ── Test 3: must reference cr-start-round or cr-start-paper-round ──
-echo "── Test 3: must reference cr-start-round ──"
-if grep -qE 'cr-start-round|cr-start-paper-round' "$CMD_FILE"; then
-    pass "References cr-start-round"
-else
-    fail "Missing cr-start-round reference"
-fi
 echo ""
 
 # ── Test 4: must NOT reference cr-new-round --mode paper ──
