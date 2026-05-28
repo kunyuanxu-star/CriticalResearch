@@ -105,8 +105,8 @@ cmd_start() {
 
     # Validate mode.
     case "$MODE" in
-        deep|quick|standard) ;;
-        *) die "invalid mode '$MODE' (expected: deep, quick, standard)" ;;
+        triage|standard|deep) ;;
+        *) die "invalid mode '$MODE' (expected: triage, standard, deep)" ;;
     esac
 
     # ── 1. Validate workspace ────────────────────────────────────────
@@ -173,7 +173,7 @@ cmd_start() {
             die "units file not found: $units_file"
         fi
         local unit_exists
-        unit_exists=$(yq -r ".units[] | select(.id == \"$UNIT_ID\") | .id" "$units_file" 2>/dev/null || echo "")
+        unit_exists=$(yq -r ".[] | select(.id == \"$UNIT_ID\") | .id" "$units_file" 2>/dev/null || echo "")
         if [ -z "$unit_exists" ]; then
             die "unit '$UNIT_ID' not found in $units_file"
         fi

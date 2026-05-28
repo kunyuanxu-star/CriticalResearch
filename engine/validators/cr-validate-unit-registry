@@ -28,7 +28,7 @@ echo "══ Unit Registry Validation ══"
 [ -d "$UNITS_DIR" ] || { fail "units/ directory not found"; cr_exit_summary; }
 [ -f "$REGISTRY" ] || { fail "documents/registry.yaml not found"; cr_exit_summary; }
 
-REGISTRY_DOC_IDS=$(grep '^  - id:' "$REGISTRY" | sed 's/.*- id: *//' | sort)
+REGISTRY_DOC_IDS=$(grep '^  - id:' "$REGISTRY" | sed 's/.*- id: *"//;s/"//' | sort)
 
 UNIT_FILES=$(find "$UNITS_DIR" -maxdepth 1 -name '*.units.yaml' -type f 2>/dev/null | sort || true)
 [ -n "$UNIT_FILES" ] || { fail "No .units.yaml files found in units/"; cr_exit_summary; }
@@ -44,19 +44,17 @@ for f in $UNIT_FILES; do
         fail "Unit file '$DOC_ID.units.yaml' has no matching document in registry"
     fi
 
-    grep -q '^units:' "$f" || { fail "$DOC_ID.units.yaml: missing 'units:' key"; continue; }
-
-    # Unit entries are at 2-space indent under the 'units:' array
-    FILE_UNIT_IDS=$(grep '^  - id:' "$f" | sed 's/.*- id: *//' || true)
+    # Unit entries are at top-level (YAML list), no 'units:' wrapper key.
+    FILE_UNIT_IDS=$(grep '^- id:' "$f" | sed 's/^- id: *//' || true)
     [ -n "$FILE_UNIT_IDS" ] || { fail "$DOC_ID.units.yaml: no units defined"; continue; }
 
     while IFS= read -r uid; do
         [ -z "$uid" ] && continue
-        # Extract unit block: from "  - id: <uid>" to next "  - " or end of units section
-        BLOCK=$(sed -n "/^  - id: *${uid}$/,/^  - /p" "$f" || true)
-        # Unit fields are at 4-space indent within the array item
+        # Extract unit block: from "- id: <uid>" to next "- " or end of file
+        BLOCK=$(sed -n "/^- id: *${uid}$/,/^- /p" "$f" || true)
+        # Unit fields are at 2-space indent within the array item
         for field in title status; do
-            if echo "$BLOCK" | grep -q "^    ${field}:"; then
+            if echo "$BLOCK" | grep -q "^  ${field}:"; then
                 pass "$DOC_ID.units.yaml: unit '$uid' has '$field'"
             else
                 fail "$DOC_ID.units.yaml: unit '$uid' missing '$field'"

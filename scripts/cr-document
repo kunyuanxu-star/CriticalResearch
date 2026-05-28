@@ -213,11 +213,8 @@ PDOC
         fi
     fi
 
-    # Create units file with empty units list.
     local units_file="$units_dir/${doc_id}.units.yaml"
-    cat > "$units_file" << UNITS
-units: []
-UNITS
+    echo "[]" > "$units_file"
 
     echo "Document '$doc_id' registered (type: $doc_type, path: $doc_path)"
 }

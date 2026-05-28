@@ -27,8 +27,9 @@ def validate_target_units(contract_path: str, project_root: str) -> list[str]:
         return errs
 
     registry = load_yaml(str(unit_registry_path))
+    unit_list = registry if isinstance(registry, list) else registry.get("units", [])
     registry_units = set()
-    for u in registry.get("units", []):
+    for u in unit_list:
         key = u.get("unit_id") or u.get("id")
         if key:
             registry_units.add(key)
