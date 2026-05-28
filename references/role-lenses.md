@@ -48,28 +48,28 @@ Outputs: final report, paper-ready or proposal-ready text.
 
 ## Concurrency Contract (Standard / Deep Mode)
 
-在 Standard 和 Deep 模式下，以下 Role-Lens 可作为并行 Pass 执行：
+In Standard and Deep modes, the following Role-Lenses may execute as parallel passes:
 
 ### Parallel Pass 1: Discovery Lenses
 
-可并发：
-- **Claim Parser**（分解主张）
-- **Research Scout**（预搜集基线信息）
+Runnable concurrently:
+- **Claim Parser** (decompose claims)
+- **Research Scout** (pre-collect baseline information)
 
-不可并发：First-Principles Decomposition 必须在 Claim Decomposition 完成后执行。
+Not runnable concurrently: First-Principles Decomposition must execute after Claim Decomposition completes.
 
 ### Parallel Pass 2: Validation Lenses
 
-可并发：
-- **Research Scout**（深度证据搜索与归一化）
-- **Counterexample Finder**（搜索反例和基线）
-- **Adversarial Reviewer**（基于 draft claim 进行预判 critique）
+Runnable concurrently:
+- **Research Scout** (deep evidence search and normalization)
+- **Counterexample Finder** (search for counterexamples and baselines)
+- **Adversarial Reviewer** (pre-judgment critique based on draft claims)
 
-注意：Adversarial Reviewer 的预判 critique 在 Evidence Normalization 后可能需要修正；最终 Critique Ledger 必须反映证据归一化后的状态。
+Note: Adversarial Reviewer's pre-judgment critiques may need revision after Evidence Normalization; the final Critique Ledger must reflect the post-normalization state.
 
 ### Merge Rules
 
-1. **证据冲突**：若 Research Scout 和 Counterexample Finder 对同一主张找到矛盾证据，记录为 `contradicts`，提升该主张的审查优先级，不自动删除。
-2. **批判重叠**：若 Adversarial Reviewer 和 Counterexample Finder 提出相同 critique，合并为一条并标注双重来源。
-3. **信息丢失禁止**：任何 Lens 的原始输出必须保留在 Research Trace Appendix 中，即使未进入 Final Report。
-4. **饱和度计算**：由 Evidence Auditor 在 Merge 后统一计算，不允许单个 Lens 自行声明饱和度。
+1. **Evidence conflicts**: If Research Scout and Counterexample Finder find contradictory evidence for the same claim, record as `contradicts`, raise the review priority for that claim, do not auto-delete.
+2. **Critique overlap**: If Adversarial Reviewer and Counterexample Finder raise the same critique, merge into one entry and annotate with dual sources.
+3. **Information loss prohibition**: Raw output from every Lens must be preserved in the Research Trace Appendix, even if it does not enter the Final Report.
+4. **Saturation calculation**: Performed centrally by Evidence Auditor after Merge; individual Lenses must not self-declare saturation.

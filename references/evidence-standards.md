@@ -37,7 +37,7 @@ Avoid treating tutorials, Stack Overflow answers, README marketing claims, synth
 
 ## Claim-Type to Tool / Method Mapping
 
-不同主张类型需要不同的验证工具和证据来源。在 Evidence Search 阶段，根据主张类型优先选择对应工具：
+Different claim types require different validation tools and evidence sources. During the Evidence Search phase, select the appropriate tool based on claim type:
 
 | Claim Type | Primary Tools / Methods | Evidence Source Priority |
 |---|---|---|
