@@ -2,6 +2,13 @@
 # Establish the design round's scope. Design rounds modify exactly one
 # design-doc and target specific architecture units.
 
+## Knowledge Loading
+Read `contract.yaml` → `read_only_context.global_knowledge_cards`.
+Load each card from `_cr/knowledge/thinking/cards/<card_id>.md`.
+Cards with `maturity: proven` MUST be applied as binding design
+constraints. Prefer knowledge that has survived multiple rounds.
+
+Record loaded cards and their influence in the contract rationale.
 ## Inputs
 - `engine/core/transaction-rules.md` — structural constraints
 - `workflows/design/workflow.yaml` — design workflow definition

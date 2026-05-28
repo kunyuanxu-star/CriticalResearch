@@ -215,6 +215,28 @@ cmd_start() {
             knowledge_files+=("${kf#$PROJECT_DIR/}")
         done < <(find "$knowledge_dir" -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' -o -name '*.md' \) -print0 2>/dev/null || true)
     fi
+    # ── 9b. Read global knowledge cards from _cr/knowledge/index.yaml ──
+    local gk_yaml=""
+    local gk_index="$WORKSPACE_ROOT/_cr/knowledge/index.yaml"
+    if [ -f "$gk_index" ]; then
+        local gk_count
+        gk_count=$(yq -r '.thinking_cards | length // 0' "$gk_index" 2>/dev/null || echo "0")
+        if [ "${gk_count:-0}" -gt 0 ]; then
+            for j in $(seq 0 $((gk_count - 1))); do
+                local card_id card_title card_path card_maturity
+                card_id=$(yq -r ".thinking_cards[$j].card_id // \"\"" "$gk_index" 2>/dev/null || echo "")
+                card_title=$(yq -r ".thinking_cards[$j].title // \"\"" "$gk_index" 2>/dev/null || echo "")
+                card_path=$(yq -r ".thinking_cards[$j].path // \"\"" "$gk_index" 2>/dev/null || echo "")
+                card_maturity=$(yq -r ".thinking_cards[$j].maturity // \"\"" "$gk_index" 2>/dev/null || echo "")
+                gk_yaml+="    - card_id: $card_id"$'\n'
+                gk_yaml+="      title: \"$card_title\""$'\n'
+                gk_yaml+="      path: $card_path"$'\n'
+                gk_yaml+="      maturity: $card_maturity"$'\n'
+            done
+        fi
+    fi
+
+    # ── 10. Generate contract.yaml ───────────────────────────────────
 
     # Build read_only_context YAML.
     local context_knowledge_yaml=""
@@ -267,6 +289,16 @@ CONT
     if [ -n "$context_knowledge_yaml" ]; then
         printf '%s' "$context_knowledge_yaml" >> "$ROUND_DIR/contract.yaml"
     fi
+    cat >> "$ROUND_DIR/contract.yaml" << CONT
+  global_knowledge_cards:
+CONT
+
+    if [ -n "$gk_yaml" ]; then
+        printf '%s' "$gk_yaml" >> "$ROUND_DIR/contract.yaml"
+    else
+        echo "    []" >> "$ROUND_DIR/contract.yaml"
+    fi
+
 
     # required_outputs from the stage manifests.
     local req_outputs_yaml=""

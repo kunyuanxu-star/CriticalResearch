@@ -89,6 +89,20 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Knowledge artifacts to load as context"
+        },
+        "global_knowledge_cards": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["card_id", "title", "path", "maturity"],
+            "properties": {
+              "card_id": { "type": "string" },
+              "title": { "type": "string" },
+              "path": { "type": "string" },
+              "maturity": { "type": "string" }
+            }
+          },
+          "description": "Global knowledge cards from _cr/knowledge/ loaded for this round"
         }
       }
     },

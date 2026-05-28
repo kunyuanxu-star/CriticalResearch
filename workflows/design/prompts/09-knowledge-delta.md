@@ -1,5 +1,13 @@
 # Stage 9: Knowledge Delta
+
 # Extract reusable design knowledge.
+## Knowledge Loop
+Knowledge written to `_cr/knowledge/` during `cr round close` is
+mechanically injected into all future rounds via `contract.yaml` →
+`read_only_context.global_knowledge_cards`. The model MUST encode
+value that survives past this round — patterns, invariants,
+failure modes, and design rules that compound over time.
+
 
 ## Task
 Produce `knowledge-delta.yaml`:

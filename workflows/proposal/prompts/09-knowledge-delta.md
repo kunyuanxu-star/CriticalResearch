@@ -1,5 +1,12 @@
 # Stage 9: Knowledge Delta
 
+## Knowledge Loop
+Knowledge written to `_cr/knowledge/` during `cr round close` is
+mechanically injected into all future rounds via `contract.yaml` →
+`read_only_context.global_knowledge_cards`. The model MUST encode
+value that survives past this round — domain patterns, process
+heuristics, and scope rules that compound over time.
+
 ## Mission
 Distill round-local learning into reusable global knowledge. Merge domain research, critique patterns, scope decisions, and risk insights into a single knowledge-delta.yaml. Write knowledge cards back to the global knowledge base. Update the goal ledger. Round-local learning must escape into the global knowledge base.
 

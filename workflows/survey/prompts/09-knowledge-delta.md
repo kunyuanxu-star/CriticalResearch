@@ -2,6 +2,13 @@
 # Purpose: Extract reusable knowledge from this survey round and update
 # project-level knowledge artifacts.
 
+## Knowledge Loop
+Knowledge written to `_cr/knowledge/` during `cr round close` is
+mechanically injected into all future rounds via `contract.yaml` →
+`read_only_context.global_knowledge_cards`. The model MUST encode
+value that survives past this round — patterns, invariants,
+failure modes, and design rules that compound over time.
+
 ## Inputs
 - All round artifacts (contract, state, evidence, taxonomy, critique, patches)
 - Project knowledge directory — current claims, terminology, related work

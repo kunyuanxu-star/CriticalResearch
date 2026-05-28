@@ -1,5 +1,12 @@
 # Stage 9: Knowledge Delta
 
+## Knowledge Loop
+Knowledge written to `_cr/knowledge/` during `cr round close` is
+mechanically injected into all future rounds via `contract.yaml` →
+`read_only_context.global_knowledge_cards`. The model MUST encode
+value that survives past this round — methodology patterns,
+measurement insights, and experimental principles that compound over time.
+
 ## Mission
 Distill experiment-round learning into reusable global knowledge. Capture methodology patterns, measurement lessons, analysis insights, validity threat patterns, and experimental design heuristics. Write knowledge cards back to the global knowledge base. Experiment-round learning must escape into the global knowledge base.
 
