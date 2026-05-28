@@ -190,13 +190,33 @@ YAML
     }]" "$APPLY_LOG" 2>/dev/null || true
     echo "  Index updated"
 else
-    # Create initial index.
+    # Create initial index with card scan.
     cat > "$INDEX" << YAML
 schema_version: "1.0.0"
 last_updated: "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-thinking_cards: []
-literature_cards: []
+
+thinking_cards:
 YAML
+    for card in "$WORKSPACE_ROOT/_cr/knowledge/thinking/cards/"*.md; do
+        [ -f "$card" ] || continue
+        card_id=$(basename "$card" .md)
+        title=$(grep '^title:' "$card" 2>/dev/null | head -1 | sed 's/^title:\s*"*//;s/"*$//' | xargs || echo "$card_id")
+        maturity=$(grep '^status:' "$card" 2>/dev/null | head -1 | sed 's/^status:\s*//' | xargs || echo "candidate")
+        echo "  - card_id: $card_id" >> "$INDEX"
+        echo "    title: \"$title\"" >> "$INDEX"
+        echo "    path: _cr/knowledge/thinking/cards/$(basename "$card")" >> "$INDEX"
+        echo "    maturity: $maturity" >> "$INDEX"
+    done
+    echo "" >> "$INDEX"
+    IDX_AFTER=$(sha_or_null "$INDEX")
+    yq -i ".index_updates += [{
+        \"index_path\": \"_cr/knowledge/index.yaml\",
+        \"status\": \"applied\",
+        \"before_sha256\": \"null\",
+        \"after_sha256\": \"$IDX_AFTER\"
+    }]" "$APPLY_LOG" 2>/dev/null || true
+    echo "literature_cards:" >> "$INDEX"
+    echo "  []" >> "$INDEX"
     echo "  Index created"
 fi
 
