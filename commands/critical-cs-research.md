@@ -1,6 +1,6 @@
 ---
 description: "Start enforced workflow-specific CriticalResearch round"
-argument-hint: "<project> --workflow <id> --doc <id> [--unit <id>] [--mode <mode>] <objective>"
+argument-hint: "<project> --workflow <id> --doc <id> [--unit <id>] <objective>"
 allowed-tools:
   - "Bash(cr-round:*)"
   - "Bash(cr stage:*)"
@@ -23,7 +23,7 @@ Start a new workflow-specific research round for a CriticalResearch project.
 ## Usage
 
 ```
-/critical-cs-research <project> --workflow <id> --doc <doc-id> [--unit <unit-id>] [--mode <mode>] <objective>
+/critical-cs-research <project> --workflow <id> --doc <doc-id> [--unit <unit-id>] <objective>
 ```
 
 ## Arguments
@@ -32,7 +32,6 @@ Start a new workflow-specific research round for a CriticalResearch project.
 - `--workflow`: Workflow to use (survey, design, paper, proposal, experiment). Required.
 - `--doc`: Document ID to target (survey, design-doc, paper, proposal, experiment-plan). Required.
 - `--unit`: Unit ID within the target document to focus on (e.g., `survey.sandboxed-containers`). Optional.
-- `--mode`: Execution mode (triage, standard, deep). Defaults to `deep`.
 - `objective`: A concise description of what this round should focus on.
 
 ## Execution Contract
@@ -44,14 +43,13 @@ PROJECT=<first token>
 --workflow <workflow-id>
 --doc <doc-id>
 --unit <unit-id> (optional)
---mode <mode> (optional, default: deep)
 <objective> (remaining text)
 ```
 
 Run exactly:
 
 ```bash
-cr round start "$PROJECT" --workflow "$WORKFLOW" --doc "$DOC" ${UNIT:+--unit "$UNIT"} --mode "${MODE:-deep}" --objective "$OBJECTIVE"
+cr round start "$PROJECT" --workflow "$WORKFLOW" --doc "$DOC" ${UNIT:+--unit "$UNIT"} --mode deep --objective "$OBJECTIVE"
 cr stage status "$PROJECT"
 ```
 
@@ -67,7 +65,7 @@ Then execute the current stage. Do not summarize completion until `cr round clos
 ## Typical session flow
 
 ```
-/critical-cs-research my-project --workflow survey --doc survey --unit survey.sandboxed-containers --mode deep "Research sandboxed containers"
+/critical-cs-research my-project --workflow survey --doc survey --unit survey.sandboxed-containers "Research sandboxed containers"
 # Stage 1: contract — generate round-contract.yaml
 # Stage 2: survey_state — capture current survey snapshot
 # Stage 3: research_planning — plan evidence search

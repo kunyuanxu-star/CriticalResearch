@@ -46,9 +46,9 @@ Outputs: final report, paper-ready or proposal-ready text.
 
 ---
 
-## Concurrency Contract (Standard / Deep Mode)
+## Concurrency Contract (Always Active)
 
-In Standard and Deep modes, the following Role-Lenses may execute as parallel passes:
+The following Role-Lenses execute as parallel passes in every round:
 
 ### Parallel Pass 1: Discovery Lenses
 

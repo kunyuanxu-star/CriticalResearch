@@ -98,11 +98,7 @@ cr validate my-topic --round round-017  # Run validators for a specific round
 | **proposal** | proposal.md | Research proposal, grant proposal, project plan |
 | **experiment** | experiment-plan.md | Experiment design, methodology, validation plan |
 
-| Mode | Use Case | Claims | Evidence | Can Close Round? |
-|------|----------|--------|----------|-----------------|
-| **Triage** | Quick screening, idea feasibility | ≤3 | Internal knowledge only | No — triage only |
-| **Standard** | Regular research, design review | 4–10 | 1 search pass required | Yes |
-| **Deep** | Journal-grade review, full rebuttal | >10 | Deep search + concurrent | Yes |
+All rounds run in **Deep mode only**: full evidence search, concurrent role-lenses, complete ledgers and detailed report output. No Triaging — every round can close.
 
 Each workflow defines its own stage order in `workflows/<id>/workflow.yaml`. A round enters exactly one workflow, declares exactly one mutable document, and modifies one or more units inside that document.
 

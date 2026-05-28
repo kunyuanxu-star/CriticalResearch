@@ -19,7 +19,7 @@ The workflow works across computer-science areas without defaulting to any singl
 
 ## Core Objective
 
-Every round must improve the declared mutable document and update project knowledge.
+Every round must improve the declared mutable document and either update project knowledge or provide an explicit no-delta justification.
 
 The primary artifact is the **target document** in `documents/<doc-id>.md`. Reports, notes, ledgers, and knowledge cards are supporting artifacts — not the final product. A project may contain multiple documents (paper, proposal, survey, design-doc). Each round targets exactly one mutable document and modifies one or more units within it.
 
@@ -49,8 +49,9 @@ For every project, identify:
 5. Read `references/role-lenses.md` for multi-pass analysis.
 6. Use `templates/` for structured artifacts.
 7. Run `cr validate <project>` to enforce the validator pipeline. Use `cr round close <project>` to close a round — it runs all validators and blocks if invariants are violated.
+8. If an action violates an invariant, reject it immediately, quote the broken invariant, and tell the user how to correct it.
 
-If the user has not provided material, ask for it. Infer reasonable defaults for venue, audience, and output form.
+If the user has not provided a `round-contract.yaml` or a target document, ask for those specific artifacts before starting. Infer reasonable defaults for venue, audience, and output form.
 
 ## Workflow Selection
 
@@ -64,18 +65,12 @@ Each round enters exactly one workflow. The workflow determines: stage order, pr
 | **proposal** | proposal.md | Research proposal, grant proposal, project plan |
 | **experiment** | experiment-plan.md | Experiment design, methodology, validation plan |
 
-| Mode | Use Case | Claims | Depth | Evidence | Output |
-|------|----------|--------|-------|----------|--------|
-| **Triage** | Quick screening, idea feasibility check | ≤3 | Internal knowledge only | No external search | Compact checklist — cannot close a formal round |
-| **Standard** | Regular research, design review | 4–10 | 1 search pass | Required | Standard table + short report |
-| **Deep** | Journal-grade review, full rebuttal | >10 | Deep search + concurrent role-lenses | Deep search | Full ledgers + detailed report |
+All rounds run in **Deep mode only** — journal-grade adversarial review with full evidence search and concurrent role-lenses. Every round produces full ledgers and a detailed report.
 
-Triage mode may use internal knowledge for initial screening but cannot close a formal round. To close a round, use Standard or Deep mode.
+To start a round: `cr round start <project> --workflow <id> --doc <doc-id> --unit <unit-id> --objective "..."`
 
-To start a round: `cr round start <project> --workflow <id> --doc <doc-id> --unit <unit-id> --mode <mode> --objective "..."`
-
-To start a paper round: `cr round start <project> --workflow paper --doc paper --unit paper.introduction --mode deep --objective "..."`
-To start a survey round: `cr round start <project> --workflow survey --doc survey --unit survey.sandboxed-containers --mode deep --objective "..."`
+To start a paper round: `cr round start <project> --workflow paper --doc paper --unit paper.introduction --objective "..."`
+To start a survey round: `cr round start <project> --workflow survey --doc survey --unit survey.sandboxed-containers --objective "..."`
 
 ## Workflow-Specific Round Execution
 
@@ -85,17 +80,13 @@ Round execution follows: contract → state snapshot → evidence/research → c
 
 **Validator pipeline**: Engine validators run first (project, document registry, unit registry, round contract, workflow state, single mutable document, target units, readonly context, patch trace, document diff, knowledge delta, round closure). Then workflow-specific validators run (e.g., paper: claims alignment, writing quality, evidence alignment; survey: taxonomy coherence, comparison fairness).
 
-**Key invariants**:
-- **Inv1**: Every round must start from an explicit **Round Contract**. No research without a signed contract.
-- **Inv2**: Every major critique must be grounded in **evidence, document text, domain convention, or venue standard**. No sourceless criticism.
-- **Inv3**: Exactly one mutable document per round. Cross-document writes are prohibited.
-- **Inv4**: Every document patch must trace to a **critique, disposition, revision decision, and document diff**. No free-form editing.
-- **Inv5**: Modified units must exist in the unit registry for the target document.
-- **Inv6**: Read-only context documents must not receive writes during the round.
-- **Inv7**: A round is invalid unless it updates or explicitly blocks the declared mutable document.
-- **Inv8**: Every applied patch must be reflected in the target document and documented in `document-diff.yaml`.
-- **Inv9**: Every round must produce a `knowledge-delta.yaml` or an explicit no-delta justification.
-- **Inv10**: Round closure requires all stages complete, all validators passing, and no pending human decisions.
+**Stage checks**:
+- **Start-of-round**: the round must begin from an explicit **Round Contract** and declare exactly one mutable document. No research without a signed contract, and no cross-document writes.
+- **Critique and patching**: major critiques must be grounded in **evidence, document text, domain convention, or venue standard**. Every document patch must trace to a **critique, disposition, revision decision, and document diff**. Modified units must exist in the unit registry, and read-only context documents must not receive writes.
+- **Round validity**: a round is invalid unless it updates or explicitly blocks the declared mutable document. Every applied patch must be reflected in the target document and documented in `document-diff.yaml`.
+- **Closure**: round closure requires all stages complete, all validators passing, and no pending human decisions. Every round must produce a `knowledge-delta.yaml` or an explicit no-delta justification.
+
+**Structural workflow checks**:
 - **Inv-PromptPack**: Every workflow MUST define a complete `prompt_pack` in its `workflow.yaml`. The `prompt_pack` MUST contain exactly one entry per stage in `stage_order` — no missing prompts, no extra prompts. Every prompt path MUST resolve to an existing file. Discrepancy is a structural error.
 - **Inv-StageContract**: For every stage in `stage_order`, there MUST be exactly one entry in `stage_contracts`. The `stage_contracts` entry MUST declare `prompt`, `required_inputs`, `required_outputs`, `allowed_writes`, and `validators`. `prompt_pack` prompt paths MUST match `stage_contracts` prompt paths exactly. Discrepancy is a structural error.
 - **Inv-WorkflowSpecificity**: Stage prompts MUST be workflow-specific. Each prompt MUST reference the workflow's `profile.md` for domain semantics, `workflow.yaml` for valid patch types and rubric, and workflow-specific schemas. A prompt that could be dropped into a different workflow unchanged is insufficiently specific.
@@ -118,5 +109,7 @@ Avoid vague claims such as "better," "efficient," "secure," "general," "robust,"
 ## Tooling Discipline
 
 Use scripts, validators, schemas, and hooks as the authority for workflow completion. If validators fail, repair artifacts. Do not explain around the failure.
+
+To record a blocker, output a JSON object containing { "status": "BLOCKED", "reason": "<human_decision_required or unrecoverable_tool_error>", "details": "<explanation>" } and immediately halt execution.
 
 If a validator reports missing document patches, missing evidence, missing human decisions, or missing knowledge deltas, fix those artifacts before presenting the round as complete.
