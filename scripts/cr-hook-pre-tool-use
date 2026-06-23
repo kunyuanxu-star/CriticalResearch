@@ -3,88 +3,202 @@
 
 set -euo pipefail
 
-deny() {
-    local reason="$1"
-    python3 - "$reason" <<'PY'
-import json
-import sys
-
-print(json.dumps({
-    "hookSpecificOutput": {
-        "hookEventName": "PreToolUse",
-        "permissionDecision": "deny",
-        "permissionDecisionReason": sys.argv[1],
-    }
-}))
-PY
-    exit 0
-}
-
-allow() {
-    exit 0
-}
-
 INPUT="$(cat)"
 
-json_field() {
-    local path="$1"
-    CR_HOOK_INPUT="$INPUT" CR_HOOK_PATH="$path" python3 - <<'PY'
+CR_HOOK_INPUT="$INPUT" CR_HOOK_CWD="$(pwd)" python3 - <<'PY'
 import json
 import os
+import re
+import shlex
+import sys
+from pathlib import Path
 
-try:
-    data = json.loads(os.environ.get("CR_HOOK_INPUT") or "{}")
-except json.JSONDecodeError:
-    data = {}
 
-value = data
-for part in os.environ["CR_HOOK_PATH"].split("."):
-    if isinstance(value, dict):
-        value = value.get(part, "")
-    else:
-        value = ""
-    if value in (None, ""):
-        value = ""
-        break
+IMMUTABLE_FRONTMATTER_KEYS = {"schema_version", "project_id", "run_id", "objective"}
+MUTATING_BASH_PATTERNS = re.compile(
+    r"(^|[;&|]\s*|\s)(rm|mv|cp|touch|mkdir|tee|dd|sed\s+-i|perl\s+-pi)\b|>|>>"
+)
 
-print(value if isinstance(value, str) else "")
+
+def deny(reason: str) -> None:
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
+        }
+    }))
+    raise SystemExit(0)
+
+
+def load_input() -> dict:
+    try:
+        payload = json.loads(os.environ.get("CR_HOOK_INPUT") or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def workspace_root(cwd: Path):
+    for candidate in [cwd, *cwd.parents]:
+        if (candidate / "_cr" / "workspace.yaml").exists():
+            return candidate
+    return None
+
+
+def resolve_path(cwd: Path, raw: str) -> Path:
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = cwd / path
+    return path.resolve()
+
+
+def relative_to(path: Path, base: Path):
+    try:
+        return path.relative_to(base)
+    except ValueError:
+        return None
+
+
+def active_project(root: Path) -> str:
+    active = root / "_cr" / "active-project"
+    if not active.exists():
+        return ""
+    return active.read_text(encoding="utf-8").strip()
+
+
+def project_for_path(root: Path, path: Path) -> str:
+    rel = relative_to(path, root)
+    if rel is None or not rel.parts:
+        return ""
+    candidate = rel.parts[0]
+    if (root / candidate / "project.yaml").exists():
+        return candidate
+    return ""
+
+
+def frontmatter(text: str) -> dict[str, str]:
+    if not text.startswith("---\n"):
+        return {}
+    end = text.find("\n---\n", 4)
+    if end == -1:
+        return {}
+    result: dict[str, str] = {}
+    for line in text[4:end].splitlines():
+        if ":" not in line or line.startswith(" "):
+            continue
+        key, value = line.split(":", 1)
+        result[key.strip()] = value.strip().strip("\"'")
+    return result
+
+
+def apply_edit_payload(original: str, tool_name: str, tool_input: dict):
+    if tool_name == "Write":
+        content = tool_input.get("content")
+        return content if isinstance(content, str) else None
+
+    if tool_name == "Edit":
+        old = tool_input.get("old_string")
+        new = tool_input.get("new_string")
+        if isinstance(old, str) and isinstance(new, str) and old in original:
+            return original.replace(old, new, 1)
+        return None
+
+    if tool_name == "MultiEdit":
+        edits = tool_input.get("edits")
+        if not isinstance(edits, list):
+            return None
+        updated = original
+        for edit in edits:
+            if not isinstance(edit, dict):
+                return None
+            old = edit.get("old_string")
+            new = edit.get("new_string")
+            if not isinstance(old, str) or not isinstance(new, str) or old not in updated:
+                return None
+            updated = updated.replace(old, new, 1)
+        return updated
+
+    return None
+
+
+def guard_file_write(root: Path, cwd: Path, tool_name: str, tool_input: dict) -> None:
+    raw_path = tool_input.get("file_path")
+    if not isinstance(raw_path, str) or not raw_path:
+        return
+
+    path = resolve_path(cwd, raw_path)
+    rel = relative_to(path, root)
+    if rel is None:
+        return
+
+    if rel.parts[:2] in [("_cr", "workspace.yaml"), ("_cr", "active-project")]:
+        deny("Direct edits to CriticalResearch workspace state are blocked. Use cr commands.")
+
+    active = active_project(root)
+    target_project = project_for_path(root, path)
+    if active and target_project and target_project != active:
+        deny(f"Cross-project write blocked: active project is '{active}', target project is '{target_project}'.")
+
+    if len(rel.parts) >= 4 and rel.parts[-1] == "research.md" and rel.parts[-3] == "runs":
+        if not path.exists():
+            return
+        original = path.read_text(encoding="utf-8")
+        updated = apply_edit_payload(original, tool_name, tool_input)
+        if updated is None:
+            return
+        before = frontmatter(original)
+        after = frontmatter(updated)
+        for key in IMMUTABLE_FRONTMATTER_KEYS:
+            if before.get(key) != after.get(key):
+                deny(f"Immutable research.md frontmatter key cannot be changed: {key}")
+
+
+def command_paths(command: str) -> list[str]:
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+    return [token for token in tokens if "/" in token and not token.startswith("-")]
+
+
+def guard_bash(root: Path, cwd: Path, command: str) -> None:
+    if re.search(r"rm[^\n;|&]*runs/run-[0-9][0-9][0-9]/research\.md", command):
+        deny("Deleting an active research.md is blocked.")
+
+    if not MUTATING_BASH_PATTERNS.search(command):
+        return
+
+    active = active_project(root)
+    if not active:
+        return
+
+    for raw in command_paths(command):
+        path = resolve_path(cwd, raw)
+        target_project = project_for_path(root, path)
+        if target_project and target_project != active:
+            deny(f"Cross-project Bash mutation blocked: active project is '{active}', target project is '{target_project}'.")
+
+
+def main() -> None:
+    payload = load_input()
+    tool_name = payload.get("tool_name") or payload.get("tool") or ""
+    tool_input = payload.get("tool_input") or {}
+    if not isinstance(tool_name, str) or not isinstance(tool_input, dict):
+        return
+
+    cwd = Path(os.environ.get("CR_HOOK_CWD") or os.getcwd()).resolve()
+    root = workspace_root(cwd)
+    if root is None:
+        return
+
+    if tool_name in {"Write", "Edit", "MultiEdit"}:
+        guard_file_write(root, cwd, tool_name, tool_input)
+    elif tool_name == "Bash":
+        command = tool_input.get("command")
+        if isinstance(command, str):
+            guard_bash(root, cwd, command)
+
+
+main()
 PY
-}
-
-TOOL_NAME="$(json_field tool_name)"
-[ -z "$TOOL_NAME" ] && TOOL_NAME="$(json_field tool)"
-
-[ -z "$TOOL_NAME" ] && allow
-
-case "$TOOL_NAME" in
-    Write|Edit|MultiEdit)
-        FILE_PATH="$(json_field tool_input.file_path)"
-        [ -z "$FILE_PATH" ] && allow
-        case "$FILE_PATH" in
-            /*) ABS="$FILE_PATH" ;;
-            *) ABS="$(pwd)/$FILE_PATH" ;;
-        esac
-        case "$ABS" in
-            */_cr/workspace.yaml|*/_cr/active-project)
-                deny "Direct edits to CriticalResearch workspace state are blocked. Use cr commands."
-                ;;
-            */runs/run-*/research.md)
-                # Editing the active artifact is allowed; deleting it via Bash is guarded below.
-                allow
-                ;;
-            *)
-                allow
-                ;;
-        esac
-        ;;
-    Bash)
-        CMD="$(json_field tool_input.command)"
-        if printf '%s' "$CMD" | grep -Eq 'rm[[:space:]].*runs/run-[0-9][0-9][0-9]/research\.md'; then
-            deny "Deleting an active research.md is blocked."
-        fi
-        allow
-        ;;
-    *)
-        allow
-        ;;
-esac

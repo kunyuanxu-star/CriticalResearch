@@ -25,6 +25,8 @@ pass() { echo "PASS $1"; passes=$((passes + 1)); }
 fail() { echo "FAIL $1"; fails=$((fails + 1)); }
 
 cr workspace init >/dev/null
+cr project init other --domain systems >/dev/null
+cr run other "Other objective" >/dev/null
 cr project init hooks --domain systems >/dev/null
 cr run hooks "Hook objective" >/dev/null
 
@@ -61,6 +63,45 @@ if printf '%s' "$DELETE_INPUT" | "$ROOT/scripts/cr-hook-pre-tool-use" | grep -q 
     pass "pre-tool hook blocks research.md deletion"
 else
     fail "pre-tool hook blocks research.md deletion"
+fi
+
+CROSS_WRITE_INPUT='{"tool_name":"Write","tool_input":{"file_path":"other/notes.md","content":"x"}}'
+if printf '%s' "$CROSS_WRITE_INPUT" | "$ROOT/scripts/cr-hook-pre-tool-use" | grep -q '"permissionDecision": "deny"'; then
+    pass "pre-tool hook blocks cross-project Write"
+else
+    fail "pre-tool hook blocks cross-project Write"
+fi
+
+CROSS_BASH_INPUT='{"tool_name":"Bash","tool_input":{"command":"touch other/notes.md"}}'
+if printf '%s' "$CROSS_BASH_INPUT" | "$ROOT/scripts/cr-hook-pre-tool-use" | grep -q '"permissionDecision": "deny"'; then
+    pass "pre-tool hook blocks cross-project Bash mutation"
+else
+    fail "pre-tool hook blocks cross-project Bash mutation"
+fi
+
+IMMUTABLE_INPUT="$(python3 - <<'PY'
+import json
+from pathlib import Path
+
+p = Path("hooks/runs/run-001/research.md")
+s = p.read_text()
+old = "project_id: hooks"
+if old not in s:
+    old = 'project_id: "hooks"'
+print(json.dumps({
+    "tool_name": "Edit",
+    "tool_input": {
+        "file_path": str(p),
+        "old_string": old,
+        "new_string": old.replace("hooks", "other"),
+    },
+}))
+PY
+)"
+if printf '%s' "$IMMUTABLE_INPUT" | "$ROOT/scripts/cr-hook-pre-tool-use" | grep -q '"permissionDecision": "deny"'; then
+    pass "pre-tool hook blocks immutable frontmatter mutation"
+else
+    fail "pre-tool hook blocks immutable frontmatter mutation"
 fi
 
 echo "RESULT $passes passed, $fails failed"
