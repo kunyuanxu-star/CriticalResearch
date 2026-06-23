@@ -15,7 +15,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import yaml
+try:
+    import yaml as _pyyaml
+except Exception:
+    _pyyaml = None
 
 
 VALID_STATUSES = {
@@ -112,15 +115,133 @@ def atomic_write(path: Path, text: str) -> None:
     tmp.replace(path)
 
 
-def read_yaml(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+def parse_scalar(value: str) -> Any:
+    value = value.strip()
+    if value in {"", "null", "Null", "NULL", "~"}:
+        return None
+    if value in {"[]", "{}"}:
+        return [] if value == "[]" else {}
+    if value in {"true", "True", "TRUE"}:
+        return True
+    if value in {"false", "False", "FALSE"}:
+        return False
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        if value.startswith('"'):
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError:
+                return value[1:-1]
+        return value[1:-1].replace("''", "'")
+    if re.fullmatch(r"-?\d+", value):
+        try:
+            return int(value)
+        except ValueError:
+            pass
+    return value
+
+
+def parse_restricted_yaml(text: str) -> dict[str, Any]:
+    lines = [
+        (len(line) - len(line.lstrip(" ")), line.strip())
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    root: dict[str, Any] = {}
+    stack: list[tuple[int, Any]] = [(-1, root)]
+
+    for idx, (indent, stripped) in enumerate(lines):
+        while stack and indent <= stack[-1][0]:
+            stack.pop()
+        parent = stack[-1][1]
+
+        if stripped.startswith("- "):
+            if not isinstance(parent, list):
+                raise ValueError("list item without list parent")
+            parent.append(parse_scalar(stripped[2:]))
+            continue
+
+        if ":" not in stripped:
+            raise ValueError(f"invalid YAML line: {stripped}")
+        key, raw_value = stripped.split(":", 1)
+        key = key.strip()
+        raw_value = raw_value.strip()
+        if not isinstance(parent, dict):
+            raise ValueError("mapping entry without mapping parent")
+
+        if raw_value:
+            parent[key] = parse_scalar(raw_value)
+            continue
+
+        next_is_list = False
+        for next_indent, next_stripped in lines[idx + 1 :]:
+            if next_indent <= indent:
+                break
+            next_is_list = next_stripped.startswith("- ")
+            break
+        container: Any = [] if next_is_list else {}
+        parent[key] = container
+        stack.append((indent, container))
+
+    return root
+
+
+def dump_scalar(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    text = str(value)
+    if text and re.fullmatch(r"[A-Za-z0-9_./@+-]+", text) and text not in {"null", "true", "false"}:
+        return text
+    return json.dumps(text, ensure_ascii=False)
+
+
+def dump_restricted_yaml(data: dict[str, Any], indent: int = 0) -> str:
+    lines: list[str] = []
+    prefix = " " * indent
+    for key, value in data.items():
+        if isinstance(value, dict):
+            if value:
+                lines.append(f"{prefix}{key}:")
+                lines.append(dump_restricted_yaml(value, indent + 2))
+            else:
+                lines.append(f"{prefix}{key}: {{}}")
+        elif isinstance(value, list):
+            if value:
+                lines.append(f"{prefix}{key}:")
+                for item in value:
+                    lines.append(f"{' ' * (indent + 2)}- {dump_scalar(item)}")
+            else:
+                lines.append(f"{prefix}{key}: []")
+        else:
+            lines.append(f"{prefix}{key}: {dump_scalar(value)}")
+    return "\n".join(lines)
+
+
+def yaml_load(text: str) -> dict[str, Any]:
+    if _pyyaml is not None:
+        data = _pyyaml.safe_load(text)
+    else:
+        data = parse_restricted_yaml(text)
     return data if isinstance(data, dict) else {}
 
 
+def yaml_dump(data: dict[str, Any]) -> str:
+    if _pyyaml is not None:
+        return _pyyaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+    return dump_restricted_yaml(data) + "\n"
+
+
+def read_yaml(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    return yaml_load(path.read_text(encoding="utf-8"))
+
+
 def write_yaml(path: Path, data: dict[str, Any]) -> None:
-    atomic_write(path, yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
+    atomic_write(path, yaml_dump(data))
 
 
 def workspace_root() -> Path:
@@ -210,8 +331,8 @@ def parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
         raise ValueError("unterminated YAML frontmatter")
     raw = text[4:end]
     body = text[end + 5 :]
-    data = yaml.safe_load(raw)
-    if not isinstance(data, dict):
+    data = yaml_load(raw)
+    if not data:
         raise ValueError("frontmatter is not a mapping")
     return data, body
 
@@ -242,7 +363,7 @@ def render_research_template(project: str, run_id: str, objective: str, mode: st
         "created_at": now_iso(),
         "updated_at": now_iso(),
     }
-    frontmatter = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
+    frontmatter = yaml_dump(fm).strip()
     body = f"""# Research Brief
 
 ## Thesis

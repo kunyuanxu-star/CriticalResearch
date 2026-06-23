@@ -15,7 +15,7 @@ CriticalResearch uses one default artifact per run and no visible process table.
 bash install.sh
 ```
 
-Requirements: Bash, Git, Python 3, and PyYAML.
+Requirements: Bash, Git, and Python 3.
 
 ## Quick Start
 

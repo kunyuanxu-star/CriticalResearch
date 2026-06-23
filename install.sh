@@ -21,20 +21,9 @@ for dep in git bash python3; do
     fi
 done
 
-if ! python3 - <<'PY' >/dev/null 2>&1
-import yaml
-PY
-then
-    echo "  MISSING: PyYAML"
-    MISSING="$MISSING PyYAML"
-else
-    echo "  FOUND: PyYAML"
-fi
-
 if [ -n "$MISSING" ]; then
     echo ""
     echo "Install missing dependencies before continuing:$MISSING"
-    echo "  python3 -m pip install PyYAML"
     exit 1
 fi
 
