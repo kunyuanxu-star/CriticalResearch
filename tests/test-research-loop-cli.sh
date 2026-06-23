@@ -36,11 +36,18 @@ check '[ -f edge-cache/runs/run-002/trace.jsonl ]' "trace created with debug"
 check 'grep -q "mode: quick" edge-cache/runs/run-002/research.md' "quick mode recorded"
 check 'grep -q "loop_budget: 1" edge-cache/runs/run-002/research.md' "quick budget recorded"
 
-if cr round edge-cache 2>/tmp/cr-loop-round.err; then
-    fail "round unsupported"
-else
-    grep -q "unsupported in CriticalResearch" /tmp/cr-loop-round.err && pass "round unsupported"
-fi
+for old_cmd in round stage document unit workflow; do
+    if cr "$old_cmd" edge-cache 2>"/tmp/cr-loop-$old_cmd.err"; then
+        fail "$old_cmd unsupported"
+    elif grep -q "unsupported in CriticalResearch" "/tmp/cr-loop-$old_cmd.err" &&
+        grep -q 'cr run <project> "objective"' "/tmp/cr-loop-$old_cmd.err" &&
+        grep -q "not workflow/stage/round state" "/tmp/cr-loop-$old_cmd.err"; then
+        pass "$old_cmd unsupported"
+    else
+        cat "/tmp/cr-loop-$old_cmd.err"
+        fail "$old_cmd unsupported"
+    fi
+done
 
 echo "RESULT $passes passed, $fails failed"
 [ "$fails" -eq 0 ]
