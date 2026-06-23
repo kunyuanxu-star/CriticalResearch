@@ -28,6 +28,8 @@ check '[ -f edge-cache/runs/run-001/research.md ]' "run-001 research.md created"
 check '[ ! -f edge-cache/runs/run-001/trace.jsonl ]' "no trace by default"
 check '[ "$(cr status edge-cache --field latest_run)" = "run-001" ]' "latest run field"
 check '[ "$(cr status edge-cache --field status)" = "draft" ]' "draft status field"
+check 'grep -q "mode: standard" edge-cache/runs/run-001/research.md' "default standard mode recorded"
+check 'grep -q "loop_budget: 3" edge-cache/runs/run-001/research.md' "standard budget recorded"
 check 'cr show edge-cache | grep -q "# Research Brief"' "show prints research brief"
 
 cr run edge-cache "Second objective" --mode quick --debug >/dev/null
@@ -35,6 +37,11 @@ check '[ -f edge-cache/runs/run-002/research.md ]' "run-002 research.md created"
 check '[ -f edge-cache/runs/run-002/trace.jsonl ]' "trace created with debug"
 check 'grep -q "mode: quick" edge-cache/runs/run-002/research.md' "quick mode recorded"
 check 'grep -q "loop_budget: 1" edge-cache/runs/run-002/research.md' "quick budget recorded"
+
+cr run edge-cache "Third objective" --mode deep >/dev/null
+check '[ -f edge-cache/runs/run-003/research.md ]' "run-003 research.md created"
+check 'grep -q "mode: deep" edge-cache/runs/run-003/research.md' "deep mode recorded"
+check 'grep -q "loop_budget: 5" edge-cache/runs/run-003/research.md' "deep budget recorded"
 
 for old_cmd in round stage document unit workflow; do
     if cr "$old_cmd" edge-cache 2>"/tmp/cr-loop-$old_cmd.err"; then
