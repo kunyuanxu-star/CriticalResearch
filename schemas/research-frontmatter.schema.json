@@ -37,9 +37,38 @@
       "enum": ["basic_system", "contradiction", "strawman", "root_cause", "insight", "design", "proof_plan", "evidence", "writing", "scope"]
     },
     "next_action": { "type": "string" },
-    "validation": { "type": "object" },
-    "convergence": { "type": "object" },
-    "gate": { "type": "object" },
+    "validation": {
+      "type": "object",
+      "required": ["error_count", "warning_count", "blocking_attack_count"],
+      "properties": {
+        "error_count": { "type": "integer", "minimum": 0 },
+        "warning_count": { "type": "integer", "minimum": 0 },
+        "blocking_attack_count": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "convergence": {
+      "type": "object",
+      "required": ["stall_count", "repeated_attack_count", "scope_challenge_count", "progress_signal"],
+      "properties": {
+        "stall_count": { "type": "integer", "minimum": 0 },
+        "repeated_attack_count": { "type": "integer", "minimum": 0 },
+        "scope_challenge_count": { "type": "integer", "minimum": 0 },
+        "progress_signal": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "gate": {
+      "type": "object",
+      "required": ["type", "description"],
+      "properties": {
+        "type": {
+          "enum": ["none", "user_input", "external_evidence", "data_access", "compute", "literature", "implementation"]
+        },
+        "description": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
     "debug_trace": { "type": "boolean" },
     "created_at": { "type": "string" },
     "updated_at": { "type": "string" }

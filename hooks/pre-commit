@@ -33,6 +33,7 @@ run_check "CLI regression" tests/test-research-loop-cli.sh
 run_check "validator regression" tests/test-research-loop-validate.sh
 run_check "hook regression" tests/test-research-loop-hooks.sh
 run_check "command contract regression" tests/test-command-contract.sh
+run_check "schema contract regression" tests/test-schema-contract.sh
 
 if [ "$ERRORS" -gt 0 ]; then
     echo "Blocked: $ERRORS failure(s)"
