@@ -9,6 +9,16 @@ TMP="$(mktemp -d /tmp/cr-loop-hooks-XXXXXX)"
 trap 'rm -rf "$TMP"' EXIT
 cd "$TMP"
 
+NO_JQ_BIN="$TMP/no-jq-bin"
+mkdir -p "$NO_JQ_BIN"
+cat > "$NO_JQ_BIN/jq" <<'SH'
+#!/usr/bin/env bash
+echo "jq intentionally blocked by test" >&2
+exit 127
+SH
+chmod +x "$NO_JQ_BIN/jq"
+export PATH="$NO_JQ_BIN:$PATH"
+
 passes=0
 fails=0
 pass() { echo "PASS $1"; passes=$((passes + 1)); }

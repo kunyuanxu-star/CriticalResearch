@@ -5,13 +5,18 @@ set -euo pipefail
 
 deny() {
     local reason="$1"
-    jq -n --arg reason "$reason" '{
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "deny",
-        permissionDecisionReason: $reason
-      }
-    }'
+    python3 - "$reason" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": sys.argv[1],
+    }
+}))
+PY
     exit 0
 }
 
@@ -20,13 +25,40 @@ allow() {
 }
 
 INPUT="$(cat)"
-TOOL_NAME="$(printf '%s' "$INPUT" | jq -r '.tool_name // .tool // empty' 2>/dev/null || true)"
+
+json_field() {
+    local path="$1"
+    CR_HOOK_INPUT="$INPUT" CR_HOOK_PATH="$path" python3 - <<'PY'
+import json
+import os
+
+try:
+    data = json.loads(os.environ.get("CR_HOOK_INPUT") or "{}")
+except json.JSONDecodeError:
+    data = {}
+
+value = data
+for part in os.environ["CR_HOOK_PATH"].split("."):
+    if isinstance(value, dict):
+        value = value.get(part, "")
+    else:
+        value = ""
+    if value in (None, ""):
+        value = ""
+        break
+
+print(value if isinstance(value, str) else "")
+PY
+}
+
+TOOL_NAME="$(json_field tool_name)"
+[ -z "$TOOL_NAME" ] && TOOL_NAME="$(json_field tool)"
 
 [ -z "$TOOL_NAME" ] && allow
 
 case "$TOOL_NAME" in
     Write|Edit|MultiEdit)
-        FILE_PATH="$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true)"
+        FILE_PATH="$(json_field tool_input.file_path)"
         [ -z "$FILE_PATH" ] && allow
         case "$FILE_PATH" in
             /*) ABS="$FILE_PATH" ;;
@@ -46,7 +78,7 @@ case "$TOOL_NAME" in
         esac
         ;;
     Bash)
-        CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)"
+        CMD="$(json_field tool_input.command)"
         if printf '%s' "$CMD" | grep -Eq 'rm[[:space:]].*runs/run-[0-9][0-9][0-9]/research\.md'; then
             deny "Deleting an active research.md is blocked."
         fi

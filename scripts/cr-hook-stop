@@ -45,17 +45,32 @@ case "$STATUS" in
             exit 0
         fi
         VALIDATION="$(CR_WORKSPACE_ROOT="$ROOT" "$CR" validate "$PROJECT" 2>&1 || true)"
-        jq -n --arg reason "CriticalResearch terminal run failed validation.\n\n$VALIDATION" '{
-          decision: "block",
-          reason: $reason
-        }'
+        python3 - "CriticalResearch terminal run failed validation.\n\n$VALIDATION" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "decision": "block",
+    "reason": sys.argv[1],
+}))
+PY
         exit 1
         ;;
     invalid|draft|forming|reviewing|repairing|*)
-        jq -n --arg status "$STATUS" '{
-          decision: "block",
-          reason: ("CriticalResearch run is not terminal (status=" + $status + "). Set status to complete, blocked, gated, or budget_exhausted and run cr validate.")
-        }'
+        python3 - "$STATUS" <<'PY'
+import json
+import sys
+
+status = sys.argv[1]
+print(json.dumps({
+    "decision": "block",
+    "reason": (
+        "CriticalResearch run is not terminal (status="
+        + status
+        + "). Set status to complete, blocked, gated, or budget_exhausted and run cr validate."
+    ),
+}))
+PY
         exit 1
         ;;
 esac
