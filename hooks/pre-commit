@@ -32,6 +32,7 @@ run_check "install quickstart" tests/test-install-quickstart.sh
 run_check "CLI regression" tests/test-research-loop-cli.sh
 run_check "validator regression" tests/test-research-loop-validate.sh
 run_check "hook regression" tests/test-research-loop-hooks.sh
+run_check "command contract regression" tests/test-command-contract.sh
 
 if [ "$ERRORS" -gt 0 ]; then
     echo "Blocked: $ERRORS failure(s)"

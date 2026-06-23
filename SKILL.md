@@ -35,6 +35,38 @@ Each run is a Thesis Repair Loop:
 Do not expose raw simulated transcripts by default. Expose only final attacks,
 repairs, evidence boundaries, and next action.
 
+## Execution Contract
+
+Required inputs:
+
+- `research.md` for the active run.
+- `project.yaml` for project metadata.
+- User objective and selected mode.
+
+Allowed writes:
+
+- The active run's `research.md`.
+- `trace.jsonl` only when debug tracing is explicitly enabled.
+- Project metadata only through `cr run` and CLI-managed updates.
+
+Required outputs:
+
+- A terminal run state: `complete`, `blocked`, `gated`, `budget_exhausted`, or `invalid`.
+- A concrete `next_action` for every non-invalid terminal state.
+- Reviewer Attacks, Evidence Boundary, Weakest Link, and Next Minimum Experiment sections that agree with the frontmatter.
+
+Quality gates:
+
+- Run `cr validate` before stopping.
+- Treat validator errors as blocking unless the terminal status is explicitly allowed by the validator.
+- Do not treat warning text as success in strict review contexts; use `cr validate --strict` when warnings should block.
+
+Traceability:
+
+- Link each repair to one weakest link.
+- Link attacks and dispositions to specific brief fields.
+- Store only summaries and validation deltas in debug traces; do not store raw simulated transcripts or chain-of-thought.
+
 ## Research Standards
 
 Start from contradiction, not implementation.
