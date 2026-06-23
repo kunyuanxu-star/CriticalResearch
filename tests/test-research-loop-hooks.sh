@@ -233,6 +233,13 @@ else
     fail "pre-tool hook blocks cross-project Write"
 fi
 
+STATE_WRITE_INPUT='{"tool_name":"Write","tool_input":{"file_path":"_cr/sessions/bad.yaml","content":"x"}}'
+if printf '%s' "$STATE_WRITE_INPUT" | "$ROOT/scripts/cr-hook-pre-tool-use" | grep -q '"permissionDecision": "deny"'; then
+    pass "pre-tool hook blocks workspace state Write"
+else
+    fail "pre-tool hook blocks workspace state Write"
+fi
+
 CROSS_BASH_INPUT='{"tool_name":"Bash","tool_input":{"command":"touch other/notes.md"}}'
 if printf '%s' "$CROSS_BASH_INPUT" | "$ROOT/scripts/cr-hook-pre-tool-use" | grep -q '"permissionDecision": "deny"'; then
     pass "pre-tool hook blocks cross-project Bash mutation"

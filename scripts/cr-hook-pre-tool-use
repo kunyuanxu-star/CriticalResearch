@@ -132,7 +132,7 @@ def guard_file_write(root: Path, cwd: Path, tool_name: str, tool_input: dict) ->
     if rel is None:
         return
 
-    if rel.parts[:2] in [("_cr", "workspace.yaml"), ("_cr", "active-project")]:
+    if rel.parts and rel.parts[0] == "_cr":
         deny("Direct edits to CriticalResearch workspace state are blocked. Use cr commands.")
 
     active = active_project(root)

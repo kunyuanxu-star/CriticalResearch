@@ -482,7 +482,7 @@ def sections(body: str) -> dict[str, str]:
 
 
 def label_value(section: str, label: str) -> str:
-    pattern = re.compile(rf"^\s*(?:[-*]\s*)?{re.escape(label)}:\s*(.+?)\s*$", re.MULTILINE)
+    pattern = re.compile(rf"^[ \t]*(?:[-*][ \t]*)?{re.escape(label)}:[ \t]*(.*)$", re.MULTILINE)
     match = pattern.search(section)
     if not match:
         return ""
@@ -766,8 +766,8 @@ def cmd_status(args: argparse.Namespace) -> int:
     print(f"Loops: {fm.get('loop_count', 0)}/{fm.get('loop_budget', 0)}")
     print(f"Weakest link: {fields['weakest_link']}")
     print(f"Next action: {fm.get('next_action', '')}")
-    validation = fm.get("validation") if isinstance(fm.get("validation"), dict) else {}
-    print(f"Validation: {validation.get('error_count', 0)} errors, {validation.get('warning_count', 0)} warnings")
+    validation_result, _ = validate_research(path)
+    print(f"Validation: {len(validation_result.errors)} errors, {len(validation_result.warnings)} warnings")
     return 0
 
 
