@@ -160,6 +160,41 @@ else
     fail "valid complete brief"
 fi
 
+cp proof/runs/run-001/research.md /tmp/valid-complete.md
+python3 - <<'PY'
+from pathlib import Path
+p = Path("proof/runs/run-001/research.md")
+s = p.read_text()
+s = s.replace(
+    "- Insight: Treating stale observation as an explicit state allows the system to bound recovery work without requiring global knowledge at decision time.",
+    "- Insight: Use explicit uncertainty metadata to bound recovery work without requiring global knowledge at decision time.",
+)
+p.write_text(s)
+PY
+set +e
+cr validate proof >/tmp/cr-warning.out
+rc=$?
+set -e
+if [ "$rc" -eq 1 ] && grep -q "VALID WITH WARNINGS" /tmp/cr-warning.out && grep -q "W060" /tmp/cr-warning.out; then
+    pass "warning returns exit 1"
+else
+    cat /tmp/cr-warning.out
+    fail "warning returns exit 1"
+fi
+
+set +e
+cr validate proof --strict >/tmp/cr-strict-warning.out
+rc=$?
+set -e
+if [ "$rc" -eq 2 ] && grep -q "INVALID" /tmp/cr-strict-warning.out && grep -q "E060" /tmp/cr-strict-warning.out; then
+    pass "strict warning returns exit 2"
+else
+    cat /tmp/cr-strict-warning.out
+    fail "strict warning returns exit 2"
+fi
+
+cp /tmp/valid-complete.md proof/runs/run-001/research.md
+
 perl -0pi -e 's/### Strawman 2.*?### Shared Root Cause/### Shared Root Cause/s' proof/runs/run-001/research.md
 if cr validate proof >/tmp/cr-invalid.out 2>&1; then
     fail "one strawman should fail"
