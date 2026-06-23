@@ -33,7 +33,13 @@ echo "Installing skill to: $SKILL_DIR"
 if [ "$REPO_DIR" != "$SKILL_DIR" ]; then
     mkdir -p "$(dirname "$SKILL_DIR")"
     if [ -d "$SKILL_DIR" ]; then
-        rsync -a --delete --exclude '.git' --exclude '.humanize' --exclude '.claude/settings.local.json' "$REPO_DIR/" "$SKILL_DIR/"
+        if command -v rsync >/dev/null 2>&1; then
+            rsync -a --delete --exclude '.git' --exclude '.humanize' --exclude '.claude/settings.local.json' "$REPO_DIR/" "$SKILL_DIR/"
+        else
+            echo "  rsync not found; copying files without deleting stale installed files."
+            cp -R "$REPO_DIR"/. "$SKILL_DIR"/
+            rm -rf "$SKILL_DIR/.git" "$SKILL_DIR/.humanize" "$SKILL_DIR/.claude/settings.local.json" 2>/dev/null || true
+        fi
     else
         cp -R "$REPO_DIR" "$SKILL_DIR"
         rm -rf "$SKILL_DIR/.git" "$SKILL_DIR/.humanize" 2>/dev/null || true

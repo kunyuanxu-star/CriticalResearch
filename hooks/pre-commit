@@ -11,14 +11,27 @@ fi
 ERRORS=0
 fail() { echo "  [FAIL] $1"; ERRORS=$((ERRORS + 1)); }
 pass() { echo "  [OK] $1"; }
+run_check() {
+    local label="$1"
+    shift
+    if "$@"; then
+        pass "$label"
+    else
+        fail "$label"
+    fi
+}
 
 echo "CriticalResearch pre-commit"
 
-python3 -m py_compile engine/research_loop/cli.py && pass "engine/research_loop/cli.py compiles" || fail "engine/research_loop/cli.py compile failed"
-bash -n scripts/cr && pass "scripts/cr syntax" || fail "scripts/cr syntax"
-bash -n scripts/critical-research-hook && pass "hook wrapper syntax" || fail "hook wrapper syntax"
-bash -n scripts/cr-hook-stop && pass "stop hook syntax" || fail "stop hook syntax"
-bash -n scripts/cr-hook-pre-tool-use && pass "pre-tool hook syntax" || fail "pre-tool hook syntax"
+run_check "engine/research_loop/cli.py compiles" python3 -m py_compile engine/research_loop/cli.py
+run_check "scripts/cr syntax" bash -n scripts/cr
+run_check "hook wrapper syntax" bash -n scripts/critical-research-hook
+run_check "stop hook syntax" bash -n scripts/cr-hook-stop
+run_check "pre-tool hook syntax" bash -n scripts/cr-hook-pre-tool-use
+run_check "install quickstart" tests/test-install-quickstart.sh
+run_check "CLI regression" tests/test-research-loop-cli.sh
+run_check "validator regression" tests/test-research-loop-validate.sh
+run_check "hook regression" tests/test-research-loop-hooks.sh
 
 if [ "$ERRORS" -gt 0 ]; then
     echo "Blocked: $ERRORS failure(s)"
