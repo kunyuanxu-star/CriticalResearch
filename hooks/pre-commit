@@ -1,101 +1,28 @@
 #!/usr/bin/env bash
-# pre-commit — CriticalResearch enforcement gate.
-# Installed to .git/hooks/pre-commit by install.sh.
-# Blocks commits that disable hooks or bypass enforcement.
-#
-# Checks:
-#   1. .claude/settings.local.json must NOT have disableAllHooks:true
-#   2. .claude/settings.json must have all 4 hook events configured
-#   3. critical-research-hook must be installed and executable
-#   4. All changed scripts must pass bash -n syntax check
-#
-# Override: set CR_SKIP_PRECOMMIT=1 to skip (not recommended).
+# CriticalResearch pre-commit smoke gate.
 
 set -euo pipefail
 
 if [ "${CR_SKIP_PRECOMMIT:-0}" = "1" ]; then
-    echo "CR_SKIP_PRECOMMIT=1 — skipping enforcement checks"
+    echo "CR_SKIP_PRECOMMIT=1 - skipping checks"
     exit 0
 fi
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-NC='\033[0m'
 ERRORS=0
+fail() { echo "  [FAIL] $1"; ERRORS=$((ERRORS + 1)); }
+pass() { echo "  [OK] $1"; }
 
-pass() { echo -e "  ${GREEN}[OK]${NC} $1"; }
-fail() { echo -e "  ${RED}[FAIL]${NC} $1"; ERRORS=$((ERRORS + 1)); }
+echo "CriticalResearch pre-commit"
 
-echo ""
-echo "══ CriticalResearch Pre-Commit Enforcement ══"
+python3 -m py_compile engine/research_loop/cli.py && pass "engine/research_loop/cli.py compiles" || fail "engine/research_loop/cli.py compile failed"
+bash -n scripts/cr && pass "scripts/cr syntax" || fail "scripts/cr syntax"
+bash -n scripts/critical-research-hook && pass "hook wrapper syntax" || fail "hook wrapper syntax"
+bash -n scripts/cr-hook-stop && pass "stop hook syntax" || fail "stop hook syntax"
+bash -n scripts/cr-hook-pre-tool-use && pass "pre-tool hook syntax" || fail "pre-tool hook syntax"
 
-# ── Check 1: disableAllHooks must not be true ──────────────────────
-
-SETTINGS_LOCAL=".claude/settings.local.json"
-if [ -f "$SETTINGS_LOCAL" ]; then
-    if grep -q '"disableAllHooks"\s*:\s*true' "$SETTINGS_LOCAL" 2>/dev/null; then
-        fail "disableAllHooks is true in $SETTINGS_LOCAL — hooks must be active"
-        echo "        Remove 'disableAllHooks: true' from .claude/settings.local.json"
-        echo "        Or set it to: {}"
-    else
-        pass "disableAllHooks not set to true"
-    fi
-else
-    pass "No settings.local.json override (hooks active)"
-fi
-
-# ── Check 2: .claude/settings.json must have hook config ───────────
-
-SETTINGS=".claude/settings.json"
-if [ -f "$SETTINGS" ]; then
-    for event in UserPromptSubmit PreToolUse PostToolUse Stop; do
-        if grep -q "\"$event\"" "$SETTINGS" 2>/dev/null; then
-            pass "Hook $event configured"
-        else
-            fail "Hook $event missing from $SETTINGS"
-        fi
-    done
-else
-    fail ".claude/settings.json not found"
-fi
-
-# ── Check 3: critical-research-hook must be installed ─────────────
-
-if command -v critical-research-hook >/dev/null 2>&1; then
-    pass "critical-research-hook found on PATH"
-elif [ -x "$HOME/.local/bin/critical-research-hook" ]; then
-    pass "critical-research-hook found at ~/.local/bin/"
-else
-    fail "critical-research-hook not found — run install.sh"
-fi
-
-# ── Check 4: Changed scripts pass syntax check ─────────────────────
-
-STAGED_SCRIPTS=$(git diff --cached --name-only --diff-filter=ACM | grep '^scripts/' || true)
-if [ -n "$STAGED_SCRIPTS" ]; then
-    echo ""
-    echo "── Bash Syntax Check ──"
-    while IFS= read -r script; do
-        [ -z "$script" ] && continue
-        [ ! -f "$script" ] && continue
-        head -1 "$script" 2>/dev/null | grep -q '#!/bin/bash\|#!/usr/bin/env bash' || continue
-        if bash -n "$script" 2>&1; then
-            pass "bash -n: $script"
-        else
-            fail "bash -n failed: $script"
-        fi
-    done <<< "$STAGED_SCRIPTS"
-fi
-
-# ── Result ────────────────────────────────────────────────────────
-
-echo ""
 if [ "$ERRORS" -gt 0 ]; then
-    echo "══ BLOCKED: $ERRORS enforcement failure(s) ══"
-    echo ""
-    echo "To skip (NOT recommended):  CR_SKIP_PRECOMMIT=1 git commit ..."
+    echo "Blocked: $ERRORS failure(s)"
     exit 1
-else
-    echo "══ PASSED: All enforcement checks ══"
-    exit 0
 fi
+
+echo "Passed"

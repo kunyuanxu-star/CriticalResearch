@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CriticalResearch research.md frontmatter",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "project_id",
+    "run_id",
+    "status",
+    "phase",
+    "objective",
+    "mode",
+    "loop_count",
+    "loop_budget",
+    "weakest_link",
+    "next_action",
+    "validation",
+    "convergence",
+    "gate",
+    "debug_trace",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "project_id": { "type": "string" },
+    "run_id": { "type": "string", "pattern": "^run-[0-9]{3}$" },
+    "status": {
+      "enum": ["draft", "forming", "reviewing", "repairing", "complete", "blocked", "gated", "budget_exhausted", "invalid"]
+    },
+    "phase": { "enum": ["init", "formation", "review", "repair", "final"] },
+    "objective": { "type": "string" },
+    "mode": { "enum": ["quick", "standard", "deep"] },
+    "loop_count": { "type": "integer", "minimum": 0 },
+    "loop_budget": { "type": "integer", "minimum": 1 },
+    "weakest_link": {
+      "enum": ["basic_system", "contradiction", "strawman", "root_cause", "insight", "design", "proof_plan", "evidence", "writing", "scope"]
+    },
+    "next_action": { "type": "string" },
+    "validation": { "type": "object" },
+    "convergence": { "type": "object" },
+    "gate": { "type": "object" },
+    "debug_trace": { "type": "boolean" },
+    "created_at": { "type": "string" },
+    "updated_at": { "type": "string" }
+  }
+}

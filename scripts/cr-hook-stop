@@ -1,85 +1,61 @@
 #!/usr/bin/env bash
-# cr-hook-stop — Stop hook: validate phase, audit scope, enforce completion.
-# Runs when Claude tries to end the session. Blocks if:
-# - Current phase validator fails
-# - Scope audit finds out-of-scope modifications
-# - Round is incomplete and user hasn't explicitly requested stop
-#
-# Called by .claude/settings.json Stop hook.
+# CriticalResearch Stop hook. Gates only active non-terminal or invalid runs.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/cr-common.sh"
+CR="$SCRIPT_DIR/cr"
 
-# Normalize: the argument may be a workspace root, a project directory, or empty.
-# Always resolve the real workspace root via _cr/workspace.yaml walk.
-ARG="${1:-}"
-if [ -n "$ARG" ] && [ -f "$ARG/_cr/workspace.yaml" ]; then
-    WORKSPACE_ROOT="$ARG"
-elif [ -n "$ARG" ] && [ -f "$ARG/project.yaml" ]; then
-    CR_CWD="$ARG"
-    WORKSPACE_ROOT="$(cr_workspace_root)"
-else
-    WORKSPACE_ROOT="$(cr_workspace_root)"
-fi
+workspace_root() {
+    local dir="${1:-$(pwd)}"
+    while [ "$dir" != "/" ]; do
+        if [ -f "$dir/_cr/workspace.yaml" ]; then
+            echo "$dir"
+            return 0
+        fi
+        dir="$(dirname "$dir")"
+    done
+    pwd
+}
 
-# ── Scope audit (runs first — catch violations before anything else) ──
+ROOT="$(workspace_root "${1:-$(pwd)}")"
+ACTIVE="$ROOT/_cr/active-project"
 
-SESSIONS_DIR="$WORKSPACE_ROOT/_cr/sessions"
-if [ -d "$SESSIONS_DIR" ] && [ -n "$(ls -A "$SESSIONS_DIR" 2>/dev/null)" ]; then
-    set +e
-    AUDIT_OUT=$(CR_WORKSPACE_ROOT="$WORKSPACE_ROOT" "$SCRIPT_DIR/cr-scope" audit 2>&1)
-    AUDIT_RC=$?
-    set -e
-    if [ "${AUDIT_RC:-0}" -ne 0 ]; then
-        jq -n --arg audit "$AUDIT_OUT" '{
-            decision: "block",
-            reason: ("Scope violation detected.\n" + $audit + "\nRun: cr scope revert-last\nThen complete the current phase before stopping.")
-        }'
-        exit 1
-    fi
-fi
-
-# ── Resolve project directory ────────────────────────────────────
-
-# Priority: session scope > direct project dir > active-project fallback.
-
-PROJECT_DIR=""
-
-# 1. Session scope: read the current session's bound project.
-    SESSION_FILE="$SESSIONS_DIR/$(cr_session_id).yaml"
-    if [ -f "$SESSION_FILE" ]; then
-    SCOPED_PROJECT=$(yq -r '.project_id // ""' "$SESSION_FILE" 2>/dev/null || echo "")
-    SCOPE_TYPE=$(yq -r '.scope_type // ""' "$SESSION_FILE" 2>/dev/null || echo "")
-    if [ -n "$SCOPED_PROJECT" ] && [ "$SCOPE_TYPE" = "single_project_write" ]; then
-        PROJECT_DIR="$WORKSPACE_ROOT/$SCOPED_PROJECT"
-        [ -d "$PROJECT_DIR" ] || PROJECT_DIR=""
-    fi
-fi
-
-# 2. Direct project directory (CLAUDE_PROJECT_DIR points to a project).
-if [ -z "$PROJECT_DIR" ]; then
-    if [ -f "$WORKSPACE_ROOT/state/project-state.json" ]; then
-        PROJECT_DIR="$WORKSPACE_ROOT"
-    fi
-fi
-
-# 3. Fallback: _cr/active-project (legacy, for backward compatibility).
-if [ -z "$PROJECT_DIR" ]; then
-    ACTIVE_PROJECT_FILE="$WORKSPACE_ROOT/_cr/active-project"
-    if [ -f "$ACTIVE_PROJECT_FILE" ]; then
-        ACTIVE_PROJECT=$(cat "$ACTIVE_PROJECT_FILE")
-        PROJECT_DIR="$WORKSPACE_ROOT/$ACTIVE_PROJECT"
-        [ -d "$PROJECT_DIR" ] || PROJECT_DIR=""
-    fi
-fi
-
-if [ -z "$PROJECT_DIR" ]; then
+if [ ! -f "$ACTIVE" ]; then
     echo '{"decision":"approve"}'
     exit 0
 fi
 
-# ── Delegate to cr-validate-stop (handles phase + round + human gates) ──
+PROJECT="$(tr -d '\n' < "$ACTIVE")"
+if [ -z "$PROJECT" ] || [ ! -f "$ROOT/$PROJECT/project.yaml" ]; then
+    echo '{"decision":"approve"}'
+    exit 0
+fi
 
-exec "$SCRIPT_DIR/cr-validate-stop" "$PROJECT_DIR" "${2:-}"
+STATUS="$(CR_WORKSPACE_ROOT="$ROOT" "$CR" status "$PROJECT" --field status 2>/dev/null || echo invalid)"
+
+case "$STATUS" in
+    complete|blocked|gated|budget_exhausted)
+        set +e
+        CR_WORKSPACE_ROOT="$ROOT" "$CR" validate "$PROJECT" >/dev/null 2>&1
+        RC=$?
+        set -e
+        if [ "$RC" -ne 2 ]; then
+            echo '{"decision":"approve"}'
+            exit 0
+        fi
+        VALIDATION="$(CR_WORKSPACE_ROOT="$ROOT" "$CR" validate "$PROJECT" 2>&1 || true)"
+        jq -n --arg reason "CriticalResearch terminal run failed validation.\n\n$VALIDATION" '{
+          decision: "block",
+          reason: $reason
+        }'
+        exit 1
+        ;;
+    invalid|draft|forming|reviewing|repairing|*)
+        jq -n --arg status "$STATUS" '{
+          decision: "block",
+          reason: ("CriticalResearch run is not terminal (status=" + $status + "). Set status to complete, blocked, gated, or budget_exhausted and run cr validate.")
+        }'
+        exit 1
+        ;;
+esac

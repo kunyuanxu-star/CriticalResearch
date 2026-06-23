@@ -1,17 +1,8 @@
 #!/usr/bin/env bash
-# critical-research-hook — Stable hook wrapper for Claude Code settings.
-# Resolves CR_SKILL_HOME from environment or default install path,
-# then dispatches to the appropriate hook script.
-#
-# Usage: critical-research-hook <event> [args...]
-#   Events: user-prompt-submit, pre-tool-use, post-tool-use, stop
-#
-# This avoids the CLAUDE_PROJECT_DIR ambiguity when the skill is installed
-# to ~/.claude/skills/ but the user opens Claude Code from ~/Research/.
+# Stable hook wrapper for CriticalResearch.
 
 set -euo pipefail
 
-# Resolve skill home: env var > default install path > relative to this script.
 SKILL_HOME="${CR_SKILL_HOME:-}"
 if [ -z "$SKILL_HOME" ]; then
     if [ -d "$HOME/.claude/skills/critical-cs-research" ]; then
@@ -25,26 +16,14 @@ HOOK="${1:-}"
 shift 2>/dev/null || true
 
 case "$HOOK" in
-    user-prompt-expansion)
-        exec "$SKILL_HOME/scripts/cr-hook-user-prompt-expansion" "$@"
-        ;;
-    user-prompt-submit)
-        exec "$SKILL_HOME/scripts/cr-hook-user-prompt-submit" "$@"
-        ;;
     pre-tool-use)
         exec "$SKILL_HOME/scripts/cr-hook-pre-tool-use" "$@"
-        ;;
-    post-tool-use)
-        exec "$SKILL_HOME/scripts/cr-hook-post-tool-use" "$@"
         ;;
     stop)
         exec "$SKILL_HOME/scripts/cr-hook-stop" "$@"
         ;;
-    config-change)
-        exec "$SKILL_HOME/scripts/cr-hook-config-change" "$@"
-        ;;
     *)
-        echo "Usage: critical-research-hook <user-prompt-expansion|user-prompt-submit|pre-tool-use|post-tool-use|stop|config-change> [args...]" >&2
-        exit 2
+        # Hooks stay minimal. Unknown hook events are approved.
+        echo '{"decision":"approve"}'
         ;;
 esac

@@ -1,155 +1,146 @@
 # CriticalResearch
 
-A domain-general, computer-science-specific critical research loop as a Claude Code skill with a **workflow-specific project engine**. It decomposes claims, grounds evidence in real external search, finds counterexamples, generates research gaps, produces document patches, distills reusable knowledge, and produces evidence-backed conclusions — looping indefinitely until all workflow stages are complete and validators pass.
+CriticalResearch is a thesis-centered research loop engine. It turns a vague
+research objective into a defensible `research.md` brief by repeatedly asking:
 
-Covers: OS, networking, security, databases, PL/compilers, architecture, AI infrastructure, distributed systems, software engineering, HCI/CSCW, and technical systems work.
+1. What is the current thesis?
+2. What is its weakest link?
+3. What is the next minimum action that reduces the largest uncertainty?
 
-## Installation
+CriticalResearch uses one default artifact per run and no visible process table.
 
-### Prerequisites
-
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (CLI or IDE extension)
-- Git
-- Bash (macOS / Linux)
-- jq (brew/apt install jq)
-- yq (brew/apt install yq)
-
-### Quick Install
+## Install
 
 ```bash
-git clone https://github.com/Plucky923/CriticalResearch.git
-cd CriticalResearch
 bash install.sh
+```
 
-# Then initialize your research workspace:
-cd ~/Research
+Requirements: Bash, Git, Python 3, and PyYAML.
+
+## Quick Start
+
+```bash
 cr workspace init
-cr project init my-topic --domain systems
+cr project init edge-cache --domain systems
+cr run edge-cache "Can we design a cache invalidation strategy for edge deployments with intermittent connectivity?"
+cr status edge-cache
+cr show edge-cache
+cr validate edge-cache
 ```
 
-The installer:
-- Copies the skill to `~/.claude/skills/critical-cs-research/`
-- Checks dependencies (jq, yq, git, bash)
-- Adds `cr` CLI to your PATH
-- Exports `CR_SKILL_HOME` for hook path resolution
+Default run output:
 
-### Manual Install
+```text
+edge-cache/
+  project.yaml
+  documents/
+  knowledge/
+  runs/
+    run-001/
+      research.md
+```
+
+`trace.jsonl` is created only with `--debug`.
+
+## Commands
 
 ```bash
-git clone https://github.com/Plucky923/CriticalResearch.git ~/.claude/skills/critical-cs-research
-export PATH="$HOME/.claude/skills/critical-cs-research/scripts:$PATH"
+cr workspace init
+cr project init <id> --domain <domain>
+cr run <project> "objective" [--mode quick|standard|deep] [--debug]
+cr status <project> [--field status|latest_run|weakest_link]
+cr show <project> [--run run-001]
+cr validate <project> [--run run-001] [--json] [--strict]
 ```
 
-## Usage
+Modes:
 
-### Within Claude Code
+- `quick`: 1 loop, skeptical reviewer plus writing coach.
+- `standard`: 3 loops, systems researcher, skeptical reviewer, industry practitioner, writing coach.
+- `deep`: 5 loops, standard roles plus methodology auditor and evidence skeptic.
 
-Start a conversation with Claude Code and the skill activates automatically when you ask about CS research tasks. The Stop hook prevents the session from ending until the current stage's required outputs are complete. Examples:
+## Research Brief
 
-- "Validate this idea for a new caching algorithm"
-- "Review my system design for a distributed key-value store"
-- "Critique the related work section of my paper on fuzzing"
+Each run centers on one file:
 
-### CLI (standalone)
-
-```bash
-# Project lifecycle
-cr workspace init                  # Initialize a Research workspace
-cr project init my-topic --domain systems  # Create a new research project
-cr project status my-topic         # Show project status
-cr project list                    # List all projects
-
-# Document management
-cr document add my-topic survey --type survey --path documents/survey.md
-cr document add my-topic design --type design-doc --path documents/design-doc.md
-cr document list my-topic          # List all documents in the project
-cr document status my-topic survey # Show document status
-
-# Unit management
-cr unit add my-topic survey survey.taxonomy --title "Taxonomy"
-cr unit list my-topic survey       # List units in a document
-cr unit status my-topic survey survey.taxonomy
-
-# Full-Round Execution (Claude Code)
-/critical-cs-research <project> --workflow <id> --doc <id> [--unit <id>] [--mode <mode>] <objective>
-
-# Round lifecycle (CLI)
-cr round start my-topic --workflow survey --doc survey --unit survey.taxonomy --mode deep --objective "Research taxonomy"
-cr round status my-topic           # Show round status
-cr round close my-topic            # Validate and close the active round
-
-# Stage management
-cr stage status my-topic           # Show current stage and missing outputs
-cr stage advance my-topic          # Validate current stage and advance to next
-cr stage validate my-topic         # Validate current stage without advancing
-
-# Validation
-cr validate my-topic               # Run all project invariant checks
-cr validate my-topic --round round-017  # Run validators for a specific round
+```text
+<project>/runs/<run-id>/research.md
 ```
 
-## Workflow Types
+The file has YAML frontmatter for machine state and fixed Markdown headings for
+human reading:
 
-| Workflow | Target Document | Use Case |
-|----------|----------------|----------|
-| **survey** | survey.md | Literature survey, taxonomy construction, systematic review |
-| **design** | design-doc.md | System design, architecture document, interface specification |
-| **paper** | paper.md | Academic paper — claims, evidence, evaluation, arguments |
-| **proposal** | proposal.md | Research proposal, grant proposal, project plan |
-| **experiment** | experiment-plan.md | Experiment design, methodology, validation plan |
+```markdown
+---
+schema_version: "1.0.0"
+project_id: "edge-cache"
+run_id: "run-001"
+status: "complete"
+mode: "standard"
+weakest_link: "proof_plan"
+next_action: "Run a minimum experiment against TTL and gossip baselines."
+---
 
-All rounds run in **Deep mode only**: full evidence search, concurrent role-lenses, complete ledgers and detailed report output. No Triaging — every round can close.
+# Research Brief
 
-Each workflow defines its own stage order in `workflows/<id>/workflow.yaml`. A round enters exactly one workflow, declares exactly one mutable document, and modifies one or more units inside that document.
-
-`cr stage advance` validates and advances stages; it does not generate artifacts. The agent/user must create required outputs for each stage.
-
-## Project Structure
-
-```
-├── SKILL.md              # Skill definition (Claude Code entry point)
-├── README.md             # This file
-├── engine/               # Engine: scripts, validators, schemas
-│   ├── scripts/          # CLI tools (cr, cr-project, cr-document, cr-unit, cr-round, cr-stage, cr-validate)
-│   ├── validators/       # Engine-level validators
-│   └── schemas/          # JSON schemas for v2 artifacts
-├── workflows/            # Per-workflow definitions
-│   ├── survey/           # Survey workflow: workflow.yaml, prompts/, schemas/, validators/
-│   ├── design/           # Design workflow
-│   ├── paper/            # Paper workflow
-│   ├── proposal/         # Proposal workflow
-│   └── experiment/       # Experiment workflow
-├── templates/            # Domain-neutral artifact templates
-├── references/           # Domain profiles, evidence standards, role lenses
-├── hooks/                # Stop/PreToolUse/PostToolUse hooks for enforcement
-└── agents/               # Sub-agent instruction sets
-
-projects/
-├── <project-id>/
-│   ├── project.yaml          # Project metadata + document registry
-│   ├── documents/            # Target documents + registry.yaml
-│   ├── units/                # Unit registries per document
-│   ├── knowledge/            # Project-level persistent knowledge
-│   └── rounds/               # Per-round artifacts (contracts, ledgers, patches, deltas)
+## Thesis
+## Basic System
+## Core Contradiction
+## Strawmen and Root Cause
+## Key Insight
+## Design Direction
+## Minimal Proof Plan
+## Reviewer Attacks
+## Evidence Boundary
+## Weakest Link
+## Next Minimum Experiment
 ```
 
-## Multi-Project Parallelism
+The body can be written in English or Chinese. Headings and frontmatter keys
+remain stable so the validator can inspect the brief.
 
-CriticalResearch supports multiple research projects in one workspace. Each session is bound to a single project via session scope, enforced by hooks:
+## Loop Model
 
-```
-cr scope open --project my-topic     # Bind this session to my-topic
-cr scope status                      # Show current scope
-cr scope close                       # Release scope
-```
+The agent maintains a Thesis Repair Loop:
 
-Hooks prevent writes to other projects, workspace root artifacts, `_cr` metadata, and protected state files. Git mutation commands (commit, reset, clean, stash, push) are blocked unless run through scoped cr commands.
-
-**For multi-session parallel work**, each terminal/Claude session needs a stable session ID. Claude Code provides `CLAUDE_SESSION_ID` automatically. If running outside Claude Code or in a bare terminal:
-
-```bash
-export CR_SESSION_ID=session-1
-cr scope open --project project-a
+```text
+One loop = identify and repair the single weakest part of the current thesis.
 ```
 
-Without a stable session ID, different terminals will share the `_cr/sessions/current` pointer and may resolve to the wrong scope.
+The loop combines:
+
+- Humanize-style discipline: bounded loops, terminal states, convergence checks.
+- STORM-style simulation: multiple perspectives attack the thesis internally.
+- CriticalResearch reasoning: basic system, contradiction, strawmen, root cause,
+  single insight, proof plan, evidence boundary.
+
+Completion means the brief is actionable, not unattackable.
+
+## Validation
+
+`cr validate` checks the minimum research closure:
+
+- thesis has a one-sentence claim;
+- Basic System defines setting, object, and goal;
+- Core Contradiction has need, but, and therefore;
+- at least two strawmen have concrete failure modes;
+- shared root cause and key insight exist;
+- Minimal Proof Plan has metric, baseline, minimum experiment, and decision rule;
+- Evidence Boundary has known, assumed, and unknown;
+- Next Minimum Experiment has action and decision rule.
+
+Exit codes:
+
+```text
+0 = valid
+1 = valid with warnings
+2 = invalid
+```
+
+Terminal statuses are `complete`, `blocked`, `gated`, `budget_exhausted`, and
+`invalid`.
+
+## Current Model
+
+Use `cr run`, `cr status`, and `cr validate`. Unsupported process-management
+commands print replacement guidance.

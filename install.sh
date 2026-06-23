@@ -1,12 +1,5 @@
 #!/usr/bin/env bash
-# CriticalResearch Installer
-# Installs the skill into ~/.claude/skills/critical-cs-research/ and
-# adds CLI tools to PATH.
-#
-# Usage:
-#   bash install.sh              # Install skill + CLI
-#   bash install.sh --skill-only # Only install skill, skip CLI PATH setup
-#   bash install.sh --help       # Show options
+# CriticalResearch installer.
 
 set -euo pipefail
 
@@ -15,130 +8,86 @@ SKILL_DIR="${CR_SKILL_HOME:-$HOME/.claude/skills/$SKILL_NAME}"
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "CriticalResearch Installer"
-echo "========================="
+echo "=========================="
 echo ""
 
-# ── Dependency check ────────────────────────────────────────────
-echo "Checking dependencies..."
-MISSING_DEPS=""
-for dep in jq git bash; do
-    if ! command -v "$dep" >/dev/null 2>&1; then
-        echo "  MISSING: $dep (required)"
-        MISSING_DEPS="$MISSING_DEPS $dep"
-    else
+MISSING=""
+for dep in git bash python3; do
+    if command -v "$dep" >/dev/null 2>&1; then
         echo "  FOUND: $dep"
+    else
+        echo "  MISSING: $dep"
+        MISSING="$MISSING $dep"
     fi
 done
-if ! command -v yq >/dev/null 2>&1; then
-    echo "  MISSING: yq (required for paper mode — brew install yq)"
-    MISSING_DEPS="$MISSING_DEPS yq"
+
+if ! python3 - <<'PY' >/dev/null 2>&1
+import yaml
+PY
+then
+    echo "  MISSING: PyYAML"
+    MISSING="$MISSING PyYAML"
 else
-    echo "  FOUND: yq"
+    echo "  FOUND: PyYAML"
 fi
-if [ -n "$MISSING_DEPS" ]; then
+
+if [ -n "$MISSING" ]; then
     echo ""
-    echo "Install missing dependencies before continuing:$MISSING_DEPS"
-    echo "  brew install jq yq"
+    echo "Install missing dependencies before continuing:$MISSING"
+    echo "  python3 -m pip install PyYAML"
     exit 1
 fi
+
 echo ""
-
-# ── Install skill ───────────────────────────────────────────────
-
 echo "Installing skill to: $SKILL_DIR"
 
 if [ "$REPO_DIR" != "$SKILL_DIR" ]; then
     mkdir -p "$(dirname "$SKILL_DIR")"
     if [ -d "$SKILL_DIR" ]; then
-        echo "  Updating existing installation..."
-        rsync -a --exclude '.git' --exclude '.humanize' --exclude '.claude' "$REPO_DIR/" "$SKILL_DIR/"
+        rsync -a --delete --exclude '.git' --exclude '.humanize' --exclude '.claude/settings.local.json' "$REPO_DIR/" "$SKILL_DIR/"
     else
-        echo "  Creating new installation..."
-        cp -r "$REPO_DIR" "$SKILL_DIR"
+        cp -R "$REPO_DIR" "$SKILL_DIR"
         rm -rf "$SKILL_DIR/.git" "$SKILL_DIR/.humanize" 2>/dev/null || true
     fi
 else
     echo "  Already at install location, skipping copy."
 fi
 
-# Make all scripts executable.
 chmod +x "$SKILL_DIR/scripts/"* 2>/dev/null || true
-chmod +x "$SKILL_DIR/hooks/"*.sh 2>/dev/null || true
 chmod +x "$SKILL_DIR/install.sh" 2>/dev/null || true
 
-echo "  Skill installed."
-
-# ── Install hook wrapper to PATH ─────────────────────────────────
-HOOK_WRAPPER="$HOME/.local/bin/critical-research-hook"
-mkdir -p "$(dirname "$HOOK_WRAPPER")"
-cp "$SKILL_DIR/scripts/critical-research-hook" "$HOOK_WRAPPER"
-chmod +x "$HOOK_WRAPPER"
-echo "  Hook wrapper installed to $HOOK_WRAPPER"
-
-# ── Install git pre-commit hook ─────────────────────────────────
-
-if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
-    GIT_HOOKS_DIR="$(git rev-parse --git-dir)/hooks"
-    PRECOMMIT_SRC="$SKILL_DIR/hooks/pre-commit"
-    PRECOMMIT_DST="$GIT_HOOKS_DIR/pre-commit"
-
-    if [ -f "$PRECOMMIT_SRC" ]; then
-        cp "$PRECOMMIT_SRC" "$PRECOMMIT_DST"
-        chmod +x "$PRECOMMIT_DST"
-        echo "  Git pre-commit hook installed to $PRECOMMIT_DST"
-    else
-        echo "  Warning: hooks/pre-commit not found — skipping git hook install"
-    fi
-else
-    echo "  Not a git repository — skipping git hook install"
-fi
-
-# ── Install CLI PATH ────────────────────────────────────────────
+mkdir -p "$HOME/.local/bin"
+cp "$SKILL_DIR/scripts/critical-research-hook" "$HOME/.local/bin/critical-research-hook"
+chmod +x "$HOME/.local/bin/critical-research-hook"
 
 if [ "${1:-}" != "--skill-only" ]; then
-    echo ""
-    echo "Adding CLI to PATH..."
-
-    SHELL_RC=""
-    case "$SHELL" in
+    SHELL_RC="$HOME/.profile"
+    case "${SHELL:-}" in
         */zsh) SHELL_RC="$HOME/.zshrc" ;;
         */bash) SHELL_RC="$HOME/.bashrc" ;;
-        *) SHELL_RC="$HOME/.profile" ;;
     esac
 
     EXPORT_LINE="export CR_SKILL_HOME=\"$SKILL_DIR\""
     PATH_LINE="export PATH=\"$SKILL_DIR/scripts:\$PATH\""
 
-    if [ -f "$SHELL_RC" ]; then
-        if ! grep -q "$SKILL_DIR/scripts" "$SHELL_RC" 2>/dev/null; then
-            echo "" >> "$SHELL_RC"
-            echo "# CriticalResearch" >> "$SHELL_RC"
-            echo "$EXPORT_LINE" >> "$SHELL_RC"
-            echo "$PATH_LINE" >> "$SHELL_RC"
-            echo "  Added to $SHELL_RC"
-        else
-            echo "  PATH already configured in $SHELL_RC"
-        fi
+    touch "$SHELL_RC"
+    if ! grep -q "$SKILL_DIR/scripts" "$SHELL_RC" 2>/dev/null; then
+        {
+            echo ""
+            echo "# CriticalResearch"
+            echo "$EXPORT_LINE"
+            echo "$PATH_LINE"
+        } >> "$SHELL_RC"
+        echo "  Added CLI path to $SHELL_RC"
     else
-        echo ""
-        echo "  Add this to your shell config:"
-        echo "    $EXPORT_LINE"
+        echo "  CLI path already configured in $SHELL_RC"
     fi
-
-    echo ""
-    echo "  To use CLI now, run:"
-    echo "    source $SHELL_RC"
 fi
 
 echo ""
 echo "Installation complete."
 echo ""
 echo "Quick start:"
-echo "  1. cd ~/Research  (or any directory)"
-echo "  2. cr workspace init"
-echo "  3. cr start my-research-topic"
-echo "  4. cr round my-research-topic --mode paper"
-echo ""
-echo "For Claude Code: the skill activates automatically when you ask"
-echo "about CS research tasks. Paper mode is selected by running a round"
-echo "with --mode paper or by setting workflow_mode: paper in round.yaml."
+echo "  cr workspace init"
+echo "  cr project init edge-cache --domain systems"
+echo "  cr run edge-cache \"Can we design a cache invalidation strategy for edge deployments?\""

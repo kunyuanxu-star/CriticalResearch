@@ -1,61 +1,16 @@
 #!/usr/bin/env bash
-# cr-hook-pre-tool-use — PreToolUse hook: enforce write boundaries v2.
-# Called before every Write/Edit/MultiEdit/Bash operation.
-# Every write must be proven to belong to the current session scope.
-# Additionally enforces: writes to documents/ only target the active round's
-# mutable document.
-#
-# Exit codes:
-#   0 — allowed
-#   1 — blocked (outputs JSON decision:block)
+# CriticalResearch PreToolUse hook. Minimal write guard only.
 
 set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/cr-common.sh"
-
-WORKSPACE_ROOT="$(cr_workspace_root)"
-SCOPE_CLI="$SCRIPT_DIR/cr-scope"
-
-# ── v2: Mutable-document boundary enforcement ───────────────────
-
-# Resolve the single mutable document from the active round's contract.yaml.
-# Returns the relative path (e.g., "documents/survey.md") or empty string.
-# Also sets global MUTABLE_DOC_ACTIVE_PROJ for use by the boundary check.
-resolve_mutable_document_path() {
-    local active_proj=""
-    if [ -f "$WORKSPACE_ROOT/_cr/active-project" ]; then
-        active_proj=$(cat "$WORKSPACE_ROOT/_cr/active-project")
-    fi
-    [ -z "$active_proj" ] && return
-    MUTABLE_DOC_ACTIVE_PROJ="$active_proj"
-    local proj_dir="$WORKSPACE_ROOT/$active_proj"
-    [ -d "$proj_dir" ] || return
-    local round_dir=""
-    if [ -f "$proj_dir/state/project-state.json" ]; then
-        local ar
-        ar=$(jq -r '.active_round // ""' "$proj_dir/state/project-state.json" 2>/dev/null || echo "")
-        if [ -n "$ar" ] && [ "$ar" != "null" ]; then
-            round_dir="$proj_dir/rounds/round-$(printf "%03d" "$ar")"
-        fi
-    fi
-    [ -n "$round_dir" ] && [ -d "$round_dir" ] || round_dir=$(find "$proj_dir/rounds" -maxdepth 1 -type d -name 'round-*' 2>/dev/null | sort -V | tail -1 || echo "")
-    [ -n "$round_dir" ] && [ -d "$round_dir" ] || return
-    local contract="$round_dir/contract.yaml"
-    [ -f "$contract" ] || return
-    grep -A3 'mutable_document:' "$contract" 2>/dev/null | grep 'path:' | sed 's/.*path: *//' | tr -d '"' | xargs
-}
-
-MUTABLE_DOC_PATH="$(resolve_mutable_document_path)"
 
 deny() {
     local reason="$1"
     jq -n --arg reason "$reason" '{
-        hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "deny",
-            permissionDecisionReason: $reason
-        }
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: $reason
+      }
     }'
     exit 0
 }
@@ -65,117 +20,38 @@ allow() {
 }
 
 INPUT="$(cat)"
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // .tool // empty' 2>/dev/null || echo "")
+TOOL_NAME="$(printf '%s' "$INPUT" | jq -r '.tool_name // .tool // empty' 2>/dev/null || true)"
 
 [ -z "$TOOL_NAME" ] && allow
 
-# ── Extract path / command from JSON input ───────────────────────
-
-extract_file_paths() {
-    echo "$1" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true
-}
-
-extract_command() {
-    echo "$1" | jq -r '.tool_input.command // empty' 2>/dev/null || true
-}
-
-# ── Write / Edit / MultiEdit ────────────────────────────────────
-
 case "$TOOL_NAME" in
     Write|Edit|MultiEdit)
-        PATHS=$(extract_file_paths "$INPUT")
-        [ -z "$PATHS" ] && allow
-
-        while IFS= read -r file_path; do
-            [ -z "$file_path" ] && continue
-            case "$file_path" in
-                /*) ;;
-                *)  file_path="$(pwd)/$file_path" ;;
-            esac
-
-            RESULT=$("$SCOPE_CLI" check --path "$file_path" --tool "$TOOL_NAME" 2>/dev/null || echo "DENY:scope check failed")
-            case "$RESULT" in
-                ALLOW) ;;
-                *) deny "$RESULT" ;;
-            esac
-
-            # v2: Mutable-document boundary — block writes to non-mutable documents.
-            if [ -n "$MUTABLE_DOC_PATH" ] && [ -n "${MUTABLE_DOC_ACTIVE_PROJ:-}" ]; then
-                local_project_root="$WORKSPACE_ROOT/$MUTABLE_DOC_ACTIVE_PROJ"
-                case "$file_path" in
-                    "$local_project_root"/documents/*.md)
-                        doc_part="${file_path#"$local_project_root/"}"
-                        if [ -n "$doc_part" ] && [ "$doc_part" != "$MUTABLE_DOC_PATH" ]; then
-                            deny "Cross-document write blocked: target is '$doc_part' but active round mutable document is '$MUTABLE_DOC_PATH'. Only writes to the mutable document, round artifacts, and project knowledge are allowed."
-                        fi
-                        ;;
-                esac
-            fi
-
-            # Per-stage write boundary check.
-            STAGE_RESULT=$("$SCOPE_CLI" stage-check "$file_path" 2>/dev/null || echo "DENY:stage check failed")
-            case "$STAGE_RESULT" in
-                ALLOW*) ;;
-                *) deny "$STAGE_RESULT" ;;
-            esac
-        done <<< "$PATHS"
-        allow
-        ;;
-
-    Bash)
-        CMD=$(extract_command "$INPUT")
-        [ -z "$CMD" ] && allow
-
-        # Read-only commands always allowed.
-        if "$SCOPE_CLI" test-readonly "$CMD" 2>/dev/null; then
-            allow
-        fi
-
-        # Allowed cr mutation commands.
-        if "$SCOPE_CLI" test-cr-mutation "$CMD" 2>/dev/null; then
-            allow
-        fi
-
-        # Git commands: only explicit read-only subcommands are allowed.
-        case "$CMD" in
-            *git*|*Git*|*GIT*)
-                deny "Git command blocked: '${CMD:0:120}'. Only read-only git (status, diff, log, show, blame, rev-parse, branch, remote) is allowed."
+        FILE_PATH="$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true)"
+        [ -z "$FILE_PATH" ] && allow
+        case "$FILE_PATH" in
+            /*) ABS="$FILE_PATH" ;;
+            *) ABS="$(pwd)/$FILE_PATH" ;;
+        esac
+        case "$ABS" in
+            */_cr/workspace.yaml|*/_cr/active-project)
+                deny "Direct edits to CriticalResearch workspace state are blocked. Use cr commands."
+                ;;
+            */runs/run-*/research.md)
+                # Editing the active artifact is allowed; deleting it via Bash is guarded below.
+                allow
+                ;;
+            *)
+                allow
                 ;;
         esac
-
-        # Extract candidate file paths from the command string.
-        CMD_PATHS=$(echo "$CMD" | grep -oE '(~?/[A-Za-z0-9._-][A-Za-z0-9._/-]*|[A-Za-z0-9_-]+/[A-Za-z0-9._/-]+)' 2>/dev/null || true)
-
-        if [ -z "$CMD_PATHS" ]; then
-            case "$CMD" in
-                *">"*|*">>"*|*"tee "*|*"dd "*|*"cp "*|*"mv "*|*"rm "*|*"touch "*|*"mkdir "*|\
-                *"sed -i"*|*"perl -pi"*|*"python"*"open"*|*"node"*"writeFile"*)
-                    deny "Bash mutation command with unparseable paths: '${CMD:0:120}'. Use cr command or Write/Edit with explicit scoped path."
-                    ;;
-                *)
-                    allow
-                    ;;
-            esac
+        ;;
+    Bash)
+        CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)"
+        if printf '%s' "$CMD" | grep -Eq 'rm[[:space:]].*runs/run-[0-9][0-9][0-9]/research\.md'; then
+            deny "Deleting an active research.md is blocked."
         fi
-
-        # Check each extracted path against scope.
-        while IFS= read -r file_path; do
-            [ -z "$file_path" ] && continue
-            file_path="${file_path/#\~/$HOME}"
-            case "$file_path" in
-                /*) ;;
-                *)  file_path="$(pwd)/$file_path" ;;
-            esac
-
-            RESULT=$("$SCOPE_CLI" check --path "$file_path" --tool Bash 2>/dev/null || echo "DENY:scope check failed")
-            case "$RESULT" in
-                ALLOW) ;;
-                *) deny "$RESULT" ;;
-            esac
-        done <<< "$CMD_PATHS"
         allow
         ;;
-
     *)
         allow
         ;;

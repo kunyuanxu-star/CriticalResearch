@@ -1,29 +1,6 @@
 {
-  "description": "critical-cs-research deterministic enforcement hooks. Uses global critical-research-hook wrapper installed by install.sh to ~/.local/bin/.",
+  "description": "CriticalResearch minimal gates. The hook wrapper is installed by install.sh to ~/.local/bin/.",
   "hooks": {
-    "UserPromptExpansion": [
-      {
-        "matcher": "critical-cs-research",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "critical-research-hook user-prompt-expansion",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "critical-research-hook user-prompt-submit",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "Write|Edit|MultiEdit|Bash",
@@ -36,18 +13,6 @@
         ]
       }
     ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit|MultiEdit|Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "critical-research-hook post-tool-use",
-            "timeout": 30
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [
@@ -55,18 +20,6 @@
             "type": "command",
             "command": "critical-research-hook stop \"${CLAUDE_PROJECT_DIR}\"",
             "timeout": 60
-          }
-        ]
-      }
-    ],
-    "ConfigChange": [
-      {
-        "matcher": "project_settings|local_settings|skills",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "critical-research-hook config-change",
-            "timeout": 10
           }
         ]
       }
