@@ -56,7 +56,7 @@ VALID_GATES = {
     "literature",
     "implementation",
 }
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "3.0.0"
 
 REQUIRED_HEADINGS = [
     "# Research Brief",
@@ -72,6 +72,28 @@ REQUIRED_HEADINGS = [
     "## Weakest Link",
     "## Next Minimum Experiment",
 ]
+
+REQUIRED_FRONTMATTER_KEYS = {
+    "schema_version",
+    "project_id",
+    "run_id",
+    "status",
+    "phase",
+    "objective",
+    "mode",
+    "loop_count",
+    "loop_budget",
+    "weakest_link",
+    "next_action",
+    "autonomous",
+    "state_ref",
+    "validation",
+    "convergence",
+    "gate",
+    "debug_trace",
+    "created_at",
+    "updated_at",
+}
 
 
 @dataclass
@@ -337,7 +359,7 @@ def parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     return data, body
 
 
-def render_research_template(project: str, run_id: str, objective: str, mode: str, debug: bool) -> str:
+def render_research_template(project: str, run_id: str, objective: str, mode: str, debug: bool, autonomous: bool = False) -> str:
     budget = VALID_MODES[mode]
     fm = {
         "schema_version": SCHEMA_VERSION,
@@ -351,10 +373,13 @@ def render_research_template(project: str, run_id: str, objective: str, mode: st
         "loop_budget": budget,
         "weakest_link": "basic_system",
         "next_action": "Form the initial thesis and define the Basic System.",
+        "autonomous": bool(autonomous),
+        "state_ref": "state/progress.json" if autonomous else None,
         "validation": {"error_count": 0, "warning_count": 0, "blocking_attack_count": 0},
         "convergence": {
-            "stall_count": 0,
+            "stale_count": 0,
             "repeated_attack_count": 0,
+            "repeated_direction_count": 0,
             "scope_challenge_count": 0,
             "progress_signal": "",
         },
@@ -470,6 +495,96 @@ Expanded thesis:
     return f"---\n{frontmatter}\n---\n\n{body}"
 
 
+def init_autonomous_state(run_dir: Path, project: str, run_id: str, objective: str, mode: str) -> None:
+    now = now_iso()
+    state_dir = run_dir / "state"
+    logs_dir = run_dir / "logs"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    task_spec = f"""# Research Task Spec
+
+## Objective
+
+{objective}
+
+## Project
+
+{project}
+
+## Success Criteria
+
+- Thesis has a one-sentence claim.
+- Basic System defines Setting, Object, and Goal.
+- Core Contradiction contains Need, But, Therefore.
+- At least two strawmen have concrete failure modes.
+- Shared Root Cause explains the common failure.
+- Key Insight responds to the root cause.
+- Minimal Proof Plan has metric, baseline, minimum experiment, and decision rule.
+- Evidence Boundary separates known, assumed, unknown, and thesis-breaking unknown.
+- Next Minimum Experiment has action and decision rule.
+
+## Loop Budget
+
+{VALID_MODES[mode]}
+
+## Non-goals
+
+- Do not produce a full paper.
+- Do not run unbounded literature review.
+- Do not continue for minor or out-of-scope attacks.
+
+## Terminal Conditions
+
+- complete
+- blocked
+- gated
+- budget_exhausted
+- invalid
+"""
+    atomic_write(state_dir / "task_spec.md", task_spec)
+    atomic_write(
+        state_dir / "progress.json",
+        json.dumps(
+            {
+                "schema_version": SCHEMA_VERSION,
+                "run_id": run_id,
+                "iteration": 0,
+                "status": "draft",
+                "last_seen": now,
+                "stale_count": 0,
+                "total_findings": 0,
+                "validation_error_count": 0,
+                "warning_count": 0,
+                "blocking_attack_count": 0,
+                "weakest_link": "basic_system",
+                "current_direction_id": None,
+                "terminal_reason": None,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+    )
+    atomic_write(state_dir / "findings.jsonl", "")
+    atomic_write(state_dir / "directions_tried.json", "[]\n")
+    atomic_write(
+        state_dir / "iteration_log.jsonl",
+        json.dumps(
+            {
+                "ts": now,
+                "iteration": 0,
+                "event": "run_created",
+                "weakest_link": "basic_system",
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+    )
+    for name in ("work.jsonl", "orchestrator.jsonl", "heartbeat.jsonl"):
+        atomic_write(logs_dir / name, "")
+
+
 def sections(body: str) -> dict[str, str]:
     result: dict[str, str] = {}
     matches = list(re.finditer(r"^(#{1,2})\s+(.+?)\s*$", body, flags=re.MULTILINE))
@@ -511,6 +626,8 @@ def validate_research(path: Path, strict: bool = False) -> tuple[ValidationResul
     run_id = path.parent.name
     if fm.get("schema_version") != SCHEMA_VERSION:
         result.errors.append(Finding("E002", "frontmatter", f"schema_version must be {SCHEMA_VERSION}"))
+    for key in sorted(REQUIRED_FRONTMATTER_KEYS - set(fm)):
+        result.errors.append(Finding("E011", "frontmatter", f"missing {key}"))
     if fm.get("run_id") != run_id:
         result.errors.append(Finding("E003", "frontmatter", f"run_id must match directory '{run_id}'"))
     if fm.get("status") not in VALID_STATUSES:
@@ -523,6 +640,20 @@ def validate_research(path: Path, strict: bool = False) -> tuple[ValidationResul
         result.errors.append(Finding("E007", "frontmatter", "invalid weakest_link"))
     if not str(fm.get("objective") or "").strip():
         result.errors.append(Finding("E008", "frontmatter", "objective is empty"))
+    if bool(fm.get("autonomous")) and not str(fm.get("state_ref") or "").strip():
+        result.errors.append(Finding("E012", "frontmatter", "autonomous runs require state_ref"))
+    validation_state = fm.get("validation") if isinstance(fm.get("validation"), dict) else {}
+    for key in ("error_count", "warning_count", "blocking_attack_count"):
+        if key not in validation_state:
+            result.errors.append(Finding("E013", "validation", f"missing {key}"))
+    convergence_state = fm.get("convergence") if isinstance(fm.get("convergence"), dict) else {}
+    for key in ("stale_count", "repeated_attack_count", "repeated_direction_count", "scope_challenge_count", "progress_signal"):
+        if key not in convergence_state:
+            result.errors.append(Finding("E014", "convergence", f"missing {key}"))
+    gate_state = fm.get("gate") if isinstance(fm.get("gate"), dict) else {}
+    for key in ("type", "description"):
+        if key not in gate_state:
+            result.errors.append(Finding("E015", "gate", f"missing {key}"))
 
     sec = sections(body)
     for heading in REQUIRED_HEADINGS:
@@ -589,7 +720,10 @@ def validate_research(path: Path, strict: bool = False) -> tuple[ValidationResul
     insight_value = label_value(insight, "Insight")
     if insight_value and re.match(r"^(use|using|we use|apply|build)\b", insight_value, re.I):
         result.warnings.append(Finding("W060", "Key Insight", "insight may be solution-shaped"))
-    if evidence and not has_label(evidence, "Thesis-breaking unknown"):
+    autonomous = bool(fm.get("autonomous"))
+    if evidence and (fm.get("mode") == "deep" or autonomous) and not has_label(evidence, "Thesis-breaking unknown"):
+        result.errors.append(Finding("E181", "Evidence Boundary", "missing Thesis-breaking unknown"))
+    elif evidence and not has_label(evidence, "Thesis-breaking unknown"):
         result.warnings.append(Finding("W080", "Evidence Boundary", "missing thesis-breaking unknown"))
     next_action = str(fm.get("next_action") or "").strip()
     if next_action and re.fullmatch(r"(continue|improve|research more|explore|keep working)\.?", next_action, re.I):
@@ -708,7 +842,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     mode = args.mode
     run_id = next_run_id(proj)
     path = research_path(proj, run_id)
-    atomic_write(path, render_research_template(args.project, run_id, args.objective, mode, args.debug))
+    atomic_write(path, render_research_template(args.project, run_id, args.objective, mode, args.debug, args.autonomous))
 
     if args.debug:
         atomic_write(
@@ -725,6 +859,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
             + "\n",
         )
+
+    if args.autonomous:
+        init_autonomous_state(path.parent, args.project, run_id, args.objective, mode)
 
     project_yaml = read_yaml(proj / "project.yaml")
     project_yaml["latest_run"] = run_id
@@ -753,6 +890,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         "latest_run": run_id,
         "status": fm.get("status", "missing"),
         "weakest_link": fm.get("weakest_link", ""),
+        "next_action": fm.get("next_action", ""),
     }
     if args.field:
         print(fields.get(args.field, ""))
@@ -795,6 +933,47 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 2
 
 
+def cmd_progress(args: argparse.Namespace) -> int:
+    proj = require_project(args.project)
+    run_id = resolve_run(proj, args.run)
+    run_dir = research_path(proj, run_id).parent
+    progress_file = run_dir / "state" / "progress.json"
+    if not progress_file.exists():
+        raise SystemExit(f"Error: autonomous progress not found for {run_id}. Run with --autonomous first.")
+    try:
+        progress = json.loads(progress_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Error: invalid progress.json: {exc}") from exc
+
+    if args.json:
+        print(json.dumps(progress, ensure_ascii=False, indent=2))
+        return 0
+
+    print(f"Run: {run_id}")
+    print(f"Status: {progress.get('status', '')}")
+    print(f"Iteration: {progress.get('iteration', 0)}")
+    print(f"Stale count: {progress.get('stale_count', 0)}")
+    print(f"Findings: {progress.get('total_findings', 0)}")
+    print(f"Validation: {progress.get('validation_error_count', 0)} errors, {progress.get('warning_count', 0)} warnings")
+    print(f"Blocking attacks: {progress.get('blocking_attack_count', 0)}")
+    print(f"Weakest link: {progress.get('weakest_link', '')}")
+    print(f"Current direction: {progress.get('current_direction_id') or ''}")
+    print(f"Terminal reason: {progress.get('terminal_reason') or ''}")
+    return 0
+
+
+def cmd_verify_evidence(args: argparse.Namespace) -> int:
+    require_project(args.project)
+    print("cr verify-evidence is reserved for evidence checkpoints. Use cr validate for current checks.")
+    return 2
+
+
+def cmd_pivot(args: argparse.Namespace) -> int:
+    require_project(args.project)
+    print("cr pivot is reserved for autonomous direction changes. Use cr progress for current state.")
+    return 2
+
+
 def unsupported(command: str) -> int:
     print(f"ERROR: 'cr {command}' is unsupported in CriticalResearch.\n", file=sys.stderr)
     print("Replacement:", file=sys.stderr)
@@ -826,12 +1005,13 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("objective", nargs="+")
     run.add_argument("--mode", choices=sorted(VALID_MODES), default="standard")
     run.add_argument("--debug", action="store_true")
+    run.add_argument("--autonomous", action="store_true")
     run.set_defaults(func=lambda args: cmd_run(argparse.Namespace(**{**vars(args), "objective": " ".join(args.objective)})))
 
     status = sub.add_parser("status", help="Show project/run status")
     status.add_argument("project")
     status.add_argument("--run")
-    status.add_argument("--field", choices=["status", "latest_run", "weakest_link"])
+    status.add_argument("--field", choices=["status", "latest_run", "weakest_link", "next_action"])
     status.set_defaults(func=cmd_status)
 
     show = sub.add_parser("show", help="Print research.md")
@@ -850,6 +1030,24 @@ def build_parser() -> argparse.ArgumentParser:
     audit.add_argument("project")
     audit.add_argument("--run")
     audit.set_defaults(func=cmd_audit)
+
+    progress = sub.add_parser("progress", help="Show autonomous run progress")
+    progress.add_argument("project")
+    progress.add_argument("--run")
+    progress.add_argument("--json", action="store_true")
+    progress.set_defaults(func=cmd_progress)
+
+    verify = sub.add_parser("verify-evidence", help="Reserved evidence checkpoint")
+    verify.add_argument("project")
+    verify.add_argument("--run")
+    verify.add_argument("--json", action="store_true")
+    verify.set_defaults(func=cmd_verify_evidence)
+
+    pivot = sub.add_parser("pivot", help="Reserved autonomous pivot")
+    pivot.add_argument("project")
+    pivot.add_argument("--run")
+    pivot.add_argument("--strategy", required=True)
+    pivot.set_defaults(func=cmd_pivot)
 
     return parser
 

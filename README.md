@@ -48,9 +48,10 @@ edge-cache/
 cr workspace init
 cr project init <id> --domain <domain>
 cr run <project> "objective" [--mode quick|standard|deep] [--debug]
-cr status <project> [--field status|latest_run|weakest_link]
+cr status <project> [--field status|latest_run|weakest_link|next_action]
 cr show <project> [--run run-001]
 cr validate <project> [--run run-001] [--json] [--strict]
+cr progress <project> [--run run-001] [--json]
 ```
 
 Modes:
@@ -72,11 +73,13 @@ human reading:
 
 ```markdown
 ---
-schema_version: "1.0.0"
+schema_version: "3.0.0"
 project_id: "edge-cache"
 run_id: "run-001"
 status: "complete"
 mode: "standard"
+autonomous: false
+state_ref: null
 weakest_link: "proof_plan"
 next_action: "Run a minimum experiment against TTL and gossip baselines."
 ---
@@ -115,6 +118,20 @@ The loop combines:
   single insight, proof plan, evidence boundary.
 
 Completion means the brief is actionable, not unattackable.
+
+## Autonomous Mode
+
+`--autonomous` adds supervision state for longer research runs without changing
+the default single-artifact path:
+
+```bash
+cr run edge-cache "Can edge cache invalidation survive intermittent connectivity?" --mode deep --autonomous
+cr progress edge-cache
+```
+
+Autonomous runs still center on `research.md`, but also create `state/` and
+`logs/` under the run directory for progress, findings, directions tried,
+iteration events, and heartbeat-style liveness logs.
 
 ## Validation
 

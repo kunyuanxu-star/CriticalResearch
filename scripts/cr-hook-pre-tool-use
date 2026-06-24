@@ -15,6 +15,7 @@ from pathlib import Path
 
 
 IMMUTABLE_FRONTMATTER_KEYS = {"schema_version", "project_id", "run_id", "objective"}
+IMMUTABLE_PROGRESS_KEYS = {"schema_version", "run_id"}
 MUTATING_BASH_PATTERNS = re.compile(
     r"(^|[;&|]\s*|\s)(rm|mv|cp|touch|mkdir|tee|dd|sed\s+-i|perl\s+-pi)\b|>|>>"
 )
@@ -92,6 +93,14 @@ def frontmatter(text: str) -> dict[str, str]:
     return result
 
 
+def json_object(text: str) -> dict:
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
 def apply_edit_payload(original: str, tool_name: str, tool_input: dict):
     if tool_name == "Write":
         content = tool_input.get("content")
@@ -152,6 +161,19 @@ def guard_file_write(root: Path, cwd: Path, tool_name: str, tool_input: dict) ->
         for key in IMMUTABLE_FRONTMATTER_KEYS:
             if before.get(key) != after.get(key):
                 deny(f"Immutable research.md frontmatter key cannot be changed: {key}")
+
+    if len(rel.parts) >= 5 and rel.parts[-2:] == ("state", "progress.json"):
+        if not path.exists():
+            return
+        original = path.read_text(encoding="utf-8")
+        updated = apply_edit_payload(original, tool_name, tool_input)
+        if updated is None:
+            return
+        before = json_object(original)
+        after = json_object(updated)
+        for key in IMMUTABLE_PROGRESS_KEYS:
+            if before.get(key) != after.get(key):
+                deny(f"Immutable progress.json key cannot be changed: {key}")
 
 
 def command_paths(command: str) -> list[str]:

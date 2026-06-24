@@ -50,7 +50,7 @@ check '[ -f edge-cache/project.yaml ]' "project metadata created after install"
 check '[ -f edge-cache/runs/run-001/research.md ]' "research.md created after install"
 check '[ "$(cr status edge-cache --field latest_run)" = "run-001" ]' "installed cr reads latest run"
 check '[ "$(cr status edge-cache --field status)" = "draft" ]' "installed cr reads draft status"
-check "cr show edge-cache | grep -Eq 'schema_version: \"?1\\.0\\.0\"?'" "installed cr writes current schema"
+check "cr show edge-cache | grep -Eq 'schema_version: \"?3\\.0\\.0\"?'" "installed cr writes current schema"
 
 set +e
 cr validate edge-cache >/tmp/cr-install-validate.out

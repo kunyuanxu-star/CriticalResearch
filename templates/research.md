@@ -1,5 +1,5 @@
 ---
-schema_version: "1.0.0"
+schema_version: "3.0.0"
 project_id: ""
 run_id: "run-001"
 status: "draft"
@@ -10,13 +10,16 @@ loop_count: 0
 loop_budget: 3
 weakest_link: "basic_system"
 next_action: "Form the initial thesis and define the Basic System."
+autonomous: false
+state_ref: null
 validation:
   error_count: 0
   warning_count: 0
   blocking_attack_count: 0
 convergence:
-  stall_count: 0
+  stale_count: 0
   repeated_attack_count: 0
+  repeated_direction_count: 0
   scope_challenge_count: 0
   progress_signal: ""
 gate:

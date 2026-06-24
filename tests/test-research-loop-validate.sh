@@ -21,7 +21,7 @@ cr run proof "Test objective" >/dev/null
 
 cat > proof/runs/run-001/research.md <<'MD'
 ---
-schema_version: "1.0.0"
+schema_version: "3.0.0"
 project_id: "proof"
 run_id: "run-001"
 status: "complete"
@@ -32,13 +32,16 @@ loop_count: 3
 loop_budget: 3
 weakest_link: "proof_plan"
 next_action: "Run the minimum experiment and decide whether to keep or narrow the thesis."
+autonomous: false
+state_ref: null
 validation:
   error_count: 0
   warning_count: 0
   blocking_attack_count: 0
 convergence:
-  stall_count: 0
+  stale_count: 0
   repeated_attack_count: 0
+  repeated_direction_count: 0
   scope_challenge_count: 0
   progress_signal: "proof_plan_executable"
 gate:

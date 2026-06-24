@@ -17,6 +17,7 @@ fail() { echo "FAIL $1"; fails=$((fails + 1)); }
 cr workspace init >/dev/null
 cr project init schema-check --domain systems >/dev/null
 cr run schema-check "Schema contract objective" --mode deep >/dev/null
+cr run schema-check "Autonomous schema objective" --mode deep --autonomous >/dev/null
 
 if ROOT="$ROOT" python3 - <<'PY'
 import importlib.util
@@ -27,6 +28,7 @@ from pathlib import Path
 
 root = Path(os.environ["ROOT"])
 schema = json.loads((root / "schemas/research-frontmatter.schema.json").read_text())
+progress_schema = json.loads((root / "schemas/autonomous-progress.schema.json").read_text())
 spec = importlib.util.spec_from_file_location("cr_cli", root / "engine/research_loop/cli.py")
 cli = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
@@ -46,6 +48,8 @@ expected_required = {
     "loop_budget",
     "weakest_link",
     "next_action",
+    "autonomous",
+    "state_ref",
     "validation",
     "convergence",
     "gate",
@@ -70,8 +74,38 @@ for key in ("validation", "convergence", "gate"):
     assert set(subschema["required"]) <= set(frontmatter[key]), key
 
 assert frontmatter["schema_version"] == cli.SCHEMA_VERSION
+assert frontmatter["autonomous"] is False
+assert frontmatter["state_ref"] is None
 assert frontmatter["mode"] == "deep"
 assert frontmatter["loop_budget"] == cli.VALID_MODES["deep"]
+
+progress_required = set(progress_schema["required"])
+expected_progress_required = {
+    "schema_version",
+    "run_id",
+    "iteration",
+    "status",
+    "last_seen",
+    "stale_count",
+    "total_findings",
+    "validation_error_count",
+    "warning_count",
+    "blocking_attack_count",
+    "weakest_link",
+    "current_direction_id",
+    "terminal_reason",
+}
+assert progress_required == expected_progress_required, sorted(progress_required ^ expected_progress_required)
+assert progress_schema["properties"]["schema_version"]["const"] == cli.SCHEMA_VERSION
+assert set(progress_schema["properties"]["status"]["enum"]) == set(cli.VALID_STATUSES)
+assert set(progress_schema["properties"]["weakest_link"]["enum"]) == set(cli.VALID_WEAKEST_LINKS)
+
+progress = json.loads(Path("schema-check/runs/run-002/state/progress.json").read_text())
+assert progress_required <= set(progress), sorted(progress_required - set(progress))
+assert progress["schema_version"] == cli.SCHEMA_VERSION
+assert progress["run_id"] == "run-002"
+assert progress["status"] == "draft"
+assert progress["weakest_link"] == "basic_system"
 PY
 then
     pass "frontmatter schema matches CLI constants and generated run"

@@ -80,7 +80,7 @@ fi
 
 cat > hooks/runs/run-001/research.md <<'MD'
 ---
-schema_version: "1.0.0"
+schema_version: "3.0.0"
 project_id: "hooks"
 run_id: "run-001"
 status: "complete"
@@ -91,13 +91,16 @@ loop_count: 3
 loop_budget: 3
 weakest_link: "proof_plan"
 next_action: "Run the minimum experiment and decide whether to continue."
+autonomous: false
+state_ref: null
 validation:
   error_count: 0
   warning_count: 0
   blocking_attack_count: 0
 convergence:
-  stall_count: 0
+  stale_count: 0
   repeated_attack_count: 0
+  repeated_direction_count: 0
   scope_challenge_count: 0
   progress_signal: "proof_plan_executable"
 gate:
@@ -270,6 +273,46 @@ if printf '%s' "$IMMUTABLE_INPUT" | "$ROOT/scripts/cr-hook-pre-tool-use" | grep 
     pass "pre-tool hook blocks immutable frontmatter mutation"
 else
     fail "pre-tool hook blocks immutable frontmatter mutation"
+fi
+
+mkdir -p hooks/runs/run-001/state
+cat > hooks/runs/run-001/state/progress.json <<'JSON'
+{
+  "schema_version": "3.0.0",
+  "run_id": "run-001",
+  "iteration": 0,
+  "status": "draft",
+  "last_seen": "2026-06-23T00:00:00Z",
+  "stale_count": 0,
+  "total_findings": 0,
+  "validation_error_count": 0,
+  "warning_count": 0,
+  "blocking_attack_count": 0,
+  "weakest_link": "basic_system",
+  "current_direction_id": null,
+  "terminal_reason": null
+}
+JSON
+PROGRESS_IMMUTABLE_INPUT="$(python3 - <<'PY'
+import json
+from pathlib import Path
+
+p = Path("hooks/runs/run-001/state/progress.json")
+s = p.read_text()
+print(json.dumps({
+    "tool_name": "Edit",
+    "tool_input": {
+        "file_path": str(p),
+        "old_string": '"run_id": "run-001"',
+        "new_string": '"run_id": "run-999"',
+    },
+}))
+PY
+)"
+if printf '%s' "$PROGRESS_IMMUTABLE_INPUT" | "$ROOT/scripts/cr-hook-pre-tool-use" | grep -q '"permissionDecision": "deny"'; then
+    pass "pre-tool hook blocks immutable progress mutation"
+else
+    fail "pre-tool hook blocks immutable progress mutation"
 fi
 
 echo "RESULT $passes passed, $fails failed"

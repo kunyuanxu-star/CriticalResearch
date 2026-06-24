@@ -29,9 +29,11 @@ check '[ ! -f edge-cache/runs/run-001/trace.jsonl ]' "no trace by default"
 check '[ "$(find edge-cache/runs/run-001 -type f | wc -l | tr -d " ")" = "1" ]' "default run writes only research.md"
 check '[ "$(cr status edge-cache --field latest_run)" = "run-001" ]' "latest run field"
 check '[ "$(cr status edge-cache --field status)" = "draft" ]' "draft status field"
+check '[ "$(cr status edge-cache --field next_action)" = "Form the initial thesis and define the Basic System." ]' "next action field"
 check 'cr status edge-cache | grep -Eq "Validation: [1-9][0-9]* errors"' "status shows live validation errors"
 check 'grep -q "mode: standard" edge-cache/runs/run-001/research.md' "default standard mode recorded"
 check 'grep -q "loop_budget: 3" edge-cache/runs/run-001/research.md' "standard budget recorded"
+check 'grep -Eq "schema_version: ['\''\"]?3\\.0\\.0['\''\"]?" edge-cache/runs/run-001/research.md' "current schema recorded"
 check 'cr show edge-cache | grep -q "# Research Brief"' "show prints research brief"
 
 cr run edge-cache "Second objective" --mode quick --debug >/dev/null
@@ -47,6 +49,21 @@ cr run edge-cache "Third objective" --mode deep >/dev/null
 check '[ -f edge-cache/runs/run-003/research.md ]' "run-003 research.md created"
 check 'grep -q "mode: deep" edge-cache/runs/run-003/research.md' "deep mode recorded"
 check 'grep -q "loop_budget: 5" edge-cache/runs/run-003/research.md' "deep budget recorded"
+
+cr run edge-cache "Autonomous objective" --mode deep --autonomous >/dev/null
+check '[ -f edge-cache/runs/run-004/research.md ]' "autonomous research.md created"
+check '[ -d edge-cache/runs/run-004/state ] && [ -d edge-cache/runs/run-004/logs ]' "autonomous state and logs directories created"
+check '[ -f edge-cache/runs/run-004/state/task_spec.md ]' "autonomous task spec created"
+check '[ -f edge-cache/runs/run-004/state/progress.json ]' "autonomous progress created"
+check '[ -f edge-cache/runs/run-004/state/findings.jsonl ]' "autonomous findings log created"
+check '[ -f edge-cache/runs/run-004/state/directions_tried.json ]' "autonomous directions file created"
+check '[ -f edge-cache/runs/run-004/state/iteration_log.jsonl ]' "autonomous iteration log created"
+check '[ -f edge-cache/runs/run-004/logs/work.jsonl ] && [ -f edge-cache/runs/run-004/logs/orchestrator.jsonl ] && [ -f edge-cache/runs/run-004/logs/heartbeat.jsonl ]' "autonomous log files created"
+check 'grep -q "autonomous: true" edge-cache/runs/run-004/research.md' "autonomous frontmatter recorded"
+check 'grep -Eq "state_ref: ['\''\"]?state/progress\\.json['\''\"]?" edge-cache/runs/run-004/research.md' "autonomous state ref recorded"
+check 'python3 -m json.tool edge-cache/runs/run-004/state/progress.json >/dev/null' "autonomous progress is JSON"
+check 'cr progress edge-cache --run run-004 | grep -q "Stale count: 0"' "progress prints stale count"
+check 'cr progress edge-cache --run run-004 --json | python3 -m json.tool >/dev/null' "progress json output"
 
 for old_cmd in round stage document unit workflow; do
     if cr "$old_cmd" edge-cache 2>"/tmp/cr-loop-$old_cmd.err"; then

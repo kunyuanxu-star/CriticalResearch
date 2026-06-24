@@ -16,7 +16,7 @@ Primary artifact:
 Primary command:
 
 ```bash
-cr run <project> "objective" --mode standard
+cr run <project> "objective" --mode standard [--autonomous]
 ```
 
 ## Operating Model
@@ -66,6 +66,7 @@ Traceability:
 - Link each repair to one weakest link.
 - Link attacks and dispositions to specific brief fields.
 - Store only summaries and validation deltas in debug traces; do not store raw simulated transcripts or chain-of-thought.
+- Use autonomous state only when `autonomous: true`; the default artifact remains `research.md`.
 
 ## Research Standards
 
@@ -159,3 +160,19 @@ not unattackable.
 Do not create default process-state files, registries, patch traces, or
 knowledge logs. Use one default artifact: `research.md`. Only write
 `trace.jsonl` when `--debug` is requested.
+
+## Autonomous State
+
+When `--autonomous` is enabled, the CLI may create:
+
+- `state/task_spec.md`
+- `state/progress.json`
+- `state/findings.jsonl`
+- `state/directions_tried.json`
+- `state/iteration_log.jsonl`
+- `logs/work.jsonl`
+- `logs/orchestrator.jsonl`
+- `logs/heartbeat.jsonl`
+
+Use `cr progress <project>` to inspect this state. Do not store raw simulated
+transcripts or chain-of-thought in autonomous logs.

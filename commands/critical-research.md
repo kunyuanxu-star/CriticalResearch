@@ -1,11 +1,12 @@
 ---
 description: "Run the CriticalResearch thesis repair loop"
-argument-hint: "<project> [--mode quick|standard|deep] [--debug] <objective>"
+argument-hint: "<project> [--mode quick|standard|deep] [--debug] [--autonomous] <objective>"
 allowed-tools:
   - "Bash(cr run:*)"
   - "Bash(cr status:*)"
   - "Bash(cr validate:*)"
   - "Bash(cr show:*)"
+  - "Bash(cr progress:*)"
   - "Read"
   - "Write"
   - "Edit"
@@ -24,16 +25,16 @@ Run a CriticalResearch thesis-centered research loop.
 ## Usage
 
 ```text
-/critical-research <project> [--mode quick|standard|deep] [--debug] <objective>
+/critical-research <project> [--mode quick|standard|deep] [--debug] [--autonomous] <objective>
 ```
 
 ## Execution
 
-1. Parse `project`, optional `--mode`, optional `--debug`, and remaining `objective`.
+1. Parse `project`, optional `--mode`, optional `--debug`, optional `--autonomous`, and remaining `objective`.
 2. Run:
 
 ```bash
-cr run "$PROJECT" "$OBJECTIVE" --mode "$MODE" ${DEBUG:+--debug}
+cr run "$PROJECT" "$OBJECTIVE" --mode "$MODE" ${DEBUG:+--debug} ${AUTONOMOUS:+--autonomous}
 ```
 
 3. Read the created `runs/<run-id>/research.md`.
@@ -53,6 +54,7 @@ cr run "$PROJECT" "$OBJECTIVE" --mode "$MODE" ${DEBUG:+--debug}
 - `project`: existing CriticalResearch project id.
 - `objective`: non-empty research objective.
 - `mode`: `quick`, `standard`, or `deep`; default to `standard`.
+- `autonomous`: optional long-run supervision state; default off.
 - `<project>/project.yaml`.
 - The newly created or selected `<project>/runs/<run-id>/research.md`.
 
@@ -61,6 +63,7 @@ cr run "$PROJECT" "$OBJECTIVE" --mode "$MODE" ${DEBUG:+--debug}
 - `<project>/project.yaml`, only through `cr run` metadata updates.
 - `<project>/runs/<run-id>/research.md`.
 - `<project>/runs/<run-id>/trace.jsonl`, only when `--debug` is requested.
+- `<project>/runs/<run-id>/state/*` and `<project>/runs/<run-id>/logs/*`, only when `--autonomous` is requested.
 
 Do not write process-state files, registries, patch traces, knowledge logs, or raw simulated transcripts by default.
 
