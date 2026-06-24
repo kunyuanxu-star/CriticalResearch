@@ -1,41 +1,37 @@
-# Critique to Disposition Mapping
+# Attack Disposition Mapping
 
-Analysis of how the 13 existing critique types map to the 6 disposition types.
+Reviewer attacks are recorded inside `## Reviewer Attacks` in `research.md`.
+Each attack should end with one disposition that explains how the brief handled
+it.
 
 ## Disposition Types
 
 | Disposition | Meaning | Produces |
 |---|---|---|
-| `paper_patch` | Draft change needed | PP-XXX patch file |
-| `experiment_obligation` | Experiment needed to resolve | EXP-XXX obligation file |
-| `claim_deleted` | Claim removed entirely | Updated claim ledger |
-| `deferred` | Postponed to future round | Gap stays open |
-| `rejected_with_reason` | Critique considered but dismissed | Justification recorded |
-| `no_op` | Already addressed, no action | Justification recorded |
+| `repaired` | The brief was changed to address the attack | Updated field in `research.md` |
+| `accepted_risk` | The attack is valid but acceptable for the current brief | Evidence Boundary or Weakest Link note |
+| `deferred` | The attack should be handled after the next minimum experiment | Next Minimum Experiment note |
+| `challenged` | The attack is based on a false premise or overreach | Scope explanation |
+| `out_of_scope` | The attack exceeds the objective | Evidence Boundary out-of-scope entry |
+| `gated` | The attack requires external evidence or access | `status: gated` or gate note |
 
-## Mapping by Critique Type
+## Mapping by Attack Type
 
-| Critique Type | Primary Disposition | Secondary | Rationale |
+| Attack Type | Primary Disposition | Secondary | Rationale |
 |---|---|---|---|
-| `overclaim` | `paper_patch` | `claim_deleted` | Weaken or remove the overclaim. If claim is indefensible, delete. |
-| `missing_baseline` | `experiment_obligation` | `deferred` | Must design experiment against strongest baseline. Defer if resources unavailable. |
-| `missing_workload` | `experiment_obligation` | `deferred` | Must find or design representative workload. |
-| `ambiguous_definition` | `paper_patch` | `no_op` | Clarify terminology in paper. If already clear in context, no_op. |
-| `weak_causality` | `paper_patch` | `experiment_obligation` | Rewrite causal argument in motivation/introduction. May need experiment if causal claim is core. |
-| `alternative_solution` | `paper_patch` | `rejected_with_reason` | Add to related work discussion. If solution is not actually comparable, reject with reason. |
-| `unproven_generality` | `paper_patch` | `claim_deleted` | Narrow claim scope in paper. Delete unprovable general claims. |
-| `evaluation_gap` | `experiment_obligation` | `paper_patch` | Design missing evaluation. If evaluation is impossible, change claims to match what can be evaluated. |
-| `artifact_gap` | `deferred` | `paper_patch` | Implementation not yet available. Defer or note as limitation. |
-| `methodology_flaw` | `experiment_obligation` | `paper_patch` | Redesign experiment with corrected methodology. Update evaluation plan section. |
-| `dependency_break` | `paper_patch` | `claim_deleted` | Fix logical chain in design/argument sections. If dependency cannot be resolved, delete dependent claims. |
-| `missing_tradeoff` | `paper_patch` | `no_op` | Add tradeoff discussion. If tradeoff is obvious, no_op with justification. |
-| `circular_reasoning` | `paper_patch` | `claim_deleted` | Restructure argument to break circularity. If restructuring fails, delete circular claim. |
+| `baseline_missing` | `repaired` | `deferred` | Add a concrete baseline, or make the next action a baseline selection task. |
+| `metric_missing` | `repaired` | `gated` | Add an operational metric, or gate on unavailable measurement access. |
+| `fake_contradiction` | `repaired` | `challenged` | Rewrite feature demand into a structural tension, or justify why the tension is real. |
+| `solution_not_insight` | `repaired` | `accepted_risk` | Replace solution naming with causal leverage, or mark the insight as provisional. |
+| `mechanism_gap` | `repaired` | `deferred` | Add mechanism detail, or make the next experiment resolve the mechanism. |
+| `external_gate` | `gated` | `deferred` | Stop the loop if meaningful repair needs data, compute, literature, or implementation. |
+| `scope_creep` | `out_of_scope` | `challenged` | Do not let adjacent asks block an actionable brief. |
+| `writing_gap` | `repaired` | `accepted_risk` | Tighten thesis flow when it affects comprehension; do not loop only for polish. |
 
 ## Decision Heuristics
 
-1. **Fatal severity + core claim** → `claim_deleted` or `paper_patch` with major rewrite
-2. **High severity + evidence gap** → `experiment_obligation` + `paper_patch`
-3. **Medium severity + wording** → `paper_patch` with before/after
-4. **Critique already addressed by prior patch** → `no_op` with cross-reference
-5. **Critique valid but out of current scope** → `deferred` with revisit condition
-6. **Critique invalid or based on misunderstanding** → `rejected_with_reason`
+1. `blocking` + `thesis_breaking` must be repaired, blocked, or gated.
+2. `blocking` + `proof_blocking` must be repaired unless the loop budget is exhausted.
+3. `major` + `in_scope` should be repaired while budget remains.
+4. `minor`, `adjacent`, and `out_of_scope` attacks do not justify another loop by themselves.
+5. Duplicate attacks should be merged instead of restated.

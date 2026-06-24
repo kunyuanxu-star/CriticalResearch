@@ -1,13 +1,14 @@
 # Research Workspace
 
-This is a CriticalResearch workspace. Research projects live in `research-*/` directories.
-Cross-project knowledge is stored in `_cr/knowledge/`.
+This is a CriticalResearch workspace. Research projects are lightweight
+directories created with `cr project init`.
 
 ## Active Project
 
-Run `cr status` to see active project and round state.
+Run `cr status <project>` to see the latest research brief status.
 
-## Knowledge Banks
+## Project Layout
 
-- Literature: `_cr/knowledge/literature/` (papers, systems, concepts, debates)
-- Thinking: `_cr/knowledge/thinking/cards/` (research principles, writing rules, reviewer patterns)
+- `<project>/project.yaml` stores project metadata.
+- `<project>/runs/<run-id>/research.md` is the default research artifact.
+- `<project>/documents/` and `<project>/knowledge/` are optional project-local context folders.

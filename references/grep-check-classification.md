@@ -1,68 +1,38 @@
-# Grep-Based Check Classification
+# Validator Check Classification
 
-Analysis of current grep-based validation checks across CriticalResearch validators.
-Classified as HARD_GATE (fail=block), SOFT_WARNING (warn only), or OBSOLETE (replaced).
+Classification for `cr validate` checks over `research.md`.
 
-## cr-validate-round
-
-| Check | Classification | Rationale |
-|-------|---------------|-----------|
-| round.yaml exists | OBSOLETE | Now handled by cr-validate-schema (artifact registry) |
-| round status in enum {open, in_progress, complete} | HARD_GATE | Schema validation handles enum, but semantic state check remains |
-| Required output files exist (5+ files) | HARD_GATE | Now driven by round.yaml required_outputs |
-| File line count > 4 (non-empty) | SOFT_WARNING | Thin files may be valid but indicate shallow work |
-| knowledge-delta.md > 20 lines | SOFT_WARNING | Content quality, not binary presence |
-| sources.md has evidence fields (title:, source_type:, etc.) | HARD_GATE | Required for evidence traceability |
-| sources.md has search_failure fields | SOFT_WARNING | Alternative to evidence; should not block |
-| critique.md has critique fields (critique_id:, severity:, etc.) | HARD_GATE | Required for critique traceability |
-| At least one medium+ critique or exemption | HARD_GATE | Core quality bar; exemption covers setup rounds |
-| All critiques severity=low without exemption | HARD_GATE | Must either have substantive critique or explicit exemption |
-
-## cr-validate-knowledge
+## Hard Errors
 
 | Check | Classification | Rationale |
 |-------|---------------|-----------|
-| knowledge-delta.md exists | HARD_GATE | Invariant: every round must record learning |
-| Literature Knowledge Updated section | HARD_GATE | Required decision (yes/no) |
-| Thinking Knowledge Updated section | HARD_GATE | Required decision (yes/no) |
-| Candidate Rules Generated section | SOFT_WARNING | May be legitimately absent |
-| Project-Local Insights Only section | SOFT_WARNING | May be legitimately absent |
-| No-update explanation section | HARD_GATE | Required when no knowledge was updated |
-| Line count > 20 | SOFT_WARNING | Content quality indicator |
-| Has Yes/No or bullet content | HARD_GATE | Binary check: template not filled vs filled |
+| Missing YAML frontmatter | HARD_GATE | The CLI cannot read run state. |
+| Invalid schema, status, phase, mode, weakest link, or gate | HARD_GATE | State must be machine-readable. |
+| Run id mismatch | HARD_GATE | A run file must match its directory. |
+| Missing required heading | HARD_GATE | The brief contract is incomplete. |
+| Missing thesis claim | HARD_GATE | The current thesis is undefined. |
+| Missing Basic System setting, object, or goal | HARD_GATE | The research scene is under-specified. |
+| Missing Core Contradiction need, but, or therefore | HARD_GATE | The problem has no explicit tension. |
+| Fewer than two strawmen or missing failure modes | HARD_GATE | The root cause cannot be justified. |
+| Missing shared root cause or key insight | HARD_GATE | The brief has no causal leverage. |
+| Missing metric, baseline, minimum experiment, or decision rule | HARD_GATE | The proof plan is not executable. |
+| Missing known, assumed, or unknown evidence boundary | HARD_GATE | Evidence status is unclear. |
+| Missing next experiment action or decision rule | HARD_GATE | The brief cannot drive the next step. |
 
-## cr-validate-stop
-
-| Check | Classification | Rationale |
-|-------|---------------|-----------|
-| Active round directory exists | HARD_GATE | Prerequisite for validation |
-| Round status is "complete" | HARD_GATE | Round must be explicitly closed |
-| Required output files missing | HARD_GATE | Driven by round.yaml required_outputs |
-| Knowledge delta missing | HARD_GATE | Block stop if patches exist but no knowledge delta |
-| Satisfaction state valid | SOFT_WARNING | Content hash check may be fragile |
-
-## cr-validate-writing
+## Warnings
 
 | Check | Classification | Rationale |
 |-------|---------------|-----------|
-| writing-diff.md exists and non-empty | HARD_GATE | Every round must record writing changes |
-| paper-draft.md mtime changed | SOFT_WARNING | Changes may be edits not captured in diff |
-
-## hooks/check-*.sh
-
-| Check | Classification | Rationale |
-|-------|---------------|-----------|
-| research-trace.md contains thesis/problem/approach | HARD_GATE | Core artifact structure |
-| claim-ledger.md has required columns | HARD_GATE | Structured data requirement |
-| evidence-ledger.md has required fields | HARD_GATE | Evidence traceability |
-| critique-ledger.md has required fields | HARD_GATE | Critique traceability |
-| gap-backlog.md has bidirectional links | HARD_GATE | Reference integrity |
-| final-report.md has thesis format | HARD_GATE | Output quality gate |
-| Story checklist completeness | SOFT_WARNING | Quality indicator, not blocking |
-| Logic/story audit issues | SOFT_WARNING | Subjective quality assessment |
+| Feature-demand-shaped contradiction | SOFT_WARNING | It may still be valid, but needs scrutiny. |
+| Root cause restates the failure | SOFT_WARNING | The causal explanation may be shallow. |
+| Solution-shaped insight | SOFT_WARNING | The key idea may be a technique name, not causal leverage. |
+| Missing thesis-breaking unknown | SOFT_WARNING | The evidence boundary may be too optimistic. |
+| Broad next action | SOFT_WARNING | The next action may not be minimum. |
 
 ## Summary
 
-- HARD_GATE checks: file presence, required field existence, reference integrity, essential content decisions
-- SOFT_WARNING checks: content quality, depth, richness, subjective assessments
-- OBSOLETE checks: superseded by JSON Schema validation in cr_validate_json_schema
+- Hard errors make `cr validate` exit `2`.
+- Warnings make `cr validate` exit `1`.
+- `--strict` escalates warnings to errors.
+- Terminal states may pass with allowed gaps only when the validator's explicit
+  terminal allowance conditions are met.

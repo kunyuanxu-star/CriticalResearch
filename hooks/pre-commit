@@ -11,6 +11,12 @@ fi
 ERRORS=0
 fail() { echo "  [FAIL] $1"; ERRORS=$((ERRORS + 1)); }
 pass() { echo "  [OK] $1"; }
+PYCACHE_DIR="${TMPDIR:-/tmp}/cr-pycache-$$"
+mkdir -p "$PYCACHE_DIR"
+trap 'rm -rf "$PYCACHE_DIR"' EXIT
+py_compile_check() {
+    PYTHONPYCACHEPREFIX="$PYCACHE_DIR" python3 -m py_compile engine/research_loop/cli.py
+}
 run_check() {
     local label="$1"
     shift
@@ -23,7 +29,7 @@ run_check() {
 
 echo "CriticalResearch pre-commit"
 
-run_check "engine/research_loop/cli.py compiles" python3 -m py_compile engine/research_loop/cli.py
+run_check "engine/research_loop/cli.py compiles" py_compile_check
 run_check "scripts/cr syntax" bash -n scripts/cr
 run_check "hook wrapper syntax" bash -n scripts/critical-research-hook
 run_check "stop hook syntax" bash -n scripts/cr-hook-stop
@@ -34,6 +40,7 @@ run_check "validator regression" tests/test-research-loop-validate.sh
 run_check "hook regression" tests/test-research-loop-hooks.sh
 run_check "command contract regression" tests/test-command-contract.sh
 run_check "schema contract regression" tests/test-schema-contract.sh
+run_check "doc surface regression" tests/test-doc-surface-clean.sh
 
 if [ "$ERRORS" -gt 0 ]; then
     echo "Blocked: $ERRORS failure(s)"
